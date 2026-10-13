@@ -1,0 +1,73 @@
+{
+  "name": "visro",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A local-first creative studio for macOS with your own Gemini key.",
+  "author": "Prakhar Singh",
+  "license": "AGPL-3.0-only",
+  "main": "electron/main.cjs",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "start": "npm run build && electron .",
+    "desktop": "electron .",
+    "typecheck": "tsc --noEmit",
+    "build": "npm run prepare:models && npm run typecheck && vite build",
+    "test": "node --test tests/*.cjs",
+    "pack": "npm run build && node scripts/package-mac.mjs --dir",
+    "dist:mac": "npm run build && node scripts/package-mac.mjs",
+    "prepare:models": "node scripts/prepare-models.mjs",
+    "verify:native": "node electron/native-smoke.cjs"
+  },
+  "dependencies": {
+    "@imgly/background-removal": "1.7.0",
+    "fabric": "7.4.0",
+    "jspdf": "^4.2.0",
+    "lucide-react": "^0.468.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "onnxruntime-web": "1.21.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.1.0",
+    "electron": "44.7.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.0"
+  },
+  "build": {
+    "appId": "app.visro.studio",
+    "productName": "Visro",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
+      "licenses/**/*",
+      "!node_modules/**/*"
+    ],
+    "mac": {
+      "category": "public.app-category.graphics-design",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "notarize": false
+    },
+    "dmg": {
+      "title": "Visro",
+      "icon": "build/icon.icns"
+    },
+    "asar": true,
+    "npmRebuild": false
+  }
+}

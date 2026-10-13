@@ -1,0 +1,9 @@
+node_modules/
+dist/
+release/
+output/
+.DS_Store
+*.log
+.env*
+public/background-removal/
+.playwright-cli/
