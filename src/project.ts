@@ -1,4 +1,4 @@
-import type { VisroProject } from "./editor-types";
+import type { ElementMetadata, VisroProject } from "./editor-types";
 
 export const PROJECT_VERSION = 1;
 export const MAX_PROJECT_BYTES = 40 * 1024 * 1024;
@@ -9,7 +9,28 @@ export function newId(prefix = "object"): string {
 }
 
 export function cloneProject<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
+  // Immutable strings (including image data URLs) can be shared. JSON cloning
+  // copied every embedded image on every keystroke and inflated undo memory.
+  if (Array.isArray(value)) return value.map((item) => cloneProject(item)) as T;
+  if (value !== null && typeof value === 'object') {
+    const copy: Record<string, unknown> = {};
+    for (const [key, item] of Object.entries(value)) {
+      if (item !== undefined && key !== '__proto__' && key !== 'constructor' && key !== 'prototype') copy[key] = cloneProject(item);
+    }
+    return copy as T;
+  }
+  return value;
+}
+
+export function projectsEqual(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (left === null || right === null || typeof left !== 'object' || typeof right !== 'object') return false;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length && left.every((item, index) => projectsEqual(item, right[index]));
+  }
+  const leftKeys = Object.keys(left as Record<string, unknown>).filter((key) => (left as Record<string, unknown>)[key] !== undefined);
+  const rightKeys = Object.keys(right as Record<string, unknown>).filter((key) => (right as Record<string, unknown>)[key] !== undefined);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => Object.hasOwn(right, key) && projectsEqual((left as Record<string, unknown>)[key], (right as Record<string, unknown>)[key]));
 }
 
 export function createProject(
@@ -42,6 +63,18 @@ export function createProject(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function sanitizeElementMetadata(value: unknown): ElementMetadata {
+  if (!isRecord(value)) return {};
+  const result: ElementMetadata = {};
+  if (typeof value.link === 'string') {
+    const link = value.link.trim().slice(0, 2048);
+    if (/^(https?:\/\/|mailto:|#[a-z0-9_-])/i.test(link)) result.link = link;
+  }
+  if (typeof value.altText === 'string') result.altText = value.altText.slice(0, 2000);
+  if (typeof value.duration === 'number' && Number.isFinite(value.duration)) result.duration = Math.max(0.1, Math.min(3600, value.duration));
+  return result;
 }
 
 export function validateProject(value: unknown): VisroProject {
@@ -105,6 +138,15 @@ export function validateProject(value: unknown): VisroProject {
     throw new Error("The active page could not be found.");
   }
   const result = cloneProject(value) as unknown as VisroProject;
+  const sanitizeLayers = (objects: unknown[], depth = 0): void => {
+    if (depth > 32) throw new Error('A group is nested too deeply.');
+    for (const object of objects) {
+      if (!isRecord(object)) continue;
+      if (object.visroMetadata !== undefined) object.visroMetadata = sanitizeElementMetadata(object.visroMetadata);
+      if (Array.isArray(object.objects)) sanitizeLayers(object.objects, depth + 1);
+    }
+  };
+  result.pages.forEach((page) => sanitizeLayers(page.canvas.objects as unknown[]));
   if (!isRecord(result.brand)) result.brand = { colors: [], fonts: [] };
   result.brand.colors = Array.isArray(result.brand.colors)
     ? result.brand.colors

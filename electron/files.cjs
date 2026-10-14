@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
-const FORMATS = { png: { mime: 'image/png', extension: 'png' }, jpg: { mime: 'image/jpeg', extension: 'jpg' }, jpeg: { mime: 'image/jpeg', extension: 'jpg' }, svg: { mime: 'image/svg+xml', extension: 'svg' }, pdf: { mime: 'application/pdf', extension: 'pdf' } };
+const FORMATS = { png: { mime: 'image/png', extension: 'png' }, jpg: { mime: 'image/jpeg', extension: 'jpg' }, jpeg: { mime: 'image/jpeg', extension: 'jpg' }, svg: { mime: 'image/svg+xml', extension: 'svg' }, pdf: { mime: 'application/pdf', extension: 'pdf' }, html: { mime: 'text/html', extension: 'html' }, csv: { mime: 'text/csv', extension: 'csv' }, txt: { mime: 'text/plain', extension: 'txt' }, pptx: { mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', extension: 'pptx' } };
 
 function safeName(input, fallback = 'Untitled') {
   if (typeof input !== 'string') return fallback;
@@ -47,8 +47,8 @@ function parseProject(content) {
 function decodeExport(input) {
   if (!input || typeof input !== 'object') throw new Error('Choose an export format.');
   const format = Object.hasOwn(FORMATS, input.format) ? FORMATS[input.format] : null;
-  if (!format) throw new Error('Choose PNG, JPG, SVG, or PDF export.');
-  const name = safeName(input.name || 'Visro design').replace(/\.(png|jpe?g|svg|pdf)$/i, '');
+  if (!format) throw new Error('Choose PNG, JPG, SVG, PDF, PPTX, HTML, CSV, or TXT export.');
+  const name = safeName(input.name || 'Visro design').replace(/\.(png|jpe?g|svg|pdf|pptx|html|csv|txt)$/i, '');
   let data;
   if (format.extension === 'svg') {
     if (typeof input.svg !== 'string') throw new Error('SVG export requires a readable SVG document.');
@@ -58,12 +58,13 @@ function decodeExport(input) {
     data = Buffer.from(input.svg, 'utf8');
   } else {
     if (typeof input.dataURL !== 'string' || input.dataURL.length > MAX_FILE_BYTES * 1.4 + 100) throw new Error('Export data is missing or too large.');
-    const match = /^data:([^;,]+);base64,([A-Za-z0-9+/]*={0,2})$/.exec(input.dataURL);
+    const match = /^data:([^;,]+)(?:;charset=utf-8)?;base64,([A-Za-z0-9+/]*={0,2})$/i.exec(input.dataURL);
     if (!match || match[1] !== format.mime || !match[2] || match[2].length % 4 !== 0) throw new Error('Export data does not match the chosen format.');
     data = Buffer.from(match[2], 'base64');
     if (data.toString('base64') !== match[2]) throw new Error('Export data is not valid base64.');
   }
   if (data.length > MAX_FILE_BYTES) throw new Error('Exports must be smaller than 100 MB.');
+  if (format.extension === 'pptx' && (!data.subarray(0, 4).equals(Buffer.from([0x50, 0x4b, 0x03, 0x04])) || !data.includes(Buffer.from('ppt/presentation.xml')) || !data.includes(Buffer.from('[Content_Types].xml')))) throw new Error('PPTX export requires a valid PowerPoint ZIP package.');
   return { data, extension: format.extension, name: `${name}.${format.extension}` };
 }
 

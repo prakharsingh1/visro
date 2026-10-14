@@ -161,7 +161,7 @@ function createGeminiService({ apiKey, textModel = DEFAULT_TEXT_MODEL, imageMode
       const query = new URLSearchParams({ pageSize: '1000', ...(pageToken ? { pageToken } : {}) });
       const data = await request(`models?${query}`);
       for (const model of data.models || []) {
-        if (!model.supportedGenerationMethods?.includes('generateContent')) continue;
+        if (!model.supportedGenerationMethods?.some((method) => ['generateContent', 'predictLongRunning'].includes(method))) continue;
         try {
           const name = validateModel(model.name);
           result.set(name, { name, displayName: String(model.displayName || name).slice(0, 150), description: String(model.description || '').slice(0, 1000), image: /image|nano-banana/i.test(name) });
@@ -174,23 +174,42 @@ function createGeminiService({ apiKey, textModel = DEFAULT_TEXT_MODEL, imageMode
   }
 
   async function runAI(input) {
-    if (!input || typeof input !== 'object' || !['design', 'copy', 'image', 'edit'].includes(input.kind)) throw new Error('Choose a supported AI action.');
-    if (typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 12000) throw new Error('Enter a prompt between 1 and 12,000 characters.');
+    if (!input || typeof input !== 'object' || !['design', 'copy', 'image', 'edit', 'translate', 'rewrite', 'summarize', 'remix', 'resize'].includes(input.kind)) throw new Error('Choose a supported AI action.');
+    const textAction = ['translate', 'rewrite', 'summarize'].includes(input.kind);
+    const designAction = ['design', 'remix', 'resize'].includes(input.kind);
+    if (typeof input.prompt !== 'string' || input.prompt.length > 12000 || (!input.prompt.trim() && !(textAction && typeof input.text === 'string' && input.text.trim()) && !['resize', 'remix'].includes(input.kind))) throw new Error('Enter a prompt between 1 and 12,000 characters.');
+    if (input.text !== undefined && (typeof input.text !== 'string' || input.text.length > 40000)) throw new Error('Use up to 40,000 characters of source text.');
+    if (input.language !== undefined && (typeof input.language !== 'string' || input.language.length > 80)) throw new Error('Enter a language name shorter than 80 characters.');
+    if (input.tone !== undefined && (typeof input.tone !== 'string' || input.tone.length > 160)) throw new Error('Enter a tone shorter than 160 characters.');
     const width = Math.round(finite(input.width, 1080, 64, 8192));
     const height = Math.round(finite(input.height, 1080, 64, 8192));
     const imageAction = input.kind === 'image' || input.kind === 'edit';
     const parts = [];
     if (input.kind === 'edit' && !input.image) throw new Error('Select an image to edit first.');
     if (input.image) parts.push({ inlineData: decodeImage(input.image) });
-    if (input.kind === 'design') {
-      parts.push({ text: `Create a polished, editable graphic design for Visro. Canvas: ${width} x ${height} pixels. Return a JSON layout with name, width, height, background, and elements. Use only text, rect, and circle elements. Geometry uses x/y top-left pixels, except circle uses a bounding box. Order elements back to front. Use hex colors and fontFamily Arial, Georgia, or Helvetica. Use generous margins, clear typography, strong contrast, and a deliberate visual hierarchy. For text, width and height must fully fit the content. Include the user's requested copy directly. Return only the JSON layout. User brief:\n${input.prompt.trim()}` });
+    if (designAction) {
+      let context = '';
+      if (input.kind !== 'design') {
+        const original = sanitizeDesign(input.design, width, height);
+        context = input.kind === 'resize' ? `Resize and reflow this existing design for the requested canvas while preserving every word and its original visual identity. Adjust positions, line breaks, spacing, and scale for an intentional new aspect ratio. Existing design:\n${JSON.stringify(original)}\n` : `Remix this existing editable design according to the user brief, keeping its core message and copy. Create a deliberate alternative layout, typography, and palette. Existing design:\n${JSON.stringify(original)}\n`;
+      }
+      parts.push({ text: `Create a polished, editable graphic design for Visro. Canvas: ${width} x ${height} pixels. Return a JSON layout with name, width, height, background, and elements. Use only text, rect, and circle elements. Geometry uses x/y top-left pixels, except circle uses a bounding box. Order elements back to front. Use hex colors and fontFamily Arial, Georgia, or Helvetica. Use generous margins, clear typography, strong contrast, and a deliberate visual hierarchy. For text, width and height must fully fit the content. Include the user's requested copy directly. Return only the JSON layout. ${context}User brief:\n${input.prompt.trim()}` });
+    } else if (textAction) {
+      const source = (input.text || input.prompt).trim();
+      if (!source) throw new Error('Select or enter some text first.');
+      const instructions = {
+        translate: `Translate the source text into ${input.language?.trim() || 'English'}. Preserve meaning, names, factual claims, paragraph structure, and tone.`,
+        rewrite: `Rewrite the source text in a ${input.tone?.trim() || 'clear, concise'} tone. Preserve factual claims and the intended meaning.`,
+        summarize: 'Summarize the source text accurately and concisely. Preserve important facts and distinguish uncertainty. Do not invent information.',
+      };
+      parts.push({ text: `${instructions[input.kind]} Return only the finished usable text, without introductory comments or code fences. ${input.text ? `Additional instruction: ${input.prompt.trim()}\n` : ''}Source text:\n${source}` });
     } else if (input.kind === 'copy') {
       parts.push({ text: `You write concise, compelling copy for visual designs. Follow the user's requested tone, format, and language. Return only the usable copy, without preambles or Markdown code fences. User request:\n${input.prompt.trim()}` });
     } else {
       parts.push({ text: input.prompt.trim() });
     }
     const generationConfig = imageAction ? { responseModalities: ['TEXT', 'IMAGE'] } : { temperature: 0.8, maxOutputTokens: 16384 };
-    if (input.kind === 'design') Object.assign(generationConfig, { responseMimeType: 'application/json', responseSchema: DESIGN_SCHEMA });
+    if (designAction) Object.assign(generationConfig, { responseMimeType: 'application/json', responseSchema: DESIGN_SCHEMA });
     const data = await request(`models/${imageAction ? imageModelName : textModelName}:generateContent`, { contents: [{ role: 'user', parts }], generationConfig });
     if (data.promptFeedback?.blockReason) throw new Error('Gemini could not complete this prompt because of its content filters. Try a different prompt.');
     const outputParts = (data.candidates?.[0]?.content?.parts || []).filter((part) => !part.thought);
@@ -203,10 +222,10 @@ function createGeminiService({ apiKey, textModel = DEFAULT_TEXT_MODEL, imageMode
       return { image, ...(text ? { text: text.slice(0, 12000) } : {}) };
     }
     if (!text) throw new Error('Gemini did not return usable content. Try a different prompt.');
-    if (input.kind === 'copy') return { text: text.slice(0, 20000) };
+    if (input.kind === 'copy' || textAction) return { text: text.slice(0, 40000) };
     let design;
     try { design = JSON.parse(text.replace(/^```(?:json)?\s*|\s*```$/g, '')); } catch { throw new Error('Gemini did not return a readable design. Try a more specific prompt.'); }
-    return { design: sanitizeDesign(design, width, height) };
+    return { design: sanitizeDesign({ ...design, width, height }, width, height) };
   }
 
   return { listModels, runAI };

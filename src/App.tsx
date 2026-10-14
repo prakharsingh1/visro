@@ -3,6 +3,9 @@ import {
   useEffect,
   useRef,
   useState,
+  useMemo,
+  lazy,
+  Suspense,
   type ReactNode,
 } from "react";
 import {
@@ -64,8 +67,28 @@ import {
   Presentation,
   Link,
   ZoomIn,
+  Home as HomeIcon, Moon, Sun, Bold, Italic, Underline, MessageCircle, Video, FileText, Grid3X3, Globe, Clock, MoreHorizontal,
 } from "lucide-react";
 import { StudioEditor } from "./editor";
+import { Home } from "./Home";
+import {PositionPanel} from "./PositionPanel";
+import {ImageControls} from "./ImageControls";
+import {ElementMenu,type ElementAction} from "./ElementMenu";
+import BrandKitsPanel from "./BrandKitsPanel";
+import {StudioIcon,TemplatesIcon,ElementsIcon,TextIcon,BrandIcon,UploadsIcon,ToolsIcon,ProjectsIcon,AppsIcon,ComponentsIcon,AudioIcon,BackgroundIcon,ChartsIcon} from "./icons";
+const MagicMediaPanel=lazy(()=>import("./MagicMediaPanel"));
+import {TemplatePreview} from "./TemplatePreview";
+import { ToolsPanel, type ToolTab } from "./ToolsPanel";
+import { DocumentEditor, SheetEditor, sanitizeDocument } from "./DocumentSuite";
+import { MediaStudio } from "./MediaStudio";
+import ImageCropEditor from "./ImageCropEditor";
+import ImageMaskEditor from "./ImageMaskEditor";
+import {importPDF,exportPowerPoint} from "./file-formats";
+import {packProject,unpackProject} from "./portable";
+import {parseCSV} from "./spreadsheet";
+import {FONT_FAMILIES,loadDesignFonts} from "./font-catalog";
+import {pageLinks,escapeHTML} from "./links";
+import { getThemePreference, setThemePreference, watchSystemTheme, type ThemePreference } from "./ui-theme";
 import { TEMPLATES } from "./templates";
 import { createProject } from "./project";
 import type { EditorState, SelectionState } from "./editor-types";
@@ -75,19 +98,18 @@ import {
   DEFAULT_SETTINGS,
   saveExport,
   saveProjectFallback,
-  type AIResult,
   type Settings,
 } from "./bridge";
 import {
-  listDesigns,
+  listDesigns, getDesign, listDesignSummaries,
   storeDesign,
-  deleteDesign,
+  deleteDesign, listAssets, storeAsset, storeVersion,
   type SavedDesign,
 } from "./storage";
 
 type Panel =
-  "templates" | "elements" | "text" | "uploads" | "ai" | "brand" | "draw";
-type AIKind = "design" | "image" | "edit" | "copy";
+  "templates" | "elements" | "text" | "uploads" | "ai" | "brand" | "draw" | "tools" | "video" | "documents" | "sheets" | "projects" | "apps" | "components" | "audio" | "background" | "charts" | "image" | "color" | "font";
+type AIKind = "design" | "image" | "edit" | "copy" | "translate" | "rewrite" | "summarize" | "remix" | "resize" | "voice" | "video";
 type Modal = "settings" | "export" | "resize" | "library" | "present" | null;
 const COLORS = [
   "#ed704d",
@@ -101,6 +123,8 @@ const COLORS = [
   "#000000",
 ];
 const FONTS = [
+  "Canva Sans",
+  ...FONT_FAMILIES,
   "Arial",
   "Helvetica",
   "Georgia",
@@ -192,114 +216,13 @@ function NumberField({
     </label>
   );
 }
-function TemplatePreview({
-  template,
-  index,
-}: {
-  template: (typeof TEMPLATES)[number];
-  index: number;
-}) {
-  return (
-    <div
-      className="template-preview"
-      style={{ background: template.background, padding: 0 }}
-    >
-      <svg
-        viewBox={`0 0 ${template.width} ${template.height}`}
-        role="img"
-        aria-label={`${template.name} preview`}
-      >
-        <rect
-          width={template.width}
-          height={template.height}
-          fill={template.background}
-        />
-        {template.elements.map((e, i) => {
-          const w = e.width || 200,
-            h = e.height || w,
-            transform = `translate(${e.x} ${e.y}) rotate(${e.rotation || 0})`;
-          return (
-            <g
-              key={`${index}-${i}`}
-              transform={transform}
-              opacity={e.opacity ?? 1}
-            >
-              {e.type === "text" ? (
-                <text
-                  fill={e.fill}
-                  fontSize={e.fontSize}
-                  fontFamily={e.fontFamily || "Arial"}
-                  fontWeight={e.fontWeight}
-                  fontStyle={e.fontStyle}
-                  textAnchor={
-                    e.align === "center"
-                      ? "middle"
-                      : e.align === "right"
-                        ? "end"
-                        : "start"
-                  }
-                  x={e.align === "center" ? w / 2 : e.align === "right" ? w : 0}
-                >
-                  {(e.text || "").split("\n").map((line, n) => (
-                    <tspan
-                      key={n}
-                      x={
-                        e.align === "center"
-                          ? w / 2
-                          : e.align === "right"
-                            ? w
-                            : 0
-                      }
-                      y={
-                        (e.fontSize || 32) * (0.88 + n * (e.lineHeight || 1.05))
-                      }
-                    >
-                      {line}
-                    </tspan>
-                  ))}
-                </text>
-              ) : e.type === "circle" ? (
-                <ellipse
-                  cx={w / 2}
-                  cy={h / 2}
-                  rx={w / 2}
-                  ry={h / 2}
-                  fill={e.fill}
-                />
-              ) : e.type === "triangle" ? (
-                <polygon points={`${w / 2},0 ${w},${h} 0,${h}`} fill={e.fill} />
-              ) : e.type === "line" ? (
-                <line
-                  x1="0"
-                  y1="0"
-                  x2={w}
-                  y2={h === w ? 0 : h}
-                  stroke={e.stroke || e.fill}
-                  strokeWidth={e.strokeWidth || 3}
-                />
-              ) : (
-                <rect
-                  width={w}
-                  height={h}
-                  fill={e.fill}
-                  rx={e.rx || 0}
-                  ry={e.ry || 0}
-                />
-              )}
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
 
 export default function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null),
     viewportRef = useRef<HTMLDivElement>(null),
     engine = useRef<StudioEditor | null>(null),
     uploadRef = useRef<HTMLInputElement>(null),
-    projectRef = useRef<HTMLInputElement>(null);
+    projectRef = useRef<HTMLInputElement>(null), fontRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<EditorState>(initialState),
     [selected, setSelected] = useState<SelectionState | null>(null),
     [panel, setPanel] = useState<Panel>("templates"),
@@ -314,8 +237,6 @@ export default function App() {
     [uploads, setUploads] = useState<string[]>([]),
     [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS),
     [aiKind, setAiKind] = useState<AIKind>("design"),
-    [prompt, setPrompt] = useState(""),
-    [aiResult, setAIResult] = useState<AIResult | null>(null),
     [brand, setBrand] = useState({
       colors: COLORS.slice(0, 5),
       fonts: ["Georgia", "Arial"],
@@ -330,9 +251,29 @@ export default function App() {
     [size, setSize] = useState({ w: 1080, h: 1080 }),
     [presentImage, setPresentImage] = useState(""),
     [presentIndex, setPresentIndex] = useState(0);
+  const [home, setHome] = useState(true), [homeRefresh, setHomeRefresh] = useState(0),
+    [inspectorOpen, setInspectorOpen] = useState(false), [toolTab, setToolTab] = useState<ToolTab>("graphics"),
+    [theme, setTheme] = useState<ThemePreference>(getThemePreference()),
+    [dark, setDark] = useState(document.documentElement.dataset.theme === "dark"),
+    [mode, setMode] = useState<"design"|"document"|"sheet"|"video">("design"),
+    [customFonts, setCustomFonts] = useState<string[]>([]),
+    [fileMenu, setFileMenu] = useState(false), [presentAuto, setPresentAuto] = useState(false);
+  const [maskSources,setMaskSources]=useState<{original:string;current:string}|null>(null);
+  const [panelOpen,setPanelOpen]=useState(false),[commentsOpen,setCommentsOpen]=useState(false),[notesOpen,setNotesOpen]=useState(false),[pagesOpen,setPagesOpen]=useState(true),[gridView,setGridView]=useState(false),[mediaEpoch,setMediaEpoch]=useState(0),[pageThumbnails,setPageThumbnails]=useState<Record<string,string>>({});
+  const [contextMenu,setContextMenu]=useState<{x:number;y:number}|null>(null),[elementDialog,setElementDialog]=useState<{kind:'link'|'alt'|'component';value:string}|null>(null),[components,setComponents]=useState<Awaited<ReturnType<typeof listAssets>>>([]);
+  const getEditor=useCallback(()=>engine.current,[]);
+  const closeContext=useCallback(()=>setContextMenu(null),[]);
+  const interactionRef=useRef(false),replaceImageRef=useRef(false);
+  const stylePaintRef=useRef(false),browserClipboardRef=useRef<Record<string,unknown>[]>([]);
+  const [positionTab,setPositionTab]=useState<"arrange"|"layers">("arrange"),[colorHex,setColorHex]=useState("#000000");
+  const [toolbarPopover,setToolbarPopover]=useState<"spacing"|"transparency"|null>(null),[timerOpen,setTimerOpen]=useState(false),[timerSeconds,setTimerSeconds]=useState(0),[timerRunning,setTimerRunning]=useState(false);
+  const [cropSource,setCropSource]=useState<ReturnType<StudioEditor["getImageCropSource"]>>(null);
+  const openCrop=()=>{const source=engine.current?.getImageCropSource();if(source)setCropSource(source);else notify("Select a photo to crop.");};
+  const contentRef = useRef<unknown>(undefined);
   const [apiKey, setApiKey] = useState(""),
     [textModel, setTextModel] = useState(DEFAULT_SETTINGS.textModel),
     [imageModel, setImageModel] = useState(DEFAULT_SETTINGS.imageModel),
+    [voiceModel,setVoiceModel]=useState(DEFAULT_SETTINGS.voiceModel),[videoModel,setVideoModel]=useState(DEFAULT_SETTINGS.videoModel),
     [models, setModels] = useState<
       Array<{ name: string; displayName?: string }>
     >([]),
@@ -344,6 +285,10 @@ export default function App() {
     saving = useRef(false),
     nativeSavedId = useRef<string | null>(null),
     errorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const projectGeneration = useRef(0), switchingProject = useRef(false), initializedProject = useRef(false);
+  const projectSwitchQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const startupPreparation = useRef<Promise<void>>(Promise.resolve());
+  const stableProject = useRef<{id:string;name:string;project:Parameters<StudioEditor['loadProject']>[0]}|null>(null);
   const notify = useCallback((message: string) => {
     setToast(message);
     clearTimeout(errorTimer.current);
@@ -371,9 +316,85 @@ export default function App() {
   useEffect(() => {
     nameRef.current = name;
   }, [name]);
+  useEffect(() => { setThemePreference(theme); setDark(document.documentElement.dataset.theme === "dark"); return watchSystemTheme(() => setDark(document.documentElement.dataset.theme === "dark")); }, [theme]);
+  const toggleTheme = () => setTheme(dark ? "light" : "dark");
+  const fontOptions = [...new Set([...FONTS,...customFonts])];
+  useEffect(()=>setColorHex(selected?.fill||state.background),[selected?.id,selected?.fill,state.background]);
+  const restoreMode = useCallback((project: {kind?: string; content?: unknown}) => {
+    contentRef.current = project.content;
+    setMode(project.kind === "document" ? "document" : project.kind === "sheet" ? "sheet" : project.kind === "video" ? "video" : "design");
+  }, []);
+
+  const switchProject = useCallback((prepare:()=>Promise<{id:string;name:string;project?:Parameters<StudioEditor['loadProject']>[0];load?:(studio:StudioEditor)=>Promise<void>;nativeFile?:boolean}>)=>{
+    const studio=engine.current;
+    if(!studio)return Promise.resolve(false);
+    const generation=++projectGeneration.current;
+    const savePrevious=initializedProject.current&&!switchingProject.current;
+    const previousId=activeId.current,previousName=nameRef.current;
+    switchingProject.current=true;setReady(false);
+    const task=projectSwitchQueue.current.catch(()=>undefined).then(async()=>{
+      try{
+        if(engine.current!==studio)return false;
+        if(savePrevious){
+          // Finish any queued image/page operation before capturing the departing design.
+          await studio.whenIdle();
+          if(engine.current!==studio)return false;
+          studio.flushPendingChanges();
+          const project=studio.serialize(previousName);
+          stableProject.current={id:previousId,name:previousName,project};
+          await storeDesign({id:previousId,name:previousName,updated:Date.now(),project});
+        }
+        await startupPreparation.current;
+        if(generation!==projectGeneration.current||engine.current!==studio)return false;
+        const target=await prepare();
+        if(generation!==projectGeneration.current||engine.current!==studio)return false;
+        activeId.current=target.id;
+        if(target.load)await target.load(studio);
+        else if(target.project)await studio.loadProject(target.project);
+        if(generation!==projectGeneration.current||engine.current!==studio)return false;
+        const project=studio.serialize(target.name);
+        stableProject.current={id:target.id,name:target.name,project};
+        localStorage.setItem("visro-active-design",target.id);
+        if(target.nativeFile)nativeSavedId.current=target.id;
+        nameRef.current=target.name;setName(target.name);restoreMode(project);
+        initializedProject.current=true;switchingProject.current=false;setReady(true);setHome(false);studio.fit();
+        return true;
+      }catch(error){
+        if(generation===projectGeneration.current&&engine.current===studio){
+          const previous=stableProject.current;
+          if(previous)await studio.loadProject(previous.project);
+          else await studio.loadTemplate(TEMPLATES[0].id);
+          if(generation===projectGeneration.current&&engine.current===studio){
+            const restored=previous??{id:previousId,name:TEMPLATES[0].name,project:studio.serialize(TEMPLATES[0].name)};
+            stableProject.current=restored;activeId.current=restored.id;nameRef.current=restored.name;setName(restored.name);restoreMode(restored.project);
+            initializedProject.current=true;switchingProject.current=false;setReady(true);
+          }
+        }
+        throw error;
+      }
+    });
+    projectSwitchQueue.current=task.catch(()=>undefined);
+    return task;
+  },[restoreMode]);
+
+  const waitForStableStudio=useCallback(async()=>{
+    let queue:Promise<unknown>,studio:StudioEditor|null;
+    do{
+      queue=projectSwitchQueue.current;
+      await startupPreparation.current;
+      await queue;
+      studio=engine.current;
+      if(!studio)throw new Error("The editor is no longer available.");
+      await studio.whenIdle();
+    }while(queue!==projectSwitchQueue.current||switchingProject.current||studio!==engine.current);
+    if(!initializedProject.current)throw new Error("The design is still loading. Please try again.");
+    return studio;
+  },[]);
+
   useEffect(() => {
     if (!canvasRef.current || !viewportRef.current) return;
     let alive = true;
+    const startupGeneration=projectGeneration.current,startupId=activeId.current;
     const studio = new StudioEditor(canvasRef.current, {
       onChange: (s) => {
         if (alive) {
@@ -383,7 +404,7 @@ export default function App() {
         }
       },
       onSelection: (s) => {
-        if (alive) setSelected(s ? { ...s } : null);
+        if (alive){if(stylePaintRef.current&&s){stylePaintRef.current=false;studio.pasteStyle();return;}setSelected(s ? { ...s } : null);}
       },
     });
     engine.current = studio;
@@ -393,18 +414,40 @@ export default function App() {
     };
     const observer = new ResizeObserver(resize);
     observer.observe(viewportRef.current);
-    (async () => {
+    const preparation=(async () => {
       try {
-        const saved = await listDesigns();
-        const current = saved.find((s) => s.id === activeId.current);
+        const [current, assets, localTypeface] = await Promise.all([getDesign(startupId), listAssets(["font"]), desktop?.getLocalTypeface?.().catch(()=>null) ?? fetch("/local-typeface?v=2",{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null),loadDesignFonts()]);
+        if(localTypeface?.data){try{const font=new FontFace("Canva Sans",`url(${localTypeface.data})`,{weight:"400 700"});await font.load();document.fonts.add(font);}catch{ /* Use the system fallback when the local typeface is unavailable. */ }}
+        if (!alive || engine.current !== studio) return;
+        for (const asset of assets.filter(a => a.kind === "font")) {
+          try { const font = new FontFace(asset.name, `url(${asset.data})`); await font.load(); document.fonts.add(font); } catch { /* An unavailable font can be replaced in the text toolbar. */ }
+          if (!alive) return;
+        }
+        setCustomFonts(assets.filter(a => a.kind === "font").map(a => a.name));
+        setUploads(assets.filter(a => a.kind === "image" || a.kind === "logo").map(a => a.data));
+        if(current&&!stableProject.current)stableProject.current={id:startupId,name:current.name,project:current.project as Parameters<StudioEditor['loadProject']>[0]};
+        return current;
+      } catch(e){notify(e instanceof Error?e.message:"Could not prepare the design library.");return undefined;}
+    })();
+    startupPreparation.current=preparation.then(()=>undefined,()=>undefined);
+    (async()=>{
+      try{
+        const current=await preparation;
+        if(!alive||engine.current!==studio||startupGeneration!==projectGeneration.current)return;
         if (current) {
           await studio.loadProject(
             current.project as Parameters<StudioEditor["loadProject"]>[0],
           );
+          if (!alive || engine.current !== studio || startupGeneration!==projectGeneration.current) return;
+          nameRef.current=current.name;
           setName(current.name);
+          restoreMode(current.project as {kind?:string;content?:unknown});
         } else await studio.loadTemplate(TEMPLATES[0].id);
+        if (!alive || engine.current !== studio || startupGeneration!==projectGeneration.current) return;
         resize();
         studio.fit();
+        stableProject.current={id:startupId,name:current?.name??TEMPLATES[0].name,project:studio.serialize(current?.name??TEMPLATES[0].name)};
+        initializedProject.current=true;
         if (alive) setReady(true);
       } catch (e) {
         notify(
@@ -416,27 +459,44 @@ export default function App() {
       alive = false;
       observer.disconnect();
       studio.destroy();
-      engine.current = null;
+      if (engine.current === studio) engine.current = null;
       clearTimeout(errorTimer.current);
     };
   }, [notify]);
   useEffect(() => {
-    if (!ready || !engine.current) return;
+    if (!ready || !engine.current || switchingProject.current) return;
+    const studio = engine.current, id = activeId.current, revision = state.revision;
+    const generation=projectGeneration.current;
     const timer = setTimeout(async () => {
+      if (engine.current !== studio || id !== activeId.current || switchingProject.current || generation!==projectGeneration.current) return;
       try {
-        await storeDesign({
-          id: activeId.current,
-          name,
-          updated: Date.now(),
-          project: engine.current!.serialize(name),
-        });
-        setDirty(false);
-      } catch {
-        notify("Autosave is unavailable. Use Save to keep a project file.");
-      }
-    }, 1200);
+        await studio.whenIdle();
+        if(engine.current!==studio||id!==activeId.current||switchingProject.current||generation!==projectGeneration.current||revision!==studio.getState().revision||name!==nameRef.current)return;
+        await storeDesign({ id, name, updated: Date.now(), project: studio.serialize(name) });
+        if (id === activeId.current && engine.current === studio && name === nameRef.current && !switchingProject.current && generation===projectGeneration.current) studio.markSaved(revision);
+      } catch { notify("Autosave is unavailable. Use Save to keep a project file."); }
+    }, 800);
     return () => clearTimeout(timer);
-  }, [state, name, ready, notify]);
+  }, [state.revision, name, ready, notify]);
+  const clipboardPrefix='Visro design elements\n';
+  const copyCanvas=useCallback(async(cut=false)=>{
+    const studio=engine.current;if(!studio)return;const ids=studio.canvas.getActiveObjects().map(o=>(o as unknown as {id:string}).id);
+    const objects=await studio.exportSelectedObjects();if(!objects.length)return;
+    browserClipboardRef.current=objects;
+    const plainText=objects.map(o=>typeof o.text==='string'?o.text:'').filter(Boolean).join('\n')||'Visro elements';
+    try{if(desktop)await desktop.writeCanvasClipboard({objects,plainText});else{try{await navigator.clipboard.writeText(clipboardPrefix+JSON.stringify(objects));}catch{await studio.copy();}}}
+    catch(e){notify(e instanceof Error?e.message:'Could not copy this selection.');return;}
+    if(cut&&ids.join('|')===studio.canvas.getActiveObjects().map(o=>(o as unknown as {id:string}).id).join('|'))studio.remove();
+  },[notify]);
+  const pasteCanvas=useCallback(async()=>{const studio=engine.current;if(!studio)return;try{
+    if(desktop){const data=await desktop.readCanvasClipboard();if(!data)return;if(data.kind==='objects')await studio.insertObjects(data.objects);else if(data.kind==='image')await studio.addImage(data.data);else if(data.kind==='text'&&data.text){studio.addText('body');studio.updateSelected({text:data.text});}}
+    else {let text:string;try{text=await navigator.clipboard.readText();}catch{if(browserClipboardRef.current.length){await studio.insertObjects(browserClipboardRef.current);return;}await studio.paste();return;}if(text.startsWith(clipboardPrefix))await studio.insertObjects(JSON.parse(text.slice(clipboardPrefix.length)));else if(text){studio.addText('body');studio.updateSelected({text});}}
+
+  }catch(e){notify(e instanceof Error?e.message:'Could not paste this content.');}},[notify]);
+  useEffect(()=>{const paste=(e:ClipboardEvent)=>{if((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]'))return;if(!ready||switchingProject.current||!initializedProject.current)return;const files=Array.from(e.clipboardData?.items||[]).filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean) as File[];e.preventDefault();
+    if(files.length){void uploadFiles(files);return;}const text=e.clipboardData?.getData('text/plain')||'';if(text.startsWith(clipboardPrefix)){void work('Pasting elements',()=>engine.current!.insertObjects(JSON.parse(text.slice(clipboardPrefix.length))));}
+    else if(text){engine.current?.addText('body');engine.current?.updateSelected({text});}else void pasteCanvas();
+  };window.addEventListener('paste',paste);return()=>window.removeEventListener('paste',paste);},[pasteCanvas,work,ready]);
   useEffect(() => {
     if (desktop)
       desktop
@@ -445,90 +505,132 @@ export default function App() {
           setSettings(s);
           setTextModel(s.textModel);
           setImageModel(s.imageModel);
+          setVoiceModel(s.voiceModel);setVideoModel(s.videoModel);
         })
         .catch((e) => notify(e.message));
   }, [notify]);
+  useEffect(()=>{if(!timerRunning)return;const t=setInterval(()=>setTimerSeconds(v=>v+1),1000);return()=>clearInterval(t);},[timerRunning]);
+  useEffect(()=>{if(!ready||home||mode!=="design")return;let cancelled=false;const task=setTimeout(()=>{const run=async()=>{if(cancelled||interactionRef.current)return;const studio=engine.current;if(!studio)return;try{const id=studio.getState().activePageId;const data=await studio.exportImage({format:'jpeg',scale:.12,quality:.6});if(!cancelled)setPageThumbnails(v=>v[id]===data?v:{...v,[id]:data});}catch{/* The page remains usable without a thumbnail. */}};if('requestIdleCallback'in window)(window as Window&{requestIdleCallback:(fn:()=>void)=>number}).requestIdleCallback(()=>void run());else void run();},1100);return()=>{cancelled=true;clearTimeout(task);};},[state.revision,state.activePageId,ready,home,mode]);
+  useEffect(()=>{const node=viewportRef.current;if(!node)return;const wheel=(e:WheelEvent)=>{if(!ready||switchingProject.current||home||mode!=='design')return;e.preventDefault();const studio=engine.current;if(!studio)return;if(e.ctrlKey||e.metaKey){const r=node.getBoundingClientRect();studio.zoomAt(studio.getState().zoom*Math.exp(-e.deltaY*.003),{x:e.clientX-r.left,y:e.clientY-r.top});}else studio.pan(-e.deltaX,-e.deltaY);};node.addEventListener('wheel',wheel,{passive:false});return()=>node.removeEventListener('wheel',wheel);},[home,mode,ready]);
   const save = useCallback(async () => {
     if (!engine.current || saving.current) return;
     saving.current = true;
-    await work("Saving your design", async () => {
-      const project = engine.current!.serialize(nameRef.current);
+    try{await work("Saving your design", async () => {
+      const studio=await waitForStableStudio();
+      studio.flushPendingChanges();
+      const id=activeId.current,projectName=nameRef.current,generation=projectGeneration.current,revision=studio.getState().revision;
+      const project = packProject(studio.serialize(projectName));
+      let saved=false;
       if (desktop) {
         const result = await desktop.saveProject({
           project,
-          name: nameRef.current,
-          saveAs: nativeSavedId.current !== activeId.current,
+          name: projectName,
+          saveAs: nativeSavedId.current !== id,
         });
         if (result) {
-          nativeSavedId.current = activeId.current;
-          notify("Project saved. You can open it again in Visro.");
+          if(id===activeId.current&&generation===projectGeneration.current)nativeSavedId.current=id;
+          saved=true;notify("Project saved. You can open it again in Visro.");
         }
       } else {
-        await saveProjectFallback(project, safeName(nameRef.current));
-        notify("Project file downloaded.");
+        await saveProjectFallback(project, safeName(projectName));
+        saved=true;notify("Project file downloaded.");
       }
-      setDirty(false);
-    });
-    saving.current = false;
-  }, [notify, work]);
+      if(saved&&engine.current===studio&&id===activeId.current&&generation===projectGeneration.current&&!switchingProject.current)studio.markSaved(revision);
+    });}finally{saving.current = false;}
+  }, [notify, work, waitForStableStudio]);
   const open = useCallback(async () => {
     if (desktop)
       await work("Opening your project", async () => {
         const result = await desktop!.openProject();
         if (result) {
-          const doc = result.project as Parameters<
+          const doc = unpackProject(result.project) as Parameters<
             StudioEditor["loadProject"]
           >[0];
-          await engine.current!.loadProject(doc);
-          activeId.current = crypto.randomUUID();
-          nativeSavedId.current = activeId.current;
-          setName((doc as { name?: string }).name || "Untitled design");
-          notify("Project opened.");
+          if(await switchProject(async()=>({id:crypto.randomUUID(),name:doc.name||"Untitled design",project:doc,nativeFile:true})))notify("Project opened.");
         }
       });
     else projectRef.current?.click();
-  }, [notify, work]);
+  }, [notify, work, switchProject]);
   const newDesign = useCallback(async () => {
-    activeId.current = crypto.randomUUID();
-    setName("Untitled design");
-    await engine.current?.loadProject(
-      createProject("Untitled design", 1080, 1080, "#ffffff"),
-    );
-    notify("A fresh canvas, ready for your next idea.");
-  }, [notify]);
+    if(await switchProject(async()=>({id:crypto.randomUUID(),name:"Untitled design",project:createProject("Untitled design",1080,1080,"#ffffff")})))notify("A fresh canvas, ready for your next idea.");
+  }, [notify,switchProject]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if(e.key==='Escape'){if(cropSource){setCropSource(null);return;}if(maskSources){setMaskSources(null);return;}if(elementDialog){setElementDialog(null);return;}if(contextMenu){setContextMenu(null);return;}if(modal){setModal(null);return;}if(toolbarPopover){setToolbarPopover(null);return;}if(fileMenu){setFileMenu(false);return;}}
+      if(cropSource||maskSources)return;
+      if(contextMenu&&e.key.startsWith('Arrow'))return;
       const target = e.target as HTMLElement;
       if (target.closest('input,textarea,select,[contenteditable="true"]'))
         return;
+      if(!ready||switchingProject.current||!initializedProject.current)return;
+      if(home || (modal&&e.key!=='Escape'))return;
+      const studio=engine.current;
+      if(studio?.isTextEditing())return;
       const cmd = e.metaKey || e.ctrlKey;
+      if(e.key==='Escape'&&contextMenu){e.preventDefault();setContextMenu(null);return;}
+      if(e.altKey&&!cmd&&e.code==='Digit1'){e.preventDefault();setPositionTab("layers");setInspectorOpen(true);setPanelOpen(false);return;}
+      if(e.code==='Space'&&!cmd){e.preventDefault();studio?.setPanMode(true);return;}
+      if(cmd&&e.altKey&&e.key.toLowerCase()==='c'){e.preventDefault();studio?.copyStyle();return;}
+      if(cmd&&e.altKey&&e.key.toLowerCase()==='v'){e.preventDefault();studio?.pasteStyle();return;}
+      if(cmd&&e.key.toLowerCase()==='k'){e.preventDefault();if(!studio?.getSelected()){notify('Select an element first.');return;}setElementDialog({kind:e.altKey?'component':'link',value:e.altKey?(selected?.name||'Component'):(selected?.metadata?.link||'')});return;}
+      if(cmd&&e.altKey&&e.key.toLowerCase()==='n'){e.preventDefault();setCommentsOpen(true);return;}
+      if(cmd&&['=','+','-'].includes(e.key)){e.preventDefault();studio?.setZoom((studio.getState().zoom||.5)*(e.key==='-'?1/1.1:1.1));return;}
+      if(cmd&&e.key==='0'){e.preventDefault();studio?.fit();return;}
+      if(cmd&&e.shiftKey&&e.key.toLowerCase()==='l'){e.preventDefault();const cur=studio?.getSelected();if(cur)studio?.setLayerLocked(cur.id,!cur.locked);return;}
+      if(cmd&&['b','i','u'].includes(e.key.toLowerCase())&&selected?.type==='text'){e.preventDefault();const k=e.key.toLowerCase();studio?.updateSelected(k==='b'?{fontWeight:selected.fontWeight==='bold'||selected.fontWeight===700?400:700}:k==='i'?{fontStyle:selected.fontStyle==='italic'?'normal':'italic'}:{underline:!selected.underline});return;}
+
+      if (desktop && cmd && !e.altKey && ["s","o","z","y","c","x","v","a","n","=","+","-","0",","].includes(e.key.toLowerCase())) return;
       if (cmd && e.key.toLowerCase() === "s") {
         e.preventDefault();
         void save();
       } else if (cmd && e.key.toLowerCase() === "o") {
         e.preventDefault();
         void open();
-      } else if (cmd && e.key.toLowerCase() === "z") {
+      } else if(cmd&&e.key.toLowerCase()==="y"){e.preventDefault();void engine.current?.redo();}
+      else if(cmd&&(e.key==="Delete"||e.key==="Backspace")){e.preventDefault();if(engine.current!.getState().pages.length>1)void engine.current?.deletePage();}
+      else if (cmd && e.key.toLowerCase() === "z") {
         e.preventDefault();
         e.shiftKey ? engine.current?.redo() : engine.current?.undo();
+      } else if (cmd && e.key.toLowerCase() === "c") {
+        e.preventDefault(); void copyCanvas();
+      } else if (cmd && e.key.toLowerCase() === "x") {
+        e.preventDefault(); void copyCanvas(true);
+      } else if (cmd && e.key.toLowerCase() === "v") {
+        // Browser paste events decide between clipboard images and copied objects.
+      } else if (cmd && e.key.toLowerCase() === "a") {
+        e.preventDefault();engine.current?.selectAll();
       } else if (cmd && e.key.toLowerCase() === "d") {
         e.preventDefault();
         engine.current?.duplicate();
       } else if ((e.key === "Backspace" || e.key === "Delete") && !e.metaKey) {
         e.preventDefault();
         engine.current?.remove();
+      } else if (cmd && e.key.toLowerCase()==="g") {
+        e.preventDefault();if(e.shiftKey)engine.current?.ungroup();else engine.current?.group();
+      } else if (cmd && ["[","]"].includes(e.key)) {
+        e.preventDefault();engine.current?.arrange(e.key==="["?(e.altKey?"back":"down"):(e.altKey?"front":"up"));
+      } else if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)) {
+        if(studio?.getSelected()){e.preventDefault();const step=e.shiftKey?10:1;studio.nudge(e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0,e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0);}
       } else if (e.key === "Escape") {
-        setModal(null);
+        setModal(null);engine.current?.deselect();
         setDrawing(false);
         engine.current?.setDrawing(false);
-      } else if (e.key === "t" && !cmd) engine.current?.addText("heading");
+      } else if (e.key === "Enter" && cmd) {e.preventDefault();void engine.current?.addPage();}
+      else if(e.key==="Enter"&&!cmd){e.preventDefault();engine.current?.editSelectedText();}
+      else if (e.key === "t" && !cmd) engine.current?.addText("heading");
+      else if(e.key==="r"&&!cmd)engine.current?.addShape("rect");
+      else if(e.key==="c"&&!cmd)engine.current?.addShape("circle");
+      else if(e.key==="l"&&!cmd)engine.current?.addShape("line");
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
-  }, [save, open]);
+    const keyup=(e:KeyboardEvent)=>{if(e.code==='Space')engine.current?.setPanMode(false);if(e.key.startsWith('Arrow'))engine.current?.flushPendingChanges();};
+    const blur=()=>{engine.current?.setPanMode(false);engine.current?.flushPendingChanges();};
+    window.addEventListener("keydown",key);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
+    return()=>{window.removeEventListener('keydown',key);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
+  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify]);
   useEffect(() => {
     if (!desktop) return;
     return desktop.onMenu((action) => {
+      if((!ready||switchingProject.current)&&!["new","open","settings","save","save-as"].includes(action))return;
       if (action === "save") void save();
       else if (action === "open") void open();
       else if (action === "new") void newDesign();
@@ -537,32 +639,45 @@ export default function App() {
         nativeSavedId.current = null;
         void save();
       } else if (action === "zoom-in")
-        engine.current?.setZoom(state.zoom + 0.1);
-      else if (action === "zoom-out") engine.current?.setZoom(state.zoom - 0.1);
+        engine.current?.setZoom(engine.current.getState().zoom * 1.1);
+      else if (action === "zoom-out") engine.current?.setZoom(engine.current.getState().zoom / 1.1);
       else if (action === "fit") engine.current?.fit();
+      else if (action === "copy") void copyCanvas();
+      else if (action === "cut") void copyCanvas(true);
+      else if (action === "paste") void pasteCanvas();
+      else if (action === "select-all") engine.current?.selectAll();
       else if (action === "settings") setModal("settings");
-      else if (action === "undo") engine.current?.undo();
-      else if (action === "redo") engine.current?.redo();
+      else if (action === "undo") { if(mode==="document"&&document.activeElement?.closest('[contenteditable="true"]')) document.execCommand("undo"); else void engine.current?.undo(); }
+      else if (action === "redo") { if(mode==="document"&&document.activeElement?.closest('[contenteditable="true"]')) document.execCommand("redo"); else void engine.current?.redo(); }
     });
-  }, [save, open, newDesign]);
+  }, [save,open,newDesign,mode,copyCanvas,pasteCanvas,ready]);
   const choosePanel = (p: Panel) => {
-    setPanel(p);
+    setPanel(p);setPanelOpen(true);setInspectorOpen(false);
+    if(p==="projects")void listDesignSummaries().then(setLibrary);
+    if(p==="uploads")void listAssets(["image","logo"]).then(a=>setUploads(a.map(v=>v.data)));
+    if(p==="components")void listAssets(["component"]).then(setComponents);
+    if (p === "video") setMode("video");
+    if (p === "documents") setMode("document");
+    if (p === "sheets") setMode("sheet");
     setSearch("");
     if (p !== "draw") {
       setDrawing(false);
       engine.current?.setDrawing(false);
     }
   };
-  const useTemplate = (id: string, templateName: string) =>
-    void work("Setting up your canvas", async () => {
-      activeId.current = crypto.randomUUID();
-      await engine.current!.loadTemplate(id);
-      setName(templateName);
-    });
-  const uploadFiles = async (files: FileList | null) => {
+  const useTemplate = useCallback((id:string,templateName:string)=>void work('Applying template',async()=>{
+    if(home){if(!await switchProject(async()=>({id:crypto.randomUUID(),name:templateName,load:studio=>studio.loadTemplate(id)})))return;}else{const template=TEMPLATES.find(t=>t.id===id);if(template){const w=state.width,h=state.height;await engine.current!.insertDesign({...template,width:w,height:h,elements:template.elements.map(e=>({...e,x:e.x*w/template.width,y:e.y*h/template.height,width:(e.width||200)*w/template.width,height:(e.height||200)*h/template.height,fontSize:e.fontSize?e.fontSize*Math.min(w/template.width,h/template.height):undefined}))});}}
+    setMode('design');contentRef.current=undefined;setHome(false);
+  }),[work,home,state.width,state.height,switchProject]);
+  const uploadFiles = async (files: FileList | File[] | null) => {
     if (!files) return;
     await work("Adding your images", async () => {
       for (const file of Array.from(files)) {
+        if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf")){if(await switchProject(async()=>({id:crypto.randomUUID(),name:file.name.replace(/\.pdf$/i,""),load:studio=>importPDF(file,studio,setBusy)})))notify("PDF pages imported for annotation.");continue;}
+        if (file.type === "image/svg+xml" || file.name.endsWith(".svg")) {
+          if (file.size > 5 * 1024 * 1024) throw new Error("Choose an SVG smaller than 5 MB.");
+          await engine.current!.addSVG(await file.text()); continue;
+        }
         if (
           !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
             file.type,
@@ -580,7 +695,8 @@ export default function App() {
           reader.readAsDataURL(file);
         });
         setUploads((s) => [data, ...s]);
-        await engine.current!.addImage(data);
+        await storeAsset({id:crypto.randomUUID(),name:file.name,data,kind:"image",updated:Date.now()});
+        if(replaceImageRef.current&&engine.current?.getSelected()?.type==="image"){await engine.current.replaceSelectedImage(data);replaceImageRef.current=false;}else await engine.current!.addImage(data);
       }
     });
   };
@@ -597,63 +713,20 @@ export default function App() {
       await engine.current!.replaceSelectedImage(data);
       notify("Background removed. Your image now has true transparency.");
     });
-  const runAI = () =>
-    void work(
-      aiKind === "design"
-        ? "Gemini is designing your idea"
-        : aiKind === "copy"
-          ? "Gemini is writing"
-          : "Gemini is creating your image",
-      async () => {
-        if (!desktop)
-          throw new Error("Open the Visro Mac app to connect your Gemini key.");
-        if (!settings.hasKey) {
-          setModal("settings");
-          throw new Error("Add your Gemini key in settings first.");
-        }
-        if (!prompt.trim())
-          throw new Error("Describe what you want to create.");
-        let image: string | undefined;
-        if (aiKind === "edit") {
-          if (selected?.type !== "image")
-            throw new Error("Select an image on the canvas to edit.");
-          image = await engine.current!.selectedImageDataURL();
-        }
-        const result = await desktop.runAI({
-          kind: aiKind,
-          prompt,
-          width: state.width,
-          height: state.height,
-          ...(image ? { image } : {}),
-        });
-        setAIResult(result);
-      },
-    );
-  const applyAI = () =>
-    void work("Adding your creation", async () => {
-      if (aiResult?.design) {
-        await engine.current!.addPage();
-        await engine.current!.insertDesign(
-          aiResult.design as unknown as Parameters<
-            StudioEditor["insertDesign"]
-          >[0],
-        );
-        notify("AI design added as a new editable page.");
-      } else if (aiResult?.image) {
-        await engine.current!.addImage(aiResult.image);
-        setUploads((s) => [aiResult.image!, ...s]);
-        notify("Image added to your canvas.");
-      } else if (aiResult?.text) {
-        engine.current!.addText("body");
-        engine.current!.updateSelected({ text: aiResult.text });
-        notify("Writing added to your canvas.");
-      }
-    });
   const exportDesign = () =>
     void work("Exporting your design", async () => {
-      if (exportFormat === "pdf") {
+      if(mode==="document"&&exportFormat==="pdf"){if(!desktop)throw new Error("Export document PDFs from the Mac app.");const html=sanitizeDocument(document.querySelector(".document-paper")?.innerHTML||String(engine.current?.getProjectContent()||""));const result=await desktop.printDocument({name:safeName(name),html:`<html><meta charset="utf-8"><body>${html}</body></html>`});if(!result)return;}
+      else if(exportFormat === "pptx") { await exportPowerPoint(safeName(name),engine.current!); }
+      else if (exportFormat === "html") {
+        const pages = await engine.current!.exportPages(1);
+        const project=engine.current!.serialize(name);
+        const html='<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>'+escapeHTML(name)+'</title><style>*{box-sizing:border-box}body{margin:0;background:#fff}main{max-width:1440px;margin:auto}section{position:relative}img{width:100%;display:block}.design-link{position:absolute;inset:0}.design-link:focus-visible{outline:3px solid #8b3dff}</style></head><body><main>'+pages.map(p=>'<section id="'+p.id+'"><img src="'+p.dataURL+'" alt="'+escapeHTML(p.name)+'">'+pageLinks(project,p.id).map(link=>'<a class="design-link" href="'+escapeHTML(link.url)+'" aria-label="'+escapeHTML(link.label)+'" style="clip-path:polygon('+link.polygon+')"'+(link.url.startsWith('http')?' target="_blank" rel="noopener noreferrer"':'')+'></a>').join('')+'</section>').join('')+'</main></body></html>';
+
+        await saveExport(safeName(name), "html", 'data:text/html;base64,'+btoa(Array.from(new TextEncoder().encode(html),b=>String.fromCharCode(b)).join("")));
+      } else if (exportFormat === "pdf") {
         const { jsPDF } = await import("jspdf");
         const pages = await engine.current!.exportPages(1.5);
+        const project=engine.current!.serialize(name);
         const first = pages[0];
         const pdf = new jsPDF({
           orientation: first.width > first.height ? "landscape" : "portrait",
@@ -679,6 +752,7 @@ export default function App() {
             undefined,
             "FAST",
           );
+          for(const link of pageLinks(project,page.id)){if(link.url.startsWith('http')||link.url.startsWith('mailto:'))pdf.link(link.left,link.top,link.width,link.height,{url:link.url});}
         }
         await saveExport(
           safeName(name),
@@ -698,7 +772,7 @@ export default function App() {
     });
   const showLibrary = () =>
     void work("Opening your projects", async () => {
-      setLibrary(await listDesigns());
+      setLibrary(await listDesignSummaries());
       setModal("library");
     });
   const showPresent = () =>
@@ -715,6 +789,12 @@ export default function App() {
       );
       setModal("present");
     });
+  useEffect(() => {
+    if(modal!=="present"||!presentAuto)return;
+    const duration=state.pages[presentIndex]?.metadata?.duration||5;
+    const timer=setTimeout(()=>{if(presentIndex<state.pages.length-1)void movePresent(1);else setPresentAuto(false);},duration*1000);
+    return()=>clearTimeout(timer);
+  },[modal,presentAuto,presentIndex,state.pages]);
   const movePresent = async (direction: number) => {
     const index = Math.max(
       0,
@@ -730,31 +810,84 @@ export default function App() {
       }),
     );
   };
+  const goHome = () => void work("Saving your workspace", async () => {
+    const studio=await waitForStableStudio();studio.flushPendingChanges();
+    const id=activeId.current,projectName=nameRef.current,generation=projectGeneration.current;
+    const project=studio.serialize(projectName);
+    const thumbnail=await studio.exportImage({format:"jpeg",scale:0.22,quality:0.7});
+    if(generation!==projectGeneration.current||id!==activeId.current||engine.current!==studio)return;
+    await storeDesign({id,name:projectName,updated:Date.now(),project,thumbnail});
+    if(generation===projectGeneration.current&&id===activeId.current){setHomeRefresh(v=>v+1);setHome(true);}
+  });
+  const openDesign = (d:SavedDesign) => void work("Opening design", async () => {
+    await switchProject(async()=>{const record=await getDesign(d.id);if(!record)throw new Error("This project is no longer available.");return{id:d.id,name:record.name,project:record.project as Parameters<StudioEditor['loadProject']>[0]};});
+  });
+  const createFormat = (w:number,h:number,title:string) => void work("Creating design", async () => {
+    if(title==="Custom size"){await newDesign();setSize({w,h});setModal("resize");return;}
+    const doc=createProject(title.toLowerCase().startsWith("untitled")?title:`Untitled ${title.toLowerCase()}`,w,h,"#ffffff");
+    doc.kind=title==="Document"?"document":title==="Sheet"?"sheet":title==="Video"?"video":title==="Website"?"website":title==="Whiteboard"?"whiteboard":"design";
+    await switchProject(async()=>({id:crypto.randomUUID(),name:doc.name,project:doc}));
+  });
+  const importFonts = async (files:FileList|null) => void work("Loading font", async () => {
+    for(const file of Array.from(files||[])){if(file.size>15*1024*1024)throw new Error("Choose a font smaller than 15 MB.");const family=file.name.replace(/\.[^.]+$/,"").replace(/[^a-zA-Z0-9 _-]/g,"");const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(new Error("Could not read font."));r.readAsDataURL(file);});const font=new FontFace(family,`url(${data})`);await font.load();document.fonts.add(font);await storeAsset({id:crypto.randomUUID(),name:family,data,kind:"font",updated:Date.now()});setCustomFonts(f=>[...new Set([...f,family])]);if(selected?.type==="text")update({fontFamily:family});notify(`${family} is ready to use.`);}
+  });
   const update = (changes: Parameters<StudioEditor["updateSelected"]>[0]) =>
     engine.current?.updateSelected(changes);
+  const templateCards=useMemo(()=>TEMPLATES.filter(
+                  (t) =>
+                    !search ||
+                    `${t.name} ${t.category}`
+                      .toLowerCase()
+                      .includes(search.toLowerCase()),
+                ).map((t) => (
+                  <button
+                    className="template-card"
+                    key={t.id}
+                    onClick={() => useTemplate(t.id, t.name)}
+                  >
+                    <TemplatePreview
+                      template={t}
+                      index={TEMPLATES.indexOf(t)}
+                    />
+                    <div className="template-meta">
+                      <span>{t.name}</span>
+                      <ArrowUpRight size={13} />
+                    </div>
+                    <small>
+                      {t.width} × {t.height}
+                    </small>
+                  </button>
+                )),[search,useTemplate]);
   const nav = [
-    { id: "templates" as const, label: "Design", Icon: LayoutTemplate },
-    { id: "elements" as const, label: "Elements", Icon: Shapes },
-    { id: "text" as const, label: "Text", Icon: Type },
-    { id: "uploads" as const, label: "Uploads", Icon: Upload },
-    { id: "ai" as const, label: "Visro AI", Icon: Sparkles },
-    { id: "brand" as const, label: "Brand", Icon: Palette },
-    { id: "draw" as const, label: "Draw", Icon: Paintbrush },
+    {id:'templates' as const,label:'Templates',Icon:TemplatesIcon},{id:'elements' as const,label:'Elements',Icon:ElementsIcon},{id:'text' as const,label:'Text',Icon:TextIcon},{id:'brand' as const,label:'Brand',Icon:BrandIcon},{id:'uploads' as const,label:'Uploads',Icon:UploadsIcon},{id:'draw' as const,label:'Tools',Icon:ToolsIcon},{id:'projects' as const,label:'Projects',Icon:ProjectsIcon},{id:'apps' as const,label:'Apps',Icon:AppsIcon},{id:'components' as const,label:'Components',Icon:ComponentsIcon},{id:'audio' as const,label:'Audio',Icon:AudioIcon},{id:'background' as const,label:'Background',Icon:BackgroundIcon},{id:'charts' as const,label:'Charts',Icon:ChartsIcon},
   ];
+  const bounds=selected?engine.current?.getSelectionBounds():null;
+  const onElementAction=(action:ElementAction)=>{
+    const studio=engine.current,cur=studio?.getSelected();if(!studio)return;
+    if(['front','back','up','down'].includes(action))studio.arrange(action as 'front'|'back'|'up'|'down');
+    else if(['top','left','middle','center','bottom','right'].includes(action))studio.align(action as 'top'|'left'|'middle'|'center'|'bottom'|'right');
+    else if(action==='copy')void copyCanvas();else if(action==='paste')void pasteCanvas();else if(action==='copy-style')studio.copyStyle();else if(action==='paste-style')studio.pasteStyle();
+    else if(action==='duplicate')void studio.duplicate();else if(action==='delete')studio.remove();else if(action==='group')studio.group();else if(action==='ungroup')studio.ungroup();
+    else if(action==='lock'||action==='unlock'){if(cur)studio.setLayerLocked(cur.id,action==='lock');}
+    else if(action==='show-layers'){setPositionTab("layers");setInspectorOpen(true);setPanelOpen(false);}
+    else if(action==='comment')setCommentsOpen(true);
+    else if(action==='component')setElementDialog({kind:'component',value:cur?.name||'Component'});
+    else if(action==='link')setElementDialog({kind:'link',value:cur?.metadata?.link||''});
+    else if(action==='alt')setElementDialog({kind:'alt',value:cur?.metadata?.altText||''});
+    else if(action==='timing'){choosePanel('tools');setToolTab('animate');}
+    else if(action==='write'||action==='translate'){setAiKind(action==='write'?'rewrite':'translate');choosePanel('ai');}
+    else if(action==='crop')openCrop();
+    else if(action==='background'&&cur?.type==='image'){studio.removeFrame();studio.cropImage(state.width/state.height);studio.updateSelected({left:0,top:0,width:state.width,height:state.height});studio.arrange('back');}
+  };
   return (
-    <div className="studio-app">
+    <div className={`studio-app ${desktop?"native-desktop":""} ${inspectorOpen?"inspector-open position-open":panelOpen?"panel-open":""} ${commentsOpen?"comments-open":""} ${notesOpen?"notes-open":""} ${home?"home-open":""}`}>
+      {home && <Home dark={dark} onTheme={toggleTheme} onSettings={()=>setModal("settings")} refresh={homeRefresh} onOpen={openDesign} onCreate={createFormat} onTemplate={useTemplate} onImport={()=>projectRef.current?.click()} onNavigate={p=>{setHome(false);choosePanel(p);}}/>}
+      <div className="desktop-tabs"><button className="desktop-home-tab" aria-label="Home" onClick={goHome}><StudioIcon name="home" size={22}/></button><button className="desktop-tab" onClick={()=>setHome(false)}><StudioIcon name={mode==='document'?'document':mode==='sheet'?'sheet':mode==='video'?'video':'presentation'} size={20}/><span>{name} — Visro</span></button><button className="desktop-new-tab" aria-label="New design" onClick={()=>void newDesign()}><Plus size={22}/></button></div>
       <header className="topbar">
-        <button
-          className="wordmark"
-          onClick={() => void showLibrary()}
-          title="Your projects"
-        >
-          <span className="logo-mark">v</span>
-          <span>
-            visro<span className="wordmark-dot">.</span>
-          </span>
-        </button>
-        <span className="top-divider" />
+        <div className="top-menu-wrap"><button className="quiet-button top-menu" onClick={()=>setFileMenu(!fileMenu)}>File <ChevronDown size={13}/></button>{fileMenu&&<div className="file-menu">{[["New design",()=>void newDesign()],["Open project",()=>void open()],["Save project",()=>void save()],["Your projects",goHome],["Version history",()=>{choosePanel("tools");setToolTab("versions");}],["Settings",()=>setModal("settings")]].map(([label,fn])=><button key={String(label)} onClick={()=>{setFileMenu(false);(fn as ()=>void)();}}>{String(label)}</button>)}</div>}</div>
+        <button className="quiet-button top-menu" onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>Resize <ChevronDown size={13}/></button>
+        <IconButton title="Undo (⌘Z)" disabled={!state.canUndo} onClick={()=>void engine.current?.undo()}><Undo2 size={18}/></IconButton>
+        <IconButton title="Redo (⌘⇧Z)" disabled={!state.canRedo} onClick={()=>void engine.current?.redo()}><Redo2 size={18}/></IconButton>
         <div className="document-title">
           <input
             aria-label="Design name"
@@ -778,49 +911,19 @@ export default function App() {
             )}
           </span>
         </div>
-        <div className="top-actions">
-          <button className="quiet-button" onClick={() => void open()}>
-            <FolderOpen size={16} />
-            <span>Open</span>
-          </button>
-          <IconButton title="Save project (⌘S)" onClick={() => void save()}>
-            <Save size={17} />
-          </IconButton>
-          <IconButton
-            title="Gemini settings"
-            onClick={() => {
-              setSettingsError("");
-              setModal("settings");
-            }}
-          >
-            <Settings2 size={18} />
-          </IconButton>
-          <button
-            className="quiet-button present-button"
-            onClick={() => void showPresent()}
-          >
-            <Presentation size={16} />
-            Present
-          </button>
-          <button className="primary-button" onClick={() => setModal("export")}>
-            <Download size={16} />
-            Export
-            <ChevronDown size={13} />
-          </button>
-          <span className="avatar">PS</span>
-        </div>
+        <div className="top-actions"><button className="avatar" title="Settings" aria-label="Settings" onClick={()=>setModal("settings")}>PS</button><IconButton title="View all comments" active={commentsOpen} onClick={()=>setCommentsOpen(!commentsOpen)}><StudioIcon name="comments" size={24}/></IconButton><button className="quiet-button share-button" onClick={()=>setModal('export')}>Share</button><button className="primary-button" onClick={()=>void showPresent()}><Presentation size={19}/>Present</button></div>
       </header>
       <div className="workspace">
         <nav className="tool-rail" aria-label="Editor tools">
           {nav.map(({ id, label, Icon }) => (
             <button
               key={id}
-              className={`rail-button ${panel === id ? "selected" : ""}`}
-              onClick={() => choosePanel(id)}
+              className={`rail-button ${panel === id && panelOpen ? "selected" : ""}`}
+              onClick={() => panel===id&&panelOpen?setPanelOpen(false):choosePanel(id)}
             >
               <Icon size={22} strokeWidth={1.7} />
               <span>{label}</span>
-              {id === "ai" && <span className="new-dot" />}
+
             </button>
           ))}
           <div className="rail-bottom">
@@ -832,31 +935,27 @@ export default function App() {
             </IconButton>
           </div>
         </nav>
-        <aside className="asset-panel">
+        <aside className={`asset-panel ${!panelOpen||inspectorOpen?"hidden":""}`}>
           <div className="panel-heading">
             <div>
-              <span className="eyebrow">YOUR CREATIVE SPACE</span>
+
               <h2>
                 {panel === "templates"
-                  ? "Start with a spark."
+                  ? "Templates"
                   : panel === "elements"
-                    ? "Make it yours."
+                    ? "Elements"
                     : panel === "text"
-                      ? "Words with character."
+                      ? "Text"
                       : panel === "uploads"
-                        ? "Your visual world."
+                        ? "Uploads"
                         : panel === "ai"
-                          ? "Meet your co-creator."
+                          ? "Visro AI"
                           : panel === "brand"
-                            ? "Distinctly you."
-                            : "Leave your mark."}
+                            ? "Brand"
+                            : panel === "projects" ? "Projects" : panel === "apps" ? "Apps" : panel === "components" ? "Components" : panel === "audio" ? "Audio" : panel === "background" ? "Background" : panel === "charts" ? "Charts" : panel === "image" ? "Edit image" : panel === "color" ? "Colour" : panel === "font" ? "Font" : panel === "tools" ? toolTab[0].toUpperCase()+toolTab.slice(1) : panel === "video" ? "Video" : panel === "documents" ? "Documents" : panel === "sheets" ? "Sheets" : "Draw"}
               </h2>
             </div>
-            {panel === "ai" ? (
-              <Sparkles className="accent-icon" size={23} />
-            ) : (
-              <span className="tiny-star">✳</span>
-            )}
+            <button className="icon-button" aria-label="Close side panel" onClick={()=>setPanelOpen(false)}><X size={20}/></button>
           </div>
           {(panel === "templates" || panel === "elements") && (
             <label className="search-box">
@@ -865,8 +964,8 @@ export default function App() {
                 aria-label="Search templates or elements"
                 placeholder={
                   panel === "templates"
-                    ? "Find your starting point"
-                    : "Search shapes"
+                    ? "Search templates"
+                    : "Search elements"
                 }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -893,7 +992,7 @@ export default function App() {
                 </button>
               </div>
               <div className="section-label">
-                <span>Curated beginnings</span>
+                <span>Templates</span>
                 <span>
                   {
                     TEMPLATES.filter(
@@ -907,31 +1006,7 @@ export default function App() {
                 </span>
               </div>
               <div className="template-grid">
-                {TEMPLATES.filter(
-                  (t) =>
-                    !search ||
-                    `${t.name} ${t.category}`
-                      .toLowerCase()
-                      .includes(search.toLowerCase()),
-                ).map((t) => (
-                  <button
-                    className="template-card"
-                    key={t.id}
-                    onClick={() => useTemplate(t.id, t.name)}
-                  >
-                    <TemplatePreview
-                      template={t}
-                      index={TEMPLATES.indexOf(t)}
-                    />
-                    <div className="template-meta">
-                      <span>{t.name}</span>
-                      <ArrowUpRight size={13} />
-                    </div>
-                    <small>
-                      {t.width} × {t.height}
-                    </small>
-                  </button>
-                ))}
+                {templateCards}
               </div>
               <button
                 className="blank-card"
@@ -944,20 +1019,11 @@ export default function App() {
                 <span>Create at your own size</span>
                 <ArrowUpRight size={14} />
               </button>
-              <div className="local-note">
-                <span className="local-note-icon">
-                  <Lock size={14} />
-                </span>
-                <div>
-                  <strong>A space that's yours.</strong>
-                  <span>Projects stay on this Mac. Create freely.</span>
-                </div>
-              </div>
             </>
           )}
           {panel === "elements" && (
             <>
-              <div className="section-label">Shapes & lines</div>
+              <div className="section-label">Shapes</div>
               <div className="shape-grid">
                 {[
                   { type: "rect", name: "Rectangle", Icon: Square },
@@ -965,6 +1031,7 @@ export default function App() {
                   { type: "triangle", name: "Triangle", Icon: Triangle },
                   { type: "star", name: "Star", Icon: Star },
                   { type: "line", name: "Line", Icon: Minus },
+                  {type:"ellipse",name:"Ellipse",Icon:Circle},{type:"diamond",name:"Diamond",Icon:Square},{type:"pentagon",name:"Pentagon",Icon:Shapes},{type:"hexagon",name:"Hexagon",Icon:Shapes},{type:"arrow",name:"Arrow",Icon:ArrowUpRight},{type:"heart",name:"Heart",Icon:Shapes},{type:"blob",name:"Blob",Icon:Circle},
                 ]
                   .filter((v) =>
                     v.name.toLowerCase().includes(search.toLowerCase()),
@@ -973,6 +1040,7 @@ export default function App() {
                     <button
                       className="shape-card"
                       key={type}
+                      draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"shape",type}))}
                       onClick={() =>
                         engine.current?.addShape(
                           type as Parameters<StudioEditor["addShape"]>[0],
@@ -984,45 +1052,7 @@ export default function App() {
                     </button>
                   ))}
               </div>
-              <div className="section-label">Quick compositions</div>
-              <button
-                className="composition-card"
-                onClick={() => {
-                  engine.current?.addShape("circle");
-                  update({ fill: "#f8c8dc", width: 440, height: 440 });
-                }}
-              >
-                <span className="composition-orb" />
-                <span>
-                  Soft circle<span>A little colour, a lot of character.</span>
-                </span>
-                <Plus size={16} />
-              </button>
-              <button
-                className="composition-card"
-                onClick={() => {
-                  engine.current?.addShape("rect");
-                  update({
-                    fill: "#ed704d",
-                    width: 600,
-                    height: 90,
-                    angle: -8,
-                  });
-                }}
-              >
-                <span className="composition-line" />
-                <span>
-                  Statement strip<span>Make a headline pop.</span>
-                </span>
-                <Plus size={16} />
-              </button>
-              <div className="help-card">
-                <MousePointer2 size={19} />
-                <p>
-                  Drag to move. Pull a corner to scale. Use the right panel for
-                  precise control.
-                </p>
-              </div>
+              <div className="element-category-grid">{(['graphics','frames','charts','tables'] as ToolTab[]).map(t=><button className="composition-card" key={t} onClick={()=>{choosePanel('tools');setToolTab(t);}}><StudioIcon name={t==='charts'?'charts':t==='tables'?'sheet':t==='frames'?'background':'elements'} size={24}/>{t[0].toUpperCase()+t.slice(1)}<ChevronRight size={18}/></button>)}</div>
             </>
           )}
           {panel === "text" && (
@@ -1034,26 +1064,28 @@ export default function App() {
                 <Plus size={17} />
                 Add a text box
               </button>
-              <div className="section-label">Type something good</div>
+              <div className="section-label">Default text styles</div>
               <button
                 className="text-preset heading"
+                draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"text",role:"heading"}))}
                 onClick={() => engine.current?.addText("heading")}
               >
-                A big idea.
+                Add a heading
                 <Plus size={18} />
               </button>
               <button
                 className="text-preset subheading"
+                draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"text",role:"subheading"}))}
                 onClick={() => engine.current?.addText("subheading")}
               >
-                Give it a little context.
+                Add a subheading
                 <Plus size={17} />
               </button>
               <button
                 className="text-preset body"
                 onClick={() => engine.current?.addText("body")}
               >
-                And tell your story, one line at a time.
+                Add a little bit of body text
                 <Plus size={16} />
               </button>
               <div className="section-label">Font pairings</div>
@@ -1109,11 +1141,11 @@ export default function App() {
                 onClick={() => uploadRef.current?.click()}
               >
                 <Upload size={17} />
-                Upload images
+                Upload files
               </button>
               <div
                 className="dropzone"
-                onDragOver={(e) => e.preventDefault()}
+            onDragOver={(e) => e.preventDefault()}
                 onDrop={(e) => {
                   e.preventDefault();
                   void uploadFiles(e.dataTransfer.files);
@@ -1126,7 +1158,7 @@ export default function App() {
                 }}
               >
                 <ImageIcon size={32} />
-                <strong>Your images belong here.</strong>
+                <strong>Upload images</strong>
                 <span>
                   Drop an image, or click to browse.
                   <br />
@@ -1135,11 +1167,12 @@ export default function App() {
               </div>
               {uploads.length > 0 && (
                 <>
-                  <div className="section-label">This session</div>
+                  <div className="section-label">Images</div>
                   <div className="upload-grid">
                     {uploads.map((src, i) => (
                       <button
                         key={i}
+                        draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"image",src}))}
                         onClick={() => void engine.current?.addImage(src)}
                       >
                         <img src={src} alt={`Uploaded image ${i + 1}`} />
@@ -1166,260 +1199,8 @@ export default function App() {
               </div>
             </>
           )}
-          {panel === "ai" && (
-            <>
-              <div className="ai-banner">
-                <span className="ai-orb">✳</span>
-                <div>
-                  <strong>Your ideas. A little AI magic.</strong>
-                  <span>Powered by your own Gemini key.</span>
-                </div>
-              </div>
-              <div className="ai-tabs">
-                {(["design", "image", "edit", "copy"] as const).map((k) => (
-                  <button
-                    key={k}
-                    className={aiKind === k ? "active" : ""}
-                    onClick={() => {
-                      setAiKind(k);
-                      setAIResult(null);
-                    }}
-                  >
-                    {k === "copy" ? "Write" : k[0].toUpperCase() + k.slice(1)}
-                  </button>
-                ))}
-              </div>
-              <label className="prompt-label">
-                {aiKind === "design"
-                  ? "What are we making?"
-                  : aiKind === "image"
-                    ? "Picture something new."
-                    : aiKind === "edit"
-                      ? "What would you change?"
-                      : "What should it say?"}
-              </label>
-              <textarea
-                className="ai-prompt"
-                aria-label="AI prompt"
-                placeholder={
-                  aiKind === "design"
-                    ? "A warm, minimal coffee shop Instagram post. Big serif headline, earthy colours, lots of breathing room…"
-                    : aiKind === "image"
-                      ? "A cinematic photo of a ceramic coffee cup, morning light, terracotta backdrop…"
-                      : aiKind === "edit"
-                        ? "Replace the background with a soft peach studio backdrop. Keep the subject…"
-                        : "Write a short, playful headline for a new sustainable coffee brand…"
-                }
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-              />
-              {aiKind === "edit" && (
-                <div className="small-hint">
-                  <ImageIcon size={14} />
-                  {selected?.type === "image"
-                    ? "Selected image will be sent to Gemini."
-                    : "Select an image on your canvas first."}
-                </div>
-              )}
-              <button
-                className="full-button coral"
-                disabled={!!busy || !prompt.trim()}
-                onClick={runAI}
-              >
-                <Sparkles size={17} />
-                {aiKind === "design"
-                  ? "Generate editable design"
-                  : aiKind === "image"
-                    ? "Generate image"
-                    : aiKind === "edit"
-                      ? "Edit selected image"
-                      : "Write with Gemini"}
-              </button>
-              <div className="ai-suggestions">
-                {(aiKind === "design"
-                  ? [
-                      "A bold product launch",
-                      "A presentation cover",
-                      "A restaurant menu",
-                    ]
-                  : aiKind === "copy"
-                    ? [
-                        "Make it shorter",
-                        "Write 5 headlines",
-                        "Find a brand tagline",
-                      ]
-                    : aiKind === "edit"
-                      ? [
-                          "Remove an object",
-                          "Change the background",
-                          "Restyle as a painting",
-                        ]
-                      : [
-                          "Editorial still life",
-                          "Dreamy landscape",
-                          "Minimal product shot",
-                        ]
-                ).map((s) => (
-                  <button key={s} onClick={() => setPrompt(s)}>
-                    {s}
-                    <ArrowUpRight size={12} />
-                  </button>
-                ))}
-              </div>
-              {aiResult && (
-                <div className="ai-result">
-                  <div className="section-label">
-                    <span>Your creation</span>
-                    <CheckCircle2 size={15} />
-                  </div>
-                  {aiResult.image && (
-                    <img src={aiResult.image} alt="Gemini generated result" />
-                  )}
-                  {aiResult.design && (
-                    <p>
-                      <strong>{aiResult.design.name}</strong>
-                      <br />
-                      {aiResult.design.elements.length} editable elements ·{" "}
-                      {aiResult.design.width} × {aiResult.design.height}
-                    </p>
-                  )}
-                  {aiResult.text && (
-                    <textarea
-                      aria-label="Generated writing"
-                      value={aiResult.text}
-                      onChange={(e) =>
-                        setAIResult({ ...aiResult, text: e.target.value })
-                      }
-                    />
-                  )}
-                  <button className="full-button dark" onClick={applyAI}>
-                    <Plus size={16} />
-                    {aiResult.design ? "Add as a new page" : "Add to canvas"}
-                  </button>
-                  {aiResult.text && selected?.type === "text" && (
-                    <button
-                      className="full-button"
-                      onClick={() => update({ text: aiResult.text })}
-                    >
-                      Replace selected text
-                    </button>
-                  )}
-                  {aiResult.image && selected?.type === "image" && (
-                    <button
-                      className="full-button"
-                      onClick={() =>
-                        void engine.current?.replaceSelectedImage(
-                          aiResult.image!,
-                        )
-                      }
-                    >
-                      Replace selected image
-                    </button>
-                  )}
-                </div>
-              )}
-              <button
-                className="key-status"
-                onClick={() => setModal("settings")}
-              >
-                <span
-                  className={
-                    settings.hasKey ? "connected-dot" : "disconnected-dot"
-                  }
-                />
-                <span>
-                  {settings.hasKey
-                    ? "Gemini key saved"
-                    : "Connect your Gemini key"}
-                </span>
-                <ArrowUpRight size={14} />
-              </button>
-              <p className="privacy-copy">
-                Only AI prompts and images you choose to edit are sent to
-                Google. API usage is billed to your Gemini account.
-              </p>
-            </>
-          )}
-          {panel === "brand" && (
-            <>
-              <div className="brand-card">
-                <span className="brand-monogram">V.</span>
-                <div>
-                  <strong>Your brand, at home.</strong>
-                  <p>Keep a palette and type choices close.</p>
-                </div>
-              </div>
-              <div className="section-label">Brand colours</div>
-              <div className="brand-swatches">
-                {brand.colors.map((c, i) => (
-                  <button
-                    key={i}
-                    className="brand-color"
-                    style={{ background: c }}
-                    onClick={() =>
-                      selected
-                        ? update({ fill: c })
-                        : engine.current?.setBackground(c)
-                    }
-                    title={c}
-                  />
-                ))}
-                <label className="add-color">
-                  <Plus size={20} />
-                  <input
-                    type="color"
-                    aria-label="Add brand colour"
-                    onChange={(e) =>
-                      engine.current?.setBrand(
-                        [...brand.colors, e.target.value],
-                        brand.fonts,
-                      )
-                    }
-                  />
-                </label>
-              </div>
-              <p className="small-hint">
-                Select an element to apply. Otherwise, set the page colour.
-              </p>
-              <div className="section-label">Your typography</div>
-              {brand.fonts.map((font) => (
-                <button
-                  className="brand-font"
-                  key={font}
-                  style={{ fontFamily: font }}
-                  onClick={() => update({ fontFamily: font })}
-                >
-                  <span>{font}</span>
-                  <span>Aa</span>
-                </button>
-              ))}
-              <label className="field-label">
-                Add a font
-                <select
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value && !brand.fonts.includes(e.target.value))
-                      engine.current?.setBrand(brand.colors, [
-                        ...brand.fonts,
-                        e.target.value,
-                      ]);
-                  }}
-                >
-                  <option value="">Choose a system font</option>
-                  {FONTS.map((f) => (
-                    <option key={f}>{f}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="help-card">
-                <Palette size={20} />
-                <p>
-                  Use these colours throughout your design for a consistent
-                  look. Brand choices are saved with each project.
-                </p>
-              </div>
-            </>
-          )}
+          {panel==='ai'&&<Suspense fallback={<p className="small-hint">Opening Magic Media…</p>}><MagicMediaPanel key={aiKind} initialKind={aiKind} getEditor={getEditor} settings={settings} onSettings={()=>setModal('settings')} onNotify={notify} onMode={m=>{setMode(m);if(m==='video')setMediaEpoch(v=>v+1);}}/></Suspense>}
+          {panel==='brand'&&<><BrandKitsPanel brand={brand} getEditor={getEditor} onNotify={notify} getSelectedPhoto={()=>engine.current!.selectedImageDataURL()}/><button className="full-button" onClick={()=>fontRef.current?.click()}><Upload size={18}/>Upload a font</button></>}
           {panel === "draw" && (
             <>
               <div className="draw-preview">
@@ -1487,70 +1268,77 @@ export default function App() {
               </div>
             </>
           )}
+          {panel==='font'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search fonts" placeholder="Search fonts" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="full-button" onClick={()=>fontRef.current?.click()}><Upload size={18}/>Upload a font</button><div className="font-list">{fontOptions.filter(f=>f.toLowerCase().includes(search.toLowerCase())).map(f=><button key={f} style={{fontFamily:f}} className={selected?.fontFamily===f?'active':''} onClick={()=>update({fontFamily:f})}>{f}{selected?.fontFamily===f&&<Check size={18}/>}</button>)}</div></div>}
+          {panel==='color'&&<div className="feature-panel"><h3>Document colours</h3><div className="swatches">{[...new Set([...brand.colors,...COLORS])].map(c=><button key={c} title={c} aria-label={`Apply ${c}`} style={{background:c}} onClick={()=>selected?update({fill:c}):engine.current?.setBackground(c)}/>)}</div><label className="field-label">Hex colour<input aria-label="Hex colour" placeholder="#000000" value={colorHex} onChange={e=>{setColorHex(e.target.value);if(/^#[0-9a-f]{6}$/i.test(e.target.value))selected?update({fill:e.target.value}):engine.current?.setBackground(e.target.value);}}/></label><label className="field-label">Add a new colour<input aria-label="Custom colour" type="color" value={/^#[0-9a-f]{6}$/i.test(selected?.fill||state.background)?selected?.fill||state.background:'#000000'} onChange={e=>selected?update({fill:e.target.value}):engine.current?.setBackground(e.target.value)}/></label><h3>Gradients</h3><ToolsPanel tab="gradients" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></div>}
+          {panel==='image'&&<ImageControls getEditor={getEditor} selected={selected} onRemove={removeBackground} onMask={()=>void work('Opening mask editor',async()=>setMaskSources(await engine.current!.getImageMaskSources()))} onAI={()=>{setAiKind('edit');choosePanel('ai');}} onReplace={()=>{replaceImageRef.current=true;uploadRef.current?.click();}}/>}
+          {panel==='projects'&&<div className="project-panel"><div className="chip-row"><button className="chip active">All</button><button className="chip" onClick={goHome}>Folders</button></div>{library.map(d=><button key={d.id} className="project-panel-card" onClick={()=>openDesign(d)}>{d.thumbnail?<img src={d.thumbnail} alt=""/>:<FileText size={32}/>}<span>{d.name}</span></button>)}<button className="full-button" onClick={()=>void open()}>Open project file</button></div>}
+          {panel==='apps'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search apps" placeholder="Search apps" value={search} onChange={e=>setSearch(e.target.value)}/></label><h3>Discover</h3><div className="apps-grid">{[{name:'Magic Media',icon:'ai',action:()=>{setAiKind('image');choosePanel('ai');}},{name:'Magic Write',icon:'document',action:()=>{setAiKind('copy');choosePanel('ai');}},{name:'Bulk create',icon:'sheet',action:()=>{choosePanel('tools');setToolTab('bulk');}},{name:'QR code',icon:'apps',action:()=>{choosePanel('tools');setToolTab('qr');}},{name:'Video',icon:'video',action:()=>{setMode('video');setPanelOpen(false);}},{name:'Translate',icon:'text',action:()=>{setAiKind('translate');choosePanel('ai');}}].filter(a=>a.name.toLowerCase().includes(search.toLowerCase())).map(a=><button key={a.name} onClick={a.action}><StudioIcon name={a.icon as Parameters<typeof StudioIcon>[0]['name']} size={32}/><span>{a.name}</span></button>)}</div></div>}
+          {panel==='components'&&<div className="feature-panel"><p className="small-hint">Your reusable elements. Right-click an element and choose Create component to add one.</p>{components.map(c=><button className="full-button" key={c.id} onClick={()=>void work('Adding component',()=>engine.current!.insertObjects(JSON.parse(c.data)))}><StudioIcon name="components" size={24}/>{c.name}</button>)}</div>}
+          {(panel==='background'||panel==='charts')&&<ToolsPanel tab={panel==='charts'?'charts':'gradients'} setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/>}
+          {panel==='audio'&&<div className="feature-panel"><button className="full-button coral" onClick={()=>{setAiKind('voice');choosePanel('ai');}}>Generate voice</button><button className="full-button" onClick={()=>{setMode('video');setPanelOpen(false);}}>Open audio timeline</button><p className="small-hint">Upload or arrange audio in your video timeline.</p></div>}
+          {panel === "tools" && <ToolsPanel tab={toolTab} setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/>}
+          {["video","documents","sheets"].includes(panel) && <div className="feature-panel"><h3>{panel==="video"?"Video studio":panel==="documents"?"Document editor":"Spreadsheet editor"}</h3><p className="small-hint">Create and edit in the workspace.</p><button className="full-button" onClick={()=>setMode("design")}>Return to design canvas</button><button className="full-button coral" onClick={()=>setMode(panel==="documents"?"document":panel==="sheets"?"sheet":"video")}>Open {panel}</button><button className="full-button" onClick={()=>{choosePanel("ai");setAiKind("copy");}}>Write with Visro AI</button></div>}
         </aside>
         <main className="canvas-workspace">
-          <div className="canvas-toolbar">
+          <div className="canvas-toolbar context-toolbar">
             <div className="toolbar-left">
-              <IconButton
-                title="Undo (⌘Z)"
-                disabled={!state.canUndo}
-                onClick={() => engine.current?.undo()}
-              >
-                <Undo2 size={17} />
-              </IconButton>
-              <IconButton
-                title="Redo (⌘⇧Z)"
-                disabled={!state.canRedo}
-                onClick={() => engine.current?.redo()}
-              >
-                <Redo2 size={17} />
-              </IconButton>
-              <span className="toolbar-divider" />
-              <button
-                className="canvas-size"
-                onClick={() => {
-                  setSize({ w: state.width, h: state.height });
-                  setModal("resize");
-                }}
-              >
-                {state.width} × {state.height}
-                <ChevronDown size={12} />
-              </button>
+              {selected?.type === "text" ? <>
+                <button className="toolbar-select" aria-label="Text font" onClick={()=>choosePanel("font")}>{selected.fontFamily}<ChevronDown size={14}/></button>
+                <div className="font-size-control"><IconButton title="Decrease font size" onClick={()=>update({fontSize:Math.max(1,selected.fontSize-1)})}><Minus size={16}/></IconButton><input className="toolbar-number" aria-label="Text size" type="number" min={1} max={600} value={Math.round(selected.fontSize)} onChange={e=>update({fontSize:Number(e.target.value)})}/><IconButton title="Increase font size" onClick={()=>update({fontSize:selected.fontSize+1})}><Plus size={16}/></IconButton></div>
+                <button className="toolbar-text-colour" aria-label="Text colour" title="Text colour" onClick={()=>choosePanel("color")}><span style={{borderBottom:`3px solid ${selected.fill}`}}>A</span></button>
+                <IconButton title="Bold" active={selected.fontWeight===700||selected.fontWeight==="bold"} onClick={()=>update({fontWeight:selected.fontWeight===700||selected.fontWeight==="bold"?400:700})}><Bold size={17}/></IconButton>
+                <IconButton title="Italic" active={selected.fontStyle==="italic"} onClick={()=>update({fontStyle:selected.fontStyle==="italic"?"normal":"italic"})}><Italic size={17}/></IconButton>
+                <IconButton title="Underline (⌘U)" active={selected.underline} onClick={()=>update({underline:!selected.underline})}><Underline size={17}/></IconButton>
+                <IconButton title="Strikethrough" active={selected.linethrough} onClick={()=>update({linethrough:!selected.linethrough})}><span className="font-strike">S</span></IconButton>
+                <IconButton title="Uppercase" onClick={()=>update({text:selected.text===selected.text?.toUpperCase()?selected.text?.toLowerCase():selected.text?.toUpperCase()})}><span>aA</span></IconButton>
+                <IconButton title={`Text alignment: ${selected.align}`} onClick={()=>{const align=['left','center','right','justify'];update({align:align[(align.indexOf(selected.align)+1)%align.length]});}}>{selected.align==='center'?<AlignCenter size={19}/>:selected.align==='right'?<AlignRight size={19}/>:<AlignLeft size={19}/>}</IconButton>
+                <IconButton title="List" onClick={()=>update({text:(selected.text||'').split('\n').map(t=>t.startsWith('• ')?t.slice(2):'• '+t).join('\n')})}><span>☷</span></IconButton>
+                <IconButton title="Spacing" active={toolbarPopover==='spacing'} onClick={()=>setToolbarPopover(toolbarPopover==='spacing'?null:'spacing')}><span className="spacing-icon">↔T</span></IconButton>
+                <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("effects");}}>Effects</button>
+              </> : selected?.type === "image" ? <>
+                <button className="toolbar-button" onClick={()=>choosePanel("image")}><SlidersHorizontal size={16}/>Edit photo</button>
+                <button className="toolbar-button" onClick={removeBackground}><Scissors size={16}/>BG Remover</button>
+                <button className="toolbar-button" onClick={()=>void work("Opening mask editor",async()=>setMaskSources(await engine.current!.getImageMaskSources()))}>Erase / Restore</button>
+                <button className="toolbar-button" onClick={openCrop}>Crop</button><button className="toolbar-button" onClick={()=>engine.current?.flip("x")}>Flip</button>
+                <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("frames");}}>Frames</button>
+              </> : selected ? <>
+                <button className="toolbar-color" aria-label="Shape colour" style={{background:selected.fill}} onClick={()=>choosePanel("color")}/>
+                <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Colour & gradient</button>
+                <button className="toolbar-button" onClick={()=>engine.current?.flip("x")}>Flip</button>
+              </> : <>
+                <button className="toolbar-color" aria-label="Page colour" style={{background:state.background}} onClick={()=>choosePanel("color")}/>
+                <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Background</button>
+                <button className="toolbar-button" onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>{state.width} × {state.height}</button>
+              </>}
+              {selected&&<IconButton title="Transparency" active={toolbarPopover==='transparency'} onClick={()=>setToolbarPopover(toolbarPopover==='transparency'?null:'transparency')}><span className="transparency-icon"/></IconButton>}
+              <span className="toolbar-divider"/>
+              <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("animate");}}>Animate</button>
             </div>
             <div className="toolbar-right">
-              {selected && (
-                <>
-                  <IconButton
-                    title="Duplicate selected (⌘D)"
-                    onClick={() => engine.current?.duplicate()}
-                  >
-                    <Copy size={16} />
-                  </IconButton>
-                  <IconButton
-                    title="Delete selected"
-                    onClick={() => engine.current?.remove()}
-                  >
-                    <Trash2 size={16} />
-                  </IconButton>
-                  <span className="toolbar-divider" />
-                </>
-              )}
-              <span className="workspace-label">
-                <span />
-                LOCAL STUDIO
-              </span>
+              <button className={`toolbar-button ${inspectorOpen?"active":""}`} onClick={()=>{setPositionTab("arrange");setInspectorOpen(!inspectorOpen);setPanelOpen(false);}}>Position <Layers size={16}/></button>
+              {selected&&<IconButton title="Copy style (⌥⌘C)" onClick={()=>{if(engine.current?.copyStyle()){stylePaintRef.current=true;notify("Click another element to apply this style.");}}}><Paintbrush size={19}/></IconButton>}
+
+              {mode!=="design"&&<button className="toolbar-button" onClick={()=>setMode("design")}>Design</button>}
             </div>
           </div>
+          {toolbarPopover&&selected&&<div className="toolbar-popover">{toolbarPopover==='spacing'?<><NumberField label="Letter spacing" value={selected.letterSpacing} min={-200} max={1000} onChange={n=>update({letterSpacing:n})}/><NumberField label="Line spacing" value={selected.lineHeight} min={.5} max={5} step={.05} onChange={n=>update({lineHeight:n})}/></>:<label className="range-label">Transparency<span>{Math.round(selected.opacity*100)}</span><input type="range" aria-label="Transparency" min={0} max={100} value={Math.round(selected.opacity*100)} onChange={e=>update({opacity:Number(e.target.value)/100})}/></label>}</div>}
           <div
             className="canvas-viewport"
+            style={{pointerEvents:ready?undefined:"none"}}
             ref={viewportRef}
+            onPointerDown={e=>{if((e.target as HTMLElement).closest('canvas')){interactionRef.current=true;viewportRef.current?.classList.add('interacting');}}}
+            onPointerUp={()=>{interactionRef.current=false;viewportRef.current?.classList.remove('interacting');}}
+            onContextMenuCapture={e=>{e.preventDefault();if(mode!=='design')return;const r=viewportRef.current!.getBoundingClientRect();const cur=engine.current?.selectAt({x:e.clientX-r.left,y:e.clientY-r.top,includeLocked:true});if(cur)setContextMenu({x:e.clientX,y:e.clientY});}}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => {
-              e.preventDefault();
-              void uploadFiles(e.dataTransfer.files);
-            }}
+            onDrop={e=>{e.preventDefault();const raw=e.dataTransfer.getData('text/visro-asset');if(raw){const r=viewportRef.current!.getBoundingClientRect();void work('Adding element',async()=>{const asset=JSON.parse(raw);const studio=engine.current!;if(asset.kind==='image'&&typeof asset.src==='string')await studio.addImage(asset.src);else if(asset.kind==='shape')studio.addShape(asset.type);else if(asset.kind==='text')studio.addText(asset.role||'body');else return;const selected=studio.getSelected();const v=studio.canvas.viewportTransform;const x=(e.clientX-r.left-v[4])/v[0],y=(e.clientY-r.top-v[5])/v[3];if(selected)studio.updateSelected({left:x-selected.width/2,top:y-selected.height/2});});}else void uploadFiles(e.dataTransfer.files);}}
+
           >
             <canvas ref={canvasRef} />
+            {selected&&bounds&&mode==='design'&&<div className="selection-actions" style={{left:Math.max(8,Math.min(bounds.left+bounds.width/2-85,(viewportRef.current?.clientWidth||800)-180)),top:Math.max(8,Math.min(bounds.top+bounds.height+14,(viewportRef.current?.clientHeight||600)-50))}}><IconButton title="Comment" onClick={()=>setCommentsOpen(true)}><MessageCircle size={19}/></IconButton><IconButton title={selected.locked?'Unlock':'Lock position and appearance'} onClick={()=>engine.current?.setLayerLocked(selected.id,!selected.locked)}>{selected.locked?<Lock size={19}/>:<Unlock size={19}/>}</IconButton><IconButton title="Duplicate (⌘D)" onClick={()=>void engine.current?.duplicate()}><Copy size={19}/></IconButton><IconButton title="Delete" onClick={()=>engine.current?.remove()}><Trash2 size={19}/></IconButton><IconButton title="More" onClick={()=>{const r=viewportRef.current!.getBoundingClientRect();setContextMenu({x:r.left+bounds.left+bounds.width/2,y:r.top+bounds.top+bounds.height+60});}}><MoreHorizontal size={20}/></IconButton></div>}
+
+            {mode==="document"&&<DocumentEditor key={`doc-${activeId.current}`} id={activeId.current} name={name} getEditor={()=>engine.current} initial={engine.current?.getProjectContent() ?? contentRef.current} onNotify={notify}/>}
+            {mode==="sheet"&&<SheetEditor key={`sheet-${activeId.current}`} id={activeId.current} name={name} getEditor={()=>engine.current} initial={engine.current?.getProjectContent() ?? contentRef.current} onNotify={notify}/>}
+            {mode==="video"&&<MediaStudio key={`video-${activeId.current}-${mediaEpoch}`} designId={activeId.current} name={name} width={state.width} height={state.height} getEditor={()=>engine.current} initial={engine.current?.getProjectContent() ?? contentRef.current} onNotify={notify}/>}
             {!ready && (
               <div className="canvas-loading">
                 <LoaderCircle className="spin" size={23} />
@@ -1558,7 +1346,7 @@ export default function App() {
               </div>
             )}
           </div>
-          <div className="page-strip">
+          <div className={`page-strip ${!pagesOpen?"hidden":""} ${gridView?"page-grid-view":""}`}>
             <div className="page-tabs">
               {state.pages.map((p, i) => (
                 <button
@@ -1566,10 +1354,7 @@ export default function App() {
                   className={state.activePageId === p.id ? "active" : ""}
                   onClick={() => void engine.current?.setPage(p.id)}
                 >
-                  <span
-                    className="page-mini"
-                    style={{ background: state.background }}
-                  />
+                  <span className="page-mini" style={{background:state.background}}>{pageThumbnails[p.id]&&<img src={pageThumbnails[p.id]} alt=""/>}</span>
                   {i + 1}
                   <span>{p.name}</span>
                 </button>
@@ -1597,7 +1382,9 @@ export default function App() {
               </IconButton>
             </div>
           </div>
+          {notesOpen&&<section className="notes-panel"><div className="panel-heading"><h3>Notes</h3><button aria-label="Close notes" className="icon-button" onClick={()=>setNotesOpen(false)}><X size={18}/></button></div><textarea aria-label="Speaker notes" placeholder="Add notes for this page" value={state.pageMetadata?.notes||""} onChange={e=>engine.current?.setPageMetadata({notes:e.target.value})}/></section>}
           <footer className="canvas-footer">
+            <button className="quiet-button" onClick={()=>setNotesOpen(!notesOpen)}><FileText size={18}/>Notes</button><button className="quiet-button" onClick={()=>setTimerOpen(!timerOpen)}><Clock size={18}/>Timer</button>{timerOpen&&<div className="timer-popover"><strong>{String(Math.floor(timerSeconds/60)).padStart(2,"0")}:{String(timerSeconds%60).padStart(2,"0")}</strong><button onClick={()=>setTimerRunning(!timerRunning)}>{timerRunning?"Pause":"Start"}</button><button onClick={()=>{setTimerRunning(false);setTimerSeconds(0);}}>Reset</button></div>}
             <span>
               {state.pages.length} {state.pages.length === 1 ? "page" : "pages"}
               <span className="footer-dot">·</span>
@@ -1638,6 +1425,7 @@ export default function App() {
               >
                 <Plus size={14} />
               </IconButton>
+              <button className="quiet-button" onClick={()=>setPagesOpen(!pagesOpen)}><Grid3X3 size={20}/>Pages</button><span>{state.pages.findIndex(p=>p.id===state.activePageId)+1} / {state.pages.length}</span><IconButton title="Grid view" onClick={()=>{setPagesOpen(true);setGridView(!gridView);}}><Grid2X2 size={20}/></IconButton>
               <IconButton
                 title="Fit canvas"
                 onClick={() => engine.current?.fit()}
@@ -1647,447 +1435,41 @@ export default function App() {
             </div>
           </footer>
         </main>
-        <aside className="inspector">
-          <div className="inspector-heading">
-            <SlidersHorizontal size={17} />
-            <h3>{selected ? "Make it just right." : "The details matter."}</h3>
-          </div>
-          <div className="inspector-scroll">
-            {selected ? (
-              <>
-                <div className="selected-label">
-                  <span>
-                    {selected.type === "image"
-                      ? "Image"
-                      : selected.type === "text"
-                        ? "Text"
-                        : selected.type === "group"
-                          ? "Group"
-                          : "Element"}
-                  </span>
-                  <span className="pill">EDITABLE</span>
-                </div>
-                {selected.type === "text" && (
-                  <>
-                    <label className="field-label">
-                      Your words
-                      <textarea
-                        aria-label="Selected text"
-                        rows={3}
-                        value={selected.text || ""}
-                        onChange={(e) => update({ text: e.target.value })}
-                      />
-                    </label>
-                    <label className="field-label">
-                      Typeface
-                      <select
-                        aria-label="Typeface"
-                        value={selected.fontFamily || "Arial"}
-                        onChange={(e) => update({ fontFamily: e.target.value })}
-                      >
-                        {FONTS.map((f) => (
-                          <option key={f}>{f}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <div className="field-row">
-                      <NumberField
-                        label="Size"
-                        value={selected.fontSize || 24}
-                        min={1}
-                        max={1000}
-                        onChange={(v) => update({ fontSize: v })}
-                      />
-                      <label className="field-label compact">
-                        Weight
-                        <select
-                          aria-label="Font weight"
-                          value={String(selected.fontWeight || "normal")}
-                          onChange={(e) =>
-                            update({ fontWeight: e.target.value })
-                          }
-                        >
-                          <option value="normal">Regular</option>
-                          <option value="bold">Bold</option>
-                        </select>
-                      </label>
-                    </div>
-                    <div className="segmented align-segment">
-                      <button
-                        title="Align text left"
-                        className={selected.align === "left" ? "active" : ""}
-                        onClick={() => update({ align: "left" })}
-                      >
-                        <AlignLeft size={16} />
-                      </button>
-                      <button
-                        title="Align text center"
-                        className={selected.align === "center" ? "active" : ""}
-                        onClick={() => update({ align: "center" })}
-                      >
-                        <AlignCenter size={16} />
-                      </button>
-                      <button
-                        title="Align text right"
-                        className={selected.align === "right" ? "active" : ""}
-                        onClick={() => update({ align: "right" })}
-                      >
-                        <AlignRight size={16} />
-                      </button>
-                    </div>
-                  </>
-                )}
-                {selected.type !== "image" && (
-                  <>
-                    <div className="field-label">
-                      Colour
-                      <label className="color-field">
-                        <input
-                          aria-label="Element colour"
-                          type="color"
-                          value={
-                            typeof selected.fill === "string" &&
-                            /^#[0-9a-f]{6}$/i.test(selected.fill)
-                              ? selected.fill
-                              : "#252922"
-                          }
-                          onChange={(e) => update({ fill: e.target.value })}
-                        />
-                        <input
-                          aria-label="Hex colour"
-                          value={
-                            typeof selected.fill === "string"
-                              ? selected.fill
-                              : "#252922"
-                          }
-                          onChange={(e) => update({ fill: e.target.value })}
-                        />
-                      </label>
-                    </div>
-                    <div className="swatches inspector-swatches">
-                      {brand.colors.map((c) => (
-                        <button
-                          key={c}
-                          style={{ background: c }}
-                          title={c}
-                          onClick={() => update({ fill: c })}
-                        />
-                      ))}
-                    </div>
-                  </>
-                )}
-                {selected.type === "image" && (
-                  <>
-                    <button
-                      className="full-button coral remove-bg"
-                      onClick={removeBackground}
-                      disabled={!!busy}
-                    >
-                      <WandSparkles size={16} />
-                      Remove background
-                    </button>
-                    <span className="local-tool-label">
-                      <Lock size={11} />
-                      LOCAL · NO CREDITS
-                    </span>
-                    <button
-                      className="full-button"
-                      onClick={() => {
-                        choosePanel("ai");
-                        setAiKind("edit");
-                        setPrompt("");
-                      }}
-                    >
-                      <Sparkles size={15} />
-                      Edit with Gemini
-                    </button>
-                    <div className="section-label">Adjust image</div>
-                    {(["brightness", "contrast", "saturation"] as const).map(
-                      (effect) => (
-                        <label className="range-label" key={effect}>
-                          {effect[0].toUpperCase() + effect.slice(1)}
-                          <input
-                            aria-label={effect}
-                            type="range"
-                            min="-1"
-                            max="1"
-                            step="0.02"
-                            defaultValue="0"
-                            onChange={(e) =>
-                              engine.current?.applyEffects({
-                                [effect]: Number(e.target.value),
-                              })
-                            }
-                          />
-                        </label>
-                      ),
-                    )}
-                    <label className="field-label">
-                      Crop to shape
-                      <select
-                        aria-label="Crop image ratio"
-                        defaultValue=""
-                        onChange={(e) => {
-                          if (e.target.value)
-                            engine.current?.cropImage(Number(e.target.value));
-                        }}
-                      >
-                        <option value="">Choose a ratio</option>
-                        <option value="1">Square · 1:1</option>
-                        <option value="1.7777777778">Landscape · 16:9</option>
-                        <option value="0.75">Portrait · 3:4</option>
-                      </select>
-                    </label>
-                  </>
-                )}
-                <div className="section-label">Position & size</div>
-                <div className="field-row">
-                  <NumberField
-                    label="X"
-                    value={selected.left || 0}
-                    onChange={(v) => update({ left: v })}
-                  />
-                  <NumberField
-                    label="Y"
-                    value={selected.top || 0}
-                    onChange={(v) => update({ top: v })}
-                  />
-                </div>
-                <div className="field-row">
-                  <NumberField
-                    label="W"
-                    value={selected.width || 1}
-                    min={1}
-                    onChange={(v) => update({ width: v })}
-                  />
-                  <NumberField
-                    label="H"
-                    value={selected.height || 1}
-                    min={1}
-                    onChange={(v) => update({ height: v })}
-                  />
-                </div>
-                <div className="field-row">
-                  <NumberField
-                    label="Rotation"
-                    value={selected.angle || 0}
-                    onChange={(v) => update({ angle: v })}
-                  />
-                  <NumberField
-                    label="Opacity %"
-                    value={(selected.opacity ?? 1) * 100}
-                    min={0}
-                    max={100}
-                    onChange={(v) =>
-                      update({ opacity: Math.min(1, Math.max(0, v / 100)) })
-                    }
-                  />
-                </div>
-                <div className="alignment-grid">
-                  {(
-                    [
-                      "left",
-                      "center",
-                      "right",
-                      "top",
-                      "middle",
-                      "bottom",
-                    ] as const
-                  ).map((a) => (
-                    <button
-                      key={a}
-                      title={`Align to page ${a}`}
-                      onClick={() => engine.current?.align(a)}
-                    >
-                      {a === "left"
-                        ? "⇤"
-                        : a === "center"
-                          ? "↔"
-                          : a === "right"
-                            ? "⇥"
-                            : a === "top"
-                              ? "↥"
-                              : a === "middle"
-                                ? "↕"
-                                : "↧"}
-                    </button>
-                  ))}
-                </div>
-                <div className="section-label">Arrange</div>
-                <div className="action-grid">
-                  <button onClick={() => engine.current?.arrange("up")}>
-                    <ArrowUp size={15} />
-                    Forward
-                  </button>
-                  <button onClick={() => engine.current?.arrange("down")}>
-                    <ArrowDown size={15} />
-                    Backward
-                  </button>
-                  <button onClick={() => engine.current?.flip("x")}>
-                    <FlipHorizontal size={15} />
-                    Flip H
-                  </button>
-                  <button onClick={() => engine.current?.flip("y")}>
-                    <FlipVertical size={15} />
-                    Flip V
-                  </button>
-                  <button onClick={() => engine.current?.group()}>
-                    <Group size={15} />
-                    Group
-                  </button>
-                  <button onClick={() => engine.current?.ungroup()}>
-                    <Ungroup size={15} />
-                    Ungroup
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="page-details">
-                  <span className="page-detail-icon">
-                    <Square size={25} />
-                  </span>
-                  <h4>A canvas of possibility.</h4>
-                  <p>
-                    Click any element to adjust its colour, type, position, and
-                    more.
-                  </p>
-                </div>
-                <div className="field-label">
-                  Canvas colour
-                  <label className="color-field">
-                    <input
-                      type="color"
-                      aria-label="Canvas background"
-                      value={
-                        /^#[0-9a-f]{6}$/i.test(state.background)
-                          ? state.background
-                          : "#f6f2e9"
-                      }
-                      onChange={(e) =>
-                        engine.current?.setBackground(e.target.value)
-                      }
-                    />
-                    <input
-                      aria-label="Canvas background hex"
-                      value={state.background}
-                      onChange={(e) =>
-                        engine.current?.setBackground(e.target.value)
-                      }
-                    />
-                  </label>
-                </div>
-                <div className="swatches inspector-swatches">
-                  {COLORS.slice(0, 7).map((c) => (
-                    <button
-                      key={c}
-                      style={{ background: c }}
-                      title={c}
-                      onClick={() => engine.current?.setBackground(c)}
-                    />
-                  ))}
-                </div>
-                <button
-                  className="full-button"
-                  onClick={() => {
-                    setSize({ w: state.width, h: state.height });
-                    setModal("resize");
-                  }}
-                >
-                  <Maximize2 size={15} />
-                  Resize canvas
-                </button>
-              </>
-            )}
-            <div className="layer-heading">
-              <div>
-                <Layers size={16} />
-                <span>Layers</span>
-              </div>
-              <span>{state.layers.length}</span>
-            </div>
-            <div className="layer-list">
-              {state.layers.map((layer) => (
-                <div
-                  key={layer.id}
-                  className={`layer-row ${selected?.id === layer.id ? "active" : ""}`}
-                >
-                  <button
-                    className="layer-select"
-                    onClick={() => engine.current?.selectLayer(layer.id)}
-                  >
-                    <span className="layer-icon">
-                      {layer.type === "text" ? (
-                        <Type size={13} />
-                      ) : layer.type === "image" ? (
-                        <ImageIcon size={13} />
-                      ) : (
-                        <Square size={13} />
-                      )}
-                    </span>
-                    <span>{layer.name}</span>
-                  </button>
-                  <button
-                    title={layer.visible ? "Hide layer" : "Show layer"}
-                    onClick={() =>
-                      engine.current?.setLayerVisibility(
-                        layer.id,
-                        !layer.visible,
-                      )
-                    }
-                  >
-                    {layer.visible ? <Eye size={13} /> : <EyeOff size={13} />}
-                  </button>
-                  <button
-                    title={layer.locked ? "Unlock layer" : "Lock layer"}
-                    onClick={() =>
-                      engine.current?.setLayerLocked(layer.id, !layer.locked)
-                    }
-                  >
-                    {layer.locked ? <Lock size={12} /> : <Unlock size={12} />}
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="inspector-tip">
-            <span>✦</span>
-            <p>
-              A little less, a little better.
-              <br />
-              Give your ideas room to breathe.
-            </p>
-          </div>
-        </aside>
+        {inspectorOpen&&<PositionPanel getEditor={getEditor} state={state} selected={selected} initialTab={positionTab} onClose={()=>setInspectorOpen(false)}/>}
+        {commentsOpen&&<aside className="comments-panel"><div className="panel-heading"><h3>Comments</h3><button aria-label="Close comments" className="icon-button" onClick={()=>setCommentsOpen(false)}><X size={20}/></button></div><ToolsPanel tab="comments" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></aside>}
       </div>
       <input
         ref={uploadRef}
         type="file"
         multiple
-        accept="image/png,image/jpeg,image/webp,image/gif"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf"
         hidden
         onChange={(e) => {
           void uploadFiles(e.target.files);
           e.target.value = "";
         }}
       />
+      <input ref={fontRef} type="file" accept=".ttf,.otf,.woff,.woff2" multiple hidden onChange={e=>{void importFonts(e.target.files);e.target.value="";}}/>
       <input
         ref={projectRef}
         type="file"
-        accept=".visro,.json"
+        accept=".visro,.json,.pdf,.csv"
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file)
             void work("Opening your project", async () => {
-              const project = JSON.parse(await file.text());
-              await engine.current!.loadProject(project);
-              setName(project.name || "Untitled design");
-              activeId.current = crypto.randomUUID();
+              if(file.name.toLowerCase().endsWith(".pdf")){if(await switchProject(async()=>({id:crypto.randomUUID(),name:file.name.replace(/\.pdf$/i,""),load:studio=>importPDF(file,studio,setBusy)})))notify("PDF imported. Add text and graphics to annotate each page.");return;}
+              if(file.name.toLowerCase().endsWith(".csv")){await switchProject(async()=>{const cells:Record<string,string>={},matrix=parseCSV(await file.text());matrix.slice(0,200).forEach((r,i)=>r.slice(0,26).forEach((v,c)=>cells[String.fromCharCode(65+c)+(i+1)]=v));const project=createProject(file.name.replace(/\.csv$/i,""),1920,1080,"#ffffff");project.kind="sheet";project.content={cells,rows:Math.min(200,Math.max(20,matrix.length)),columns:Math.min(26,Math.max(8,matrix[0]?.length||0))};return{id:crypto.randomUUID(),name:project.name,project};});return;}
+              await switchProject(async()=>{if(file.size>100*1024*1024)throw new Error("Choose a Visro project smaller than 100 MB.");const project=unpackProject(JSON.parse(await file.text())) as Parameters<StudioEditor["loadProject"]>[0];return{id:crypto.randomUUID(),name:project.name||"Untitled design",project};});
             });
           e.target.value = "";
         }}
       />
+      {contextMenu&&<ElementMenu x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
+      {elementDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setElementDialog(null);}}><section className="modal element-dialog"><button className="modal-close icon-button" aria-label="Close" onClick={()=>setElementDialog(null)}><X size={20}/></button><h2>{elementDialog.kind==='link'?'Link':elementDialog.kind==='alt'?'Alternative text':'Create component'}</h2><form onSubmit={e=>{e.preventDefault();void work("Saving element",async()=>{const d=elementDialog;if(d.kind==='component'){const objects=await engine.current!.exportSelectedObjects();await storeAsset({id:crypto.randomUUID(),kind:'component',name:d.value.trim()||'Component',data:JSON.stringify(objects),updated:Date.now()});notify('Component saved. Find it in Components.');}else engine.current?.setElementMetadata(d.kind==='link'?{link:d.value.trim()}:{altText:d.value});setElementDialog(null);});}}><label className="field-label">{elementDialog.kind==='link'?'Enter a link':elementDialog.kind==='alt'?'Describe this element':'Name'}<input autoFocus aria-label={elementDialog.kind==='link'?'Element link':elementDialog.kind==='alt'?'Alternative text':'Component name'} value={elementDialog.value} onChange={e=>setElementDialog({...elementDialog,value:e.target.value})}/></label><button className="full-button coral" type="submit">Save</button></form></section></div>}
+      {cropSource&&<ImageCropEditor source={cropSource} onCancel={()=>setCropSource(null)} onDone={async rect=>{engine.current?.cropSelectedImage(rect);setCropSource(null);notify("Image cropped.");}}/>}
+      {maskSources&&<ImageMaskEditor original={maskSources.original} current={maskSources.current} onCancel={()=>setMaskSources(null)} onDone={async data=>{await work("Applying mask",async()=>{await engine.current?.applyImageMask(data);setMaskSources(null);notify("Image mask updated.");});}}/>}
       {toast && (
         <div className="toast" role="status">
           <CheckCircle2 size={17} />
@@ -2148,8 +1530,8 @@ export default function App() {
                 <span className="modal-symbol">
                   <Sparkles size={26} />
                 </span>
-                <span className="eyebrow">BRING YOUR OWN MAGIC</span>
-                <h2>One key. So many possibilities.</h2>
+                <span className="eyebrow">GEMINI</span>
+                <h2>Settings</h2>
                 <p className="modal-intro">
                   Connect Gemini for editable designs, fresh imagery, photo
                   edits, and better words.
@@ -2169,7 +1551,7 @@ export default function App() {
                         const s = await desktop.saveSettings({
                           ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
                           textModel,
-                          imageModel,
+                          imageModel,voiceModel,videoModel,
                         });
                         setSettings(s);
                         setApiKey("");
@@ -2212,6 +1594,7 @@ export default function App() {
                         : "Connect your key in the Mac app. Background removal works without one."}
                     </span>
                   </div>
+                  <label className="field-label">Appearance<select aria-label="Appearance" value={theme} onChange={e=>setTheme(e.target.value as ThemePreference)}><option value="system">Use system setting</option><option value="light">Light</option><option value="dark">Dark</option></select></label>
                   <div className="field-row">
                     <label className="field-label">
                       Text & design model
@@ -2232,6 +1615,7 @@ export default function App() {
                       />
                     </label>
                   </div>
+                  <div className="field-row"><label className="field-label">Voice model<input aria-label="Voice model" list="gemini-models" value={voiceModel} onChange={e=>setVoiceModel(e.target.value)}/></label><label className="field-label">Video model<input aria-label="Video model" list="gemini-models" value={videoModel} onChange={e=>setVideoModel(e.target.value)}/></label></div>
                   <datalist id="gemini-models">
                     {models.map((m) => (
                       <option
@@ -2321,9 +1705,9 @@ export default function App() {
                   <Download size={25} />
                 </span>
                 <span className="eyebrow">READY FOR THE WORLD</span>
-                <h2>Take your idea with you.</h2>
+                <h2>Download</h2>
                 <p className="modal-intro">
-                  A beautiful file, ready to share wherever you like.
+                  Choose a format and download your design.
                 </p>
                 <label className="field-label">
                   File type
@@ -2338,9 +1722,10 @@ export default function App() {
                     <option value="jpeg">JPG · Smaller, ready to share</option>
                     <option value="svg">SVG · Editable vector graphics</option>
                     <option value="pdf">PDF · Every page, one document</option>
+                    <option value="html">Website · Responsive HTML</option><option value="pptx">PowerPoint · PPTX presentation</option>
                   </select>
                 </label>
-                {exportFormat !== "pdf" && exportFormat !== "svg" && (
+                {exportFormat !== "pdf" && exportFormat !== "svg" && exportFormat !== "html" && exportFormat !== "pptx" && (
                   <label className="field-label">
                     Resolution
                     <select
@@ -2445,12 +1830,12 @@ export default function App() {
                       notify("Choose dimensions from 100 to 8000 pixels.");
                       return;
                     }
-                    engine.current?.resizeDesign(size.w, size.h);
-                    setModal(null);
+                    engine.current?.resizeDesign(size.w, size.h, {scaleContent:true});
+                    setModal(null);setHome(false);
                   }}
                 >
                   <Maximize2 size={16} />
-                  Resize current design
+                  Resize & adapt design
                 </button>
                 <button
                   className="full-button"
@@ -2469,7 +1854,7 @@ export default function App() {
             {modal === "library" && (
               <>
                 <span className="eyebrow">MADE BY YOU</span>
-                <h2>Your ideas live here.</h2>
+                <h2>Projects</h2>
                 <p className="modal-intro">
                   Saved on this Mac, ready whenever inspiration comes.
                 </p>
@@ -2493,18 +1878,7 @@ export default function App() {
                   {library.map((d, i) => (
                     <div className="library-card" key={d.id}>
                       <button
-                        onClick={() =>
-                          void work("Opening your design", async () => {
-                            await engine.current!.loadProject(
-                              d.project as Parameters<
-                                StudioEditor["loadProject"]
-                              >[0],
-                            );
-                            setName(d.name);
-                            activeId.current = d.id;
-                            setModal(null);
-                          })
-                        }
+                        onClick={()=>{setModal(null);openDesign(d);}}
                       >
                         <div
                           className="library-cover"
@@ -2527,7 +1901,7 @@ export default function App() {
                         onClick={() =>
                           void work("Removing saved project", async () => {
                             await deleteDesign(d.id);
-                            setLibrary(await listDesigns());
+                            setLibrary(await listDesignSummaries());
                           })
                         }
                       >
@@ -2549,7 +1923,10 @@ export default function App() {
                 <img
                   src={presentImage}
                   alt={`Presentation page ${presentIndex + 1}`}
+                  key={presentIndex}
+                  className={`animation-${state.pages[presentIndex]?.metadata?.animation||"none"}`}
                 />
+                {state.pages[presentIndex]?.metadata?.notes&&<div className="speaker-notes">{state.pages[presentIndex].metadata?.notes}</div>}
                 <div className="presentation-controls">
                   <IconButton
                     title="Previous page"
@@ -2560,7 +1937,7 @@ export default function App() {
                   </IconButton>
                   <span>
                     {presentIndex + 1} / {state.pages.length}
-                  </span>
+                  </span><button className="quiet-button" onClick={()=>setPresentAuto(!presentAuto)}>{presentAuto?"Pause":"Autoplay"}</button>
                   <IconButton
                     title="Next page"
                     disabled={presentIndex === state.pages.length - 1}

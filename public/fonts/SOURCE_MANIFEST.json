@@ -1,0 +1,473 @@
+{
+  "repository": "https://github.com/google/fonts",
+  "commit": "66928797f271fed5ee428544e7229685e2d90127",
+  "checked": "2026-10-13",
+  "conversion": {
+    "fonttools": "4.60.1",
+    "brotli": "1.1.0",
+    "format": "woff2",
+    "subset": false,
+    "notes": "Full Unicode glyph repertoire and variable axes retained. No outline, naming or timestamp changes."
+  },
+  "families": [
+    {
+      "name": "Montserrat",
+      "slug": "montserrat",
+      "license": {
+        "source": "ofl/montserrat/OFL.txt",
+        "file": "montserrat-OFL.txt",
+        "sha256": "8b7141c03fa4f8d44e6345d5d4931709290f0f67875e452e95ac1fd3a027802e",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "montserrat.woff2",
+          "weight": "100 900",
+          "source": "ofl/montserrat/Montserrat[wght].ttf",
+          "sourceSha256": "0f7b311b2f3279e4eef9b2f968bcdbab6e28f4daeb1f049f4f278a902bcd82f7",
+          "sha256": "6e712eafc11f23dc2b0651c0849c1a331aa81a3a4499ba61ef5091e5c123c796",
+          "bytes": 215968,
+          "glyphs": 2747
+        }
+      ]
+    },
+    {
+      "name": "Poppins",
+      "slug": "poppins",
+      "license": {
+        "source": "ofl/poppins/OFL.txt",
+        "file": "poppins-OFL.txt",
+        "sha256": "6be04893d770899a015649c7aa3b582f871b272f8747a92b78b17c3e5c8b2573",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "poppins-bold.woff2",
+          "weight": "700",
+          "source": "ofl/poppins/Poppins-Bold.ttf",
+          "sourceSha256": "983676516167748b74de6f4771fb384c664fd913acb8b471122ecacf5da5ea6c",
+          "sha256": "3d615551d27f028fac5bbb9918b7228883832adb1481c46704043a1e6f54e7b6",
+          "bytes": 50936,
+          "glyphs": 1060
+        },
+        {
+          "file": "poppins-regular.woff2",
+          "weight": "400",
+          "source": "ofl/poppins/Poppins-Regular.ttf",
+          "sourceSha256": "7e65201e9b79159e2300267cc885e16c8dcef2424cdfa09a29bfb0980a94a7ba",
+          "sha256": "a7025c9f49be42d5e89bd67b557428df37820c5058b3babc5572cc42f2e57c04",
+          "bytes": 51540,
+          "glyphs": 1060
+        }
+      ]
+    },
+    {
+      "name": "Open Sans",
+      "slug": "opensans",
+      "license": {
+        "source": "ofl/opensans/OFL.txt",
+        "file": "opensans-OFL.txt",
+        "sha256": "fbbbcfef55318de350562559b671360de6d597112ecc5c73881b05092db89602",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "opensans.woff2",
+          "weight": "300 800",
+          "source": "ofl/opensans/OpenSans[wdth,wght].ttf",
+          "sourceSha256": "36643644f318a812aab2d2ed3bb98f8cf0872527f835fe9398d95fe6b9adb878",
+          "sha256": "8dbf3d44655c72437f2a9acc46579058dc7d3f82b2231cfdd82d0d6d61145674",
+          "bytes": 280576,
+          "glyphs": 1150
+        }
+      ]
+    },
+    {
+      "name": "Lato",
+      "slug": "lato",
+      "license": {
+        "source": "ofl/lato/OFL.txt",
+        "file": "lato-OFL.txt",
+        "sha256": "74ba064d03f1f1c4a952da936c3eb71866c34404916734de3cae73b34357e59e",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "lato-bold.woff2",
+          "weight": "700",
+          "source": "ofl/lato/Lato-Bold.ttf",
+          "sourceSha256": "8a0aace75d33794eece4b28187bfc1df0bbd2888b5d8a56e01788c8d65d16be1",
+          "sha256": "898fe2248312995b4b089601fa76a0da61b47de58b95bb88291230f2a3db764d",
+          "bytes": 211256,
+          "glyphs": 3023
+        },
+        {
+          "file": "lato-regular.woff2",
+          "weight": "400",
+          "source": "ofl/lato/Lato-Regular.ttf",
+          "sourceSha256": "d636e4683231f931eda222d588e944d082bfd3bdba02f928bee461c0f185b251",
+          "sha256": "d414a00ed3e47a8cc7462bd43975f0214a05c10b70b5f22686430beb6057ae2c",
+          "bytes": 212004,
+          "glyphs": 3023
+        }
+      ]
+    },
+    {
+      "name": "Roboto",
+      "slug": "roboto",
+      "license": {
+        "source": "ofl/roboto/OFL.txt",
+        "file": "roboto-OFL.txt",
+        "sha256": "061402327a96aadb0bfb694a960ed289ecd38d383e396243831ab81feb109c41",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "roboto.woff2",
+          "weight": "100 900",
+          "source": "ofl/roboto/Roboto[wdth,wght].ttf",
+          "sourceSha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
+          "sha256": "66e3a7dafb09acdf7af615078ae7f281a048d18e37816dd093c4722a37b8c884",
+          "bytes": 222128,
+          "glyphs": 1326
+        }
+      ]
+    },
+    {
+      "name": "Anton",
+      "slug": "anton",
+      "license": {
+        "source": "ofl/anton/OFL.txt",
+        "file": "anton-OFL.txt",
+        "sha256": "ee67e6ee22790b7929f1a3769ca2801d565c64b5a9096942c1adf5596de9c9e4",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "anton-regular.woff2",
+          "weight": "400",
+          "source": "ofl/anton/Anton-Regular.ttf",
+          "sourceSha256": "a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab",
+          "sha256": "e261fbadf359b1387d3685b865818c2b7f650517e13016d77d21e1eb7ab7fae4",
+          "bytes": 57412,
+          "glyphs": 1373
+        }
+      ]
+    },
+    {
+      "name": "Bebas Neue",
+      "slug": "bebasneue",
+      "license": {
+        "source": "ofl/bebasneue/OFL.txt",
+        "file": "bebasneue-OFL.txt",
+        "sha256": "72082f6cb4d04be2ecf7cc7d9e1e7d73787f0af8a5a278a47cade70c16b78341",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "bebasneue-regular.woff2",
+          "weight": "400",
+          "source": "ofl/bebasneue/BebasNeue-Regular.ttf",
+          "sourceSha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
+          "sha256": "975022976f660a12a8e2f5c274affffe5f0cb3b6fe124fca5ab70d03bf72fdce",
+          "bytes": 21548,
+          "glyphs": 508
+        }
+      ]
+    },
+    {
+      "name": "Playfair Display",
+      "slug": "playfairdisplay",
+      "license": {
+        "source": "ofl/playfairdisplay/OFL.txt",
+        "file": "playfairdisplay-OFL.txt",
+        "sha256": "566be814f8e96e93dfa16101331557eb6b5467e9e03f627c0910fe93ca12300e",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "playfairdisplay.woff2",
+          "weight": "400 900",
+          "source": "ofl/playfairdisplay/PlayfairDisplay[wght].ttf",
+          "sourceSha256": "c40f2293766a503bc70cce9e512ef844a4ccb7cbcde792fe2ea31d191917d8d6",
+          "sha256": "4297e9ec39f1b8157623d048fb99eab03c90e482669599e8fc662ee178994c49",
+          "bytes": 106440,
+          "glyphs": 1103
+        }
+      ]
+    },
+    {
+      "name": "Libre Baskerville",
+      "slug": "librebaskerville",
+      "license": {
+        "source": "ofl/librebaskerville/OFL.txt",
+        "file": "librebaskerville-OFL.txt",
+        "sha256": "3624eddd4c8f8a908130a417ae7cd089c9da69899c4e0ca1a5217d0a6fae16fd",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "librebaskerville.woff2",
+          "weight": "400 700",
+          "source": "ofl/librebaskerville/LibreBaskerville[wght].ttf",
+          "sourceSha256": "05a95421961341c5b2556285e8415df9db27dab4f4abe22b446b3c6a8b916c5d",
+          "sha256": "1ce91cc87fd7602c7d4d1a925af15aaefbb85acd379dbee9b34a82e653669320",
+          "bytes": 64008,
+          "glyphs": 861
+        }
+      ]
+    },
+    {
+      "name": "Archivo Black",
+      "slug": "archivoblack",
+      "license": {
+        "source": "ofl/archivoblack/OFL.txt",
+        "file": "archivoblack-OFL.txt",
+        "sha256": "3173acd82f8c6159b5b1037b539fcbd4edff68e65c2ea8b9412b5a5ca97b08ff",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "archivoblack-regular.woff2",
+          "weight": "400",
+          "source": "ofl/archivoblack/ArchivoBlack-Regular.ttf",
+          "sourceSha256": "dd9a89a019b4849f66ab75455fe7bdf931311042cbb0f0f97acc061539703180",
+          "sha256": "c1a36cce93e75bb56a9502e384249d8dd6a20189053d1628b12274bcb8437ae1",
+          "bytes": 31184,
+          "glyphs": 426
+        }
+      ]
+    },
+    {
+      "name": "League Spartan",
+      "slug": "leaguespartan",
+      "license": {
+        "source": "ofl/leaguespartan/OFL.txt",
+        "file": "leaguespartan-OFL.txt",
+        "sha256": "41c9980cacc325ccd1afa6553bcae038cc6c74fa519aff60bacb99e3854292ce",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "leaguespartan.woff2",
+          "weight": "100 900",
+          "source": "ofl/leaguespartan/LeagueSpartan[wght].ttf",
+          "sourceSha256": "2dbb6290b39ab7c48a40b18f74ca59ef48a69a015c3ea0542703f0c6ce51d617",
+          "sha256": "b19c8e4d26d1ade4e769ea64b7913bc16af86f015be4c303eee19da046223597",
+          "bytes": 41104,
+          "glyphs": 635
+        }
+      ]
+    },
+    {
+      "name": "DM Sans",
+      "slug": "dmsans",
+      "license": {
+        "source": "ofl/dmsans/OFL.txt",
+        "file": "dmsans-OFL.txt",
+        "sha256": "9af36190332437f5ecd09974de43c1f7c77a310a996cdd8ceb25628b458840e1",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "dmsans.woff2",
+          "weight": "100 1000",
+          "source": "ofl/dmsans/DMSans[opsz,wght].ttf",
+          "sourceSha256": "8cd08d97e89c24d0aa92edd2f0f4c8ee6195eee9b7c9f154865a58b02f0c1c0d",
+          "sha256": "40c3837c53c103a38fbce7faaa590b76edd61a8ede14672eb1e2f7eab0e0c6a4",
+          "bytes": 88820,
+          "glyphs": 486
+        }
+      ]
+    },
+    {
+      "name": "Nunito",
+      "slug": "nunito",
+      "license": {
+        "source": "ofl/nunito/OFL.txt",
+        "file": "nunito-OFL.txt",
+        "sha256": "580df76c95a1ec5ab878ceb25bb3d85c6a076804e9c970c8c6972aea775fdf65",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "nunito.woff2",
+          "weight": "200 1000",
+          "source": "ofl/nunito/Nunito[wght].ttf",
+          "sourceSha256": "bb55a5ca5c2042335b3991af27c4d0705d0ef41cac6164ac737fd8f2a1e85207",
+          "sha256": "fd0bff4bcc6e73295ec4f03d6ebcaecabff6292de6e04b31154e2d6fddab6b80",
+          "bytes": 100924,
+          "glyphs": 1103
+        }
+      ]
+    },
+    {
+      "name": "Raleway",
+      "slug": "raleway",
+      "license": {
+        "source": "ofl/raleway/OFL.txt",
+        "file": "raleway-OFL.txt",
+        "sha256": "7e946cf1171784d1015279e7dc35f827957a6b5d1f1f659ae0c98e5f5e37ed9b",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "raleway.woff2",
+          "weight": "100 900",
+          "source": "ofl/raleway/Raleway[wght].ttf",
+          "sourceSha256": "8bbcc3eb8275c388f4bcd998832f8a4b943eadbaf6a595205312774b5951aefb",
+          "sha256": "6aa19662aaefe65d006e3755377c7e0f2f56d6ead0a5165f4d8be4d185ae4eb1",
+          "bytes": 129484,
+          "glyphs": 1071
+        }
+      ]
+    },
+    {
+      "name": "Oswald",
+      "slug": "oswald",
+      "license": {
+        "source": "ofl/oswald/OFL.txt",
+        "file": "oswald-OFL.txt",
+        "sha256": "0fd731a904b729a4e02eaf5e8ebd06783edd9abe400e8882760160230675b652",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "oswald.woff2",
+          "weight": "200 700",
+          "source": "ofl/oswald/Oswald[wght].ttf",
+          "sourceSha256": "5b38c246e255a12f5712d640d56bcced0472466fc68983d2d0410ec0457c2817",
+          "sha256": "6bbc262410618b85e3d3154309cad8346a9e3c3085a61d04b3710a4cf2831f4d",
+          "bytes": 72104,
+          "glyphs": 883
+        }
+      ]
+    },
+    {
+      "name": "Inter",
+      "slug": "inter",
+      "license": {
+        "source": "ofl/inter/OFL.txt",
+        "file": "inter-OFL.txt",
+        "sha256": "5b9321a4298cfeb6b34354164a1c3afc3db114569984c502b9b35d988fd58c57",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "inter.woff2",
+          "weight": "100 900",
+          "source": "ofl/inter/Inter[opsz,wght].ttf",
+          "sourceSha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
+          "sha256": "13b4cddc57045d40b411008e61588c8f81aa0bd72fe884624831a0ff9c4d159a",
+          "bytes": 350460,
+          "glyphs": 2933
+        }
+      ]
+    },
+    {
+      "name": "Cormorant Garamond",
+      "slug": "cormorantgaramond",
+      "license": {
+        "source": "ofl/cormorantgaramond/OFL.txt",
+        "file": "cormorantgaramond-OFL.txt",
+        "sha256": "60700d351cac4650c51f3f9db318d2a420f8b45052dba2715eb5fec41f0f6956",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "cormorantgaramond.woff2",
+          "weight": "300 700",
+          "source": "ofl/cormorantgaramond/CormorantGaramond[wght].ttf",
+          "sourceSha256": "b20b7d9626dd956b2c5e558692ad328b1f19e3275e2782db4fa07670d83f35e0",
+          "sha256": "1c7136dcfe2ba0c22bd2e4ab48467813cb6dd7b5728a73920dd9eb6452b8a558",
+          "bytes": 209428,
+          "glyphs": 3241
+        }
+      ]
+    },
+    {
+      "name": "Quicksand",
+      "slug": "quicksand",
+      "license": {
+        "source": "ofl/quicksand/OFL.txt",
+        "file": "quicksand-OFL.txt",
+        "sha256": "14d28541780d90f6577bb7abcc6f005bf6969614294e75c82abb8758a696ad46",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "quicksand.woff2",
+          "weight": "300 700",
+          "source": "ofl/quicksand/Quicksand[wght].ttf",
+          "sourceSha256": "39c9b64223561f56aaff6062a6f04063c4fc86809ad6768722c06614d977e1cc",
+          "sha256": "ea843f5402c11a24ea4c07cf03d55d76cedd8c6bac1184795a4cfe80bc4f8ed3",
+          "bytes": 52816,
+          "glyphs": 812
+        }
+      ]
+    },
+    {
+      "name": "Manrope",
+      "slug": "manrope",
+      "license": {
+        "source": "ofl/manrope/OFL.txt",
+        "file": "manrope-OFL.txt",
+        "sha256": "58172e0c0fac2cda8a37b348164bb55e44b0e69051e557e92b1d3f6910141f7b",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "manrope.woff2",
+          "weight": "200 800",
+          "source": "ofl/manrope/Manrope[wght].ttf",
+          "sourceSha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
+          "sha256": "30b83738add8c9edd9e3450b98036a9a8fb5668d0cbd4eb0ce5fe6761197f21f",
+          "bytes": 53892,
+          "glyphs": 742
+        }
+      ]
+    },
+    {
+      "name": "Pacifico",
+      "slug": "pacifico",
+      "license": {
+        "source": "ofl/pacifico/OFL.txt",
+        "file": "pacifico-OFL.txt",
+        "sha256": "a47e5daeda73568969395c656823102678f2eefb0d7d7ecb47aac4cc17e42204",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "pacifico-regular.woff2",
+          "weight": "400",
+          "source": "ofl/pacifico/Pacifico-Regular.ttf",
+          "sourceSha256": "5b6c0d5334a7bf77dea52b975c5a0c408878c0f7115ed5b6fb151f634b7bf701",
+          "sha256": "4b6238e16e5f3f98571954de8d994de79d6cbfaca26f562bba52af44595ff060",
+          "bytes": 105108,
+          "glyphs": 1533
+        }
+      ]
+    },
+    {
+      "name": "Dancing Script",
+      "slug": "dancingscript",
+      "license": {
+        "source": "ofl/dancingscript/OFL.txt",
+        "file": "dancingscript-OFL.txt",
+        "sha256": "6f090277c00af96651ce6dbcc38ff1591047a3bffef486e80b6a32e8276a8201",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "dancingscript.woff2",
+          "weight": "400 700",
+          "source": "ofl/dancingscript/DancingScript[wght].ttf",
+          "sourceSha256": "21808625578fe8d8cd10cb684be546dca077b27cd03a53a2f1ec11dc743c924c",
+          "sha256": "7641e43dcbe5ba3217a3f12080621a041978249b8a6dacaf3d7ff10a7517f8e9",
+          "bytes": 59856,
+          "glyphs": 643
+        }
+      ]
+    }
+  ]
+}

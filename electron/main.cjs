@@ -4,7 +4,13 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { createGeminiService } = require('./gemini.cjs');
+const { createGeminiMediaService, validateMediaRequest } = require('./gemini-media.cjs');
+const { randomUUID } = require('node:crypto');
 const { createSettingsStore } = require('./settings.cjs');
+const { createMediaService, validateTimeline } = require('./media.cjs');
+const { validatePrintDocument, renderDocumentPDF } = require('./print.cjs');
+const { getLocalTypeface } = require('./typeface.cjs');
+const { createCanvasClipboard } = require('./clipboard.cjs');
 const { MAX_FILE_BYTES, safeName, serializeProject, parseProject, decodeExport, resolveAsset } = require('./files.cjs');
 
 function devURL(value) {
@@ -52,6 +58,20 @@ function securityHeaders(development = false, source) {
   return headers;
 }
 
+async function dispatchEditorCommand(contents, action, sendMenu) {
+  const commands = { undo: 'undo', redo: 'redo', copy: 'copy', cut: 'cut', paste: 'paste', 'select-all': 'selectAll' };
+  const nativeCommand = Object.hasOwn(commands, action) ? commands[action] : null;
+  if (!nativeCommand || !contents || contents.isDestroyed()) return false;
+  try {
+    // isContentEditable includes inherited and plaintext-only editable regions.
+    // Fabric's hidden textarea also needs native text history while editing.
+    const textFocused = await contents.executeJavaScript("Boolean(document.activeElement && (document.activeElement.matches('input,textarea') || document.activeElement.isContentEditable))");
+    if (contents.isDestroyed()) return false;
+    if (textFocused) contents[nativeCommand](); else sendMenu(action);
+    return true;
+  } catch { return false; /* A closing renderer cannot receive a command. */ }
+}
+
 function createAssetHandler({ distDirectory, fetchFile, realpath = fs.realpath }) {
   const reply = (text, status) => new Response(text, { status, headers: securityHeaders(false, { 'Content-Type': 'text/plain; charset=utf-8' }) });
   return async (request) => {
@@ -65,7 +85,7 @@ function createAssetHandler({ distDirectory, fetchFile, realpath = fs.realpath }
       const response = await fetchFile(pathToFileURL(actualFile).href);
       const headers = securityHeaders(false, response.headers);
       if (!headers.has('Content-Type')) {
-        const type = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.wasm': 'application/wasm', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' }[path.extname(actualFile).toLowerCase()];
+        const type = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.wasm': 'application/wasm', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.otf': 'font/otf' }[path.extname(actualFile).toLowerCase()];
         if (type) headers.set('Content-Type', type);
       }
       if (request.method === 'HEAD') await response.body?.cancel();
@@ -77,7 +97,7 @@ function createAssetHandler({ distDirectory, fetchFile, realpath = fs.realpath }
 }
 
 function boot() {
-  const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell, session, protocol, net } = require('electron');
+  const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell, session, protocol, net, clipboard, ClipboardItem, nativeImage } = require('electron');
   app.setName('Visro');
   protocol.registerSchemesAsPrivileged([{ scheme: 'visro', privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true } }]);
   const developmentURL = devURL(process.env.VISRO_DEV_URL);
@@ -85,11 +105,19 @@ function boot() {
   let mainWindow = null;
   let currentProjectPath = null;
   let store;
+  let media;
+  const canvasClipboard = createCanvasClipboard({ clipboard, ClipboardItem, nativeImage });
   let inFlightAI = 0;
+  const aiJobs = new Map();
   let dialogQueue = Promise.resolve();
 
   function menuAction(action) {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('visro:menu', action);
+  }
+
+  async function editMenuAction(action) {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    return dispatchEditorCommand(mainWindow.webContents, action, menuAction);
   }
 
   function withDialog(task) {
@@ -117,13 +145,45 @@ function boot() {
   }
 
   function installIPC() {
+    handler('visro:clipboard:write', (input) => canvasClipboard.write(input));
+    handler('visro:clipboard:read', () => canvasClipboard.read());
+    handler('visro:typeface:local', () => getLocalTypeface());
     handler('visro:settings:get', () => store.getSettings());
     handler('visro:settings:save', (input) => store.saveSettings(input));
     handler('visro:models:list', async () => createGeminiService(await store.getCredentials()).listModels());
     handler('visro:ai:run', async (input) => {
       if (inFlightAI >= 3) throw new Error('Wait for an AI request to finish before starting another.');
       inFlightAI += 1;
-      try { return await createGeminiService(await store.getCredentials()).runAI(input); } finally { inFlightAI -= 1; }
+      let job;
+      try {
+        if (input && ['voice', 'video'].includes(input.kind)) {
+          validateMediaRequest(input);
+          const requestId = input.requestId || randomUUID();
+          if (aiJobs.has(requestId)) throw new Error('This AI media request is already running.');
+          job = { requestId, controller: new AbortController(), kind: input.kind };
+          aiJobs.set(requestId, job);
+          const onProgress = (progress) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('visro:ai:progress', { ...progress, requestId, kind: job.kind }); };
+          const credentials = await store.getCredentials();
+          const generated = await createGeminiMediaService({ ...credentials, signal: job.controller.signal, onProgress }).run(input);
+          const item = await media.importBuffer(generated, { signal: job.controller.signal });
+          onProgress({ phase: 'complete', percent: 100, message: 'Your generated media is ready in the local library.' });
+          return { media: item };
+        }
+        return await createGeminiService(await store.getCredentials()).runAI(input);
+      } catch (error) {
+        if (job?.controller.signal.aborted) {
+          if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('visro:ai:progress', { requestId: job.requestId, kind: job.kind, phase: 'cancelled', percent: 0, message: 'Stopped waiting for AI media generation.' });
+          throw new Error('AI media generation cancelled.');
+        }
+        throw error;
+      } finally { inFlightAI -= 1; if (job) aiJobs.delete(job.requestId); }
+    });
+    handler('visro:ai:cancel', (requestId) => {
+      if (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(requestId)) throw new Error('The AI request identifier is invalid.');
+      const job = aiJobs.get(requestId);
+      if (!job) return { cancelled: false };
+      job.controller.abort();
+      return { cancelled: true };
     });
     handler('visro:project:open', () => withDialog(async () => {
       const result = await dialog.showOpenDialog(mainWindow, { title: 'Open Visro project', properties: ['openFile'], filters: [{ name: 'Visro projects', extensions: ['visro', 'json'] }] });
@@ -156,7 +216,37 @@ function boot() {
       await fs.writeFile(result.filePath, file.data);
       return { saved: true, filePath: result.filePath, name: path.basename(result.filePath) };
     }));
+    handler('visro:document:print', (input) => withDialog(async () => {
+      const document = validatePrintDocument(input);
+      const result = await dialog.showSaveDialog(mainWindow, { title: 'Export document PDF', defaultPath: `${document.name}.pdf`, filters: [{ name: 'PDF document', extensions: ['pdf'] }] });
+      if (result.canceled || !result.filePath) return null;
+      const pdf = await renderDocumentPDF(document, { BrowserWindow, session });
+      await fs.writeFile(result.filePath, pdf);
+      return { saved: true, filePath: result.filePath, name: path.basename(result.filePath) };
+    }));
     handler('visro:external', async (value) => { await shell.openExternal(httpsURL(value)); return true; });
+    handler('visro:media:capabilities', () => media.capabilities());
+    handler('visro:media:list', () => media.listMedia());
+    handler('visro:media:remove', (id) => media.removeMedia(id));
+    handler('visro:media:open', async (id) => {
+      const item = await media.asset(id);
+      const error = await shell.openPath(item.previewPath);
+      if (error) throw new Error('The media preview could not be opened.');
+    });
+    handler('visro:media:import', async (kind = 'all') => {
+      if (!['video', 'audio', 'all'].includes(kind)) throw new Error('Choose video or audio import.');
+      const videos = ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'], audio = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus'];
+      const result = await withDialog(() => dialog.showOpenDialog(mainWindow, { title: 'Import local media', properties: ['openFile', 'multiSelections'], filters: [{ name: kind === 'all' ? 'Video & audio' : kind === 'video' ? 'Video' : 'Audio', extensions: kind === 'all' ? [...videos, ...audio] : kind === 'video' ? videos : audio }] }));
+      if (result.canceled || !result.filePaths.length) return [];
+      return media.importFiles(result.filePaths, kind);
+    });
+    handler('visro:media:export', async (input) => {
+      const validated = validateTimeline(input);
+      const result = await withDialog(() => dialog.showSaveDialog(mainWindow, { title: `Export ${validated.format.toUpperCase()}`, defaultPath: `${validated.name}.${validated.format}`, filters: [{ name: validated.format.toUpperCase(), extensions: [validated.format] }] }));
+      if (result.canceled || !result.filePath) return null;
+      return media.exportTimeline(input, result.filePath);
+    });
+    handler('visro:media:cancel', () => media.cancelExport());
   }
 
   function installMenu() {
@@ -172,7 +262,7 @@ function boot() {
         { label: 'Export…', accelerator: 'CmdOrCtrl+Shift+E', click: () => menuAction('export') },
         { type: 'separator' }, { role: isMac ? 'close' : 'quit' },
       ] },
-      { label: 'Edit', submenu: [{ label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => menuAction('undo') }, { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => menuAction('redo') }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
+      { label: 'Edit', submenu: [{ label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => void editMenuAction('undo') }, { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => void editMenuAction('redo') }, { label: 'Redo', accelerator: 'CmdOrCtrl+Y', visible: false, acceleratorWorksWhenHidden: true, click: () => void editMenuAction('redo') }, { type: 'separator' }, { label: 'Cut', accelerator: 'CmdOrCtrl+X', click: () => void editMenuAction('cut') }, { label: 'Copy', accelerator: 'CmdOrCtrl+C', click: () => void editMenuAction('copy') }, { label: 'Paste', accelerator: 'CmdOrCtrl+V', click: () => void editMenuAction('paste') }, { label: 'Select All', accelerator: 'CmdOrCtrl+A', click: () => void editMenuAction('select-all') }] },
       { label: 'View', submenu: [{ label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => menuAction('zoom-in') }, { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => menuAction('zoom-out') }, { label: 'Fit Canvas', accelerator: 'CmdOrCtrl+0', click: () => menuAction('fit') }, { type: 'separator' }, { role: 'togglefullscreen' }, ...(developmentURL ? [{ role: 'toggleDevTools' }] : [])] },
       { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, ...(isMac ? [{ type: 'separator' }, { role: 'front' }] : [])] },
       { label: 'Help', submenu: [{ label: 'Get a Gemini API key', click: () => shell.openExternal('https://aistudio.google.com/app/apikey') }, { label: 'Gemini documentation', click: () => shell.openExternal('https://ai.google.dev/gemini-api/docs') }] },
@@ -201,6 +291,7 @@ function boot() {
 
   app.whenReady().then(async () => {
     store = createSettingsStore({ directory: app.getPath('userData'), safeStorage });
+    media = createMediaService({ directory: path.join(app.getPath('userData'), 'media-library'), toolsDirectory: path.join(process.resourcesPath, 'media-tools'), developmentToolsDirectory: path.resolve(__dirname, '../build/media-tools'), onProgress: (progress) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('visro:media:progress', progress); } });
     const targetSession = session.defaultSession;
     targetSession.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false));
     targetSession.setPermissionCheckHandler(() => false);
@@ -212,7 +303,16 @@ function boot() {
       headers['Cross-Origin-Embedder-Policy'] = ['require-corp'];
       callback({ responseHeaders: headers });
     });
-    protocol.handle('visro', createAssetHandler({ distDirectory, fetchFile: (url) => net.fetch(url) }));
+    const assetHandler = createAssetHandler({ distDirectory, fetchFile: (url) => net.fetch(url) });
+    protocol.handle('visro', async (request) => {
+      const url = new URL(request.url);
+      if (url.protocol === 'visro:' && url.hostname === 'app' && url.pathname.startsWith('/media/')) {
+        if (request.initiatorOrigin !== undefined && request.initiatorOrigin !== 'visro://app') return new Response('Forbidden', { status: 403 });
+        const response = await media.mediaResponse(request);
+        return new Response(response.body, { status: response.status, headers: securityHeaders(false, response.headers) });
+      }
+      return assetHandler(request);
+    });
     installIPC();
     installMenu();
     createWindow();
@@ -222,10 +322,11 @@ function boot() {
     app.quit();
   });
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
+  app.on('before-quit', () => { media?.cancelExport(); for (const job of aiJobs.values()) job.controller.abort(); });
 }
 
 // Electron's package loader can import the entry point without assigning it to
 // require.main. Node tests import this module without an Electron browser process.
 if (process.versions.electron && process.type === 'browser') boot();
 
-module.exports = { devURL, httpsURL, contentSecurityPolicy, securityHeaders, createAssetHandler, boot };
+module.exports = { devURL, httpsURL, contentSecurityPolicy, securityHeaders, createAssetHandler, dispatchEditorCommand, boot };

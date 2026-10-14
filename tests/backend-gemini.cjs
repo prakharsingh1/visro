@@ -116,3 +116,39 @@ test('thought parts are never inserted into the user design copy', async () => {
   const service = createGeminiService({ apiKey: KEY, fetchImpl: async () => response(content({ thought: true, text: 'Hidden reasoning' }, { text: 'A clear headline' })) });
   assert.deepEqual(await service.runAI({ kind: 'copy', prompt: 'Test' }), { text: 'A clear headline' });
 });
+
+test('translation, rewriting and summarizing send the selected source text and return usable copy', async () => {
+  const bodies = [];
+  const service = createGeminiService({ apiKey: KEY, fetchImpl: async (_url, options) => { bodies.push(JSON.parse(options.body)); return response(content({ text: 'Finished text' })); } });
+  for (const kind of ['translate', 'rewrite', 'summarize']) {
+    assert.deepEqual(await service.runAI({ kind, prompt: '', text: 'A sentence to transform.', language: 'Hindi', tone: 'friendly' }), { text: 'Finished text' });
+  }
+  assert.match(bodies[0].contents[0].parts[0].text, /Hindi/);
+  assert.match(bodies[1].contents[0].parts[0].text, /friendly/);
+  assert.match(bodies[2].contents[0].parts[0].text, /Summarize/);
+  for (const body of bodies) assert.match(body.contents[0].parts[0].text, /A sentence to transform/);
+});
+
+test('resize and remix requests pass the current editable design and enforce target canvas dimensions', async () => {
+  const original = { name: 'Idea', width: 1200, height: 800, background: '#ffffff', elements: [{ type: 'text', text: 'Keep this copy', x: 20, y: 20, width: 1000, height: 100, fill: '#000000' }] };
+  const bodies = [];
+  const service = createGeminiService({ apiKey: KEY, fetchImpl: async (_url, options) => { bodies.push(JSON.parse(options.body)); return response(content({ text: JSON.stringify(original) })); } });
+  for (const kind of ['resize', 'remix']) {
+    const result = await service.runAI({ kind, prompt: 'Use a lighter palette', design: original, width: 1080, height: 1920 });
+    assert.equal(result.design.width, 1080);
+    assert.equal(result.design.height, 1920);
+    assert.equal(result.design.elements[0].text, 'Keep this copy');
+  }
+  assert.match(bodies[0].contents[0].parts[0].text, /Resize and reflow/);
+  assert.match(bodies[1].contents[0].parts[0].text, /Remix this existing/);
+  assert.equal(bodies[0].generationConfig.responseMimeType, 'application/json');
+});
+
+test('new AI actions validate source size and design structure before a network request', async () => {
+  let fetched = 0;
+  const service = createGeminiService({ apiKey: KEY, fetchImpl: async () => { fetched++; return response({}); } });
+  await assert.rejects(service.runAI({ kind: 'summarize', prompt: '', text: 'x'.repeat(40001) }), /40,000/);
+  await assert.rejects(service.runAI({ kind: 'resize', prompt: '', design: { elements: [] } }), /empty design/);
+  await assert.rejects(service.runAI({ kind: 'translate', prompt: 'test', language: 'x'.repeat(81) }), /language name/);
+  assert.equal(fetched, 0);
+});

@@ -11,6 +11,13 @@ Visro source is licensed under AGPL-3.0-only because its local background-remova
 - jsPDF — MIT. https://github.com/parallax/jsPDF
 - Electron / Chromium — Electron MIT and Chromium's third-party licenses, shipped within the Electron runtime. https://github.com/electron/electron
 
-Templates, interface design, app icon, and Visro's application logic were created for this project. No Canva or Adobe source, proprietary templates, logos, or premium stock assets are included. Gemini is Google's API service; the user supplies a key and is responsible for their API usage.
+- PDF.js 6.4.299 — Mozilla and contributors, Apache-2.0. License in licenses/pdfjs-dist-LICENSE. Decoder, CMap and standard-font notices accompany the packaged pdf-assets. https://github.com/mozilla/pdf.js
+- PptxGenJS 4.0.1 — MIT. License in licenses/pptxgenjs-LICENSE. https://github.com/gitbrent/PptxGenJS
+- qrcode 1.5.4 — MIT. License in licenses/qrcode-LICENSE. https://github.com/soldair/node-qrcode
+- image-size 2.0.4 — MIT. License in licenses/image-size-LICENSE. https://github.com/image-size/image-size
+- FFmpeg and FFprobe 9.0.2, signed Apple Silicon builds by Martin Riedl — GPL-3.0-or-later. License, exact configuration, SHA-256 manifest and source references accompany the binaries in resources/media-tools. FFmpeg source: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz ; publisher build/dependency sources: https://git.martin-riedl.de/ffmpeg/build-script .
+- Offline design fonts from Google Fonts at commit 66928797f271fed5ee428544e7229685e2d90127 — OFL-1.1. Family copyright/license files accompany the fonts in fonts/; complete source/generated SHA-256 provenance is in scripts/font-manifest.json. WOFF2 conversion preserves all Unicode glyphs, original names, outlines and variable axes. https://github.com/google/fonts
+
+Templates, interface design, app icon, and Visro's application logic were created for this project. No Canva or Adobe source, proprietary templates, logos, or premium stock assets are included in the distributed app. The optional Canva Sans interface typeface is read locally from the user’s already-installed Canva application; its proprietary binaries are not copied into this repository, installers, or source archive. Independently implemented icons and public app behavior inform the interface. Gemini is Google's API service; the user supplies a key and is responsible for their API usage.
 
 For distribution, ship the complete corresponding Visro source (including package-lock.json, build scripts, Electron integration, and the documented model-download procedure) with the binaries. IMG.LY also offers separate commercial licensing; contact IMG.LY before changing this dependency's licensing assumptions.

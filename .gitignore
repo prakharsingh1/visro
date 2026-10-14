@@ -7,3 +7,10 @@ output/
 .env*
 public/background-removal/
 .playwright-cli/
+
+public/pdf-assets/
+build/media-tools/
+
+# Reproducible font conversion caches
+build/font-tools-env/
+build/font-sources/

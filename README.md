@@ -1,45 +1,73 @@
 # Visro
 
-A Mac creative studio for local, editable designs, with real background removal and your own Gemini key.
+Visro is a local Mac creative workspace with a Canva-style editor and your own Gemini key. Designs, assets, brand kits, comments and versions stay on this Mac.
 
-## Open the Mac app
+## Open and connect
 
-The installed Apple silicon app is at `/Users/prakharsingh/Applications/Visro.app`. An installable DMG and ZIP are in `release/`; the packaging wrapper keeps its signed app bundle in a local cache outside Documents. Drag Visro into Applications from the DMG, or open the app directly. This development build is signed ad hoc and is not Apple-notarized for public distribution.
+Open `~/Applications/Visro.app`, or install the Apple silicon DMG from `release/`. This build is signed ad hoc; it is not Apple-notarized.
 
-Click **Settings** in the top toolbar, paste a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), and choose **Connect Gemini**. The key is encrypted through Electron's macOS-backed safeStorage and is never stored in a project, canvas, browser localStorage, source file, or remote Visro server. Text/design and image models are independently configurable. **Load available models** discovers those exposed to your account.
+Open **File → Settings** or your profile's Settings, paste your key from [Google AI Studio](https://aistudio.google.com/apikey), and choose **Connect Gemini**. The desktop app encrypts the key using macOS-backed Electron safeStorage. Keys are not included in projects or browser storage. Text, image, speech and video models can be configured independently; **Load available models** lists those accessible to your Google project.
 
-Click **Visro AI** to generate an editable design, write copy, generate an image, or edit a selected photo. Review the returned result before adding it. A generated design is added as a new page, retaining your existing work. Gemini requires internet and the model access/quota granted to your Google project; your API usage is billed by Google.
+**Apps → Magic Media** provides editable designs, writing, translation, image generation/editing, speech and Veo video. Returned results can be previewed and added to a project. AI requests need internet, model access and quota in your Google project. No live key was used in development; model availability still needs acceptance with your key.
 
-## Design workflows
+## Create and edit
 
-- Start from 10 original templates or resize a canvas for social posts, stories, presentations, documents, cards, and posters.
-- Add and edit text, shapes, freehand strokes, and imported PNG/JPG/WebP/GIF images. Drag handles to scale or rotate; select layers for precise position, style, locking, visibility, grouping, flipping, cropping, and image adjustments.
-- Add, duplicate, and switch pages. Undo/redo preserves the full document. Brand colours and font choices travel with the project.
-- Designs autosave to a local IndexedDB library. Click the Visro logo to reopen them. **Save** creates a portable `.visro` file through a native save dialog; **Open** restores it.
-- **Export** saves current-page PNG/JPG/SVG or a PDF containing every page. PNG supports transparency and 1×/2×/3× dimensions. Presentation view displays pages on a dark backdrop.
-- Select an image, then click **Remove background**. IS-Net runs on this Mac and returns a real PNG alpha channel. Its verified model/runtime are bundled in the app, so it works offline without a Gemini key or a first-use download. The first image initializes the model and may take longer; complex hair, glass, and multiple subjects can need refinement.
+- Start with 46 original editable templates, or create a presentation, social design, video, print layout, rich document, whiteboard, sheet, website or custom canvas.
+- Drag objects directly. Purple hover outlines identify the object under the pointer; click selects it. Shift selects several. Arrow keys move selected objects by 1px; Shift+Arrow moves 10px. Undo preserves fractional positions.
+- Use the left rail for Templates, Elements, Text, Brand, Uploads, Tools, Projects and Apps. **Position** opens on the left with Arrange/Layers, ordering, alignment, distribution and exact geometry. Comments open on the right; Notes sit below the canvas.
+- Use the floating context toolbar for typography, color, spacing, opacity, photo editing, crop, flips, effects and position. Right-click an object for copy/paste, duplicate, ordering, alignment, grouping, locks, links, alternative text and other applicable actions.
+- Use 21 bundled open font families or upload a local font. Canva Sans loads from an existing local Canva installation when available; its binary is not distributed with Visro. File/Settings offers light, dark and system appearance.
+- Insert photos/SVGs, draw, use image frames, build editable tables/charts, generate QR codes, save reusable components and create multiple pages from CSV data.
+- Remove photo backgrounds offline with bundled IS-Net. Erase/restore brushes refine the real alpha channel. Interactive crop works in original image coordinates and preserves the placed frame's proportions.
+- Rich documents support headings, formatting, lists, images and tables. Sheets provide references, arithmetic, SUM/AVERAGE/MIN/MAX/COUNT and CSV/TSV. Local video/audio supports timeline ordering, trims, timing, volume and MP4/WebM/GIF rendering with bundled FFmpeg.
+- Home provides recent projects, search, folders, stars and Trash. Brand kits store named color/font/logo sets. Comments and named versions are local.
 
-Shortcuts: `⌘S` Save, `⌘O` Open, `⌘Z` Undo, `⌘⇧Z` Redo, `⌘D` Duplicate selected, `T` Add a heading, Delete Remove selected. Native menus also expose New, Save As, Export, Settings, zoom, and fit.
+Designs autosave into IndexedDB. Repeated large photos are stored once as local blobs; project lists load small summaries rather than every photo. **Save** writes a portable `.visro` file with reused images bundled once. **Open** imports it. PNG/JPEG/SVG/PDF/PPTX, document HTML/PDF, sheet CSV, static website HTML and media exports are supported. PDF import renders pages for annotation; it does not recover editable source layers. Complex PowerPoint artwork is rendered into slide images; simple supported objects remain editable.
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+| --- | --- |
+| Save / Save as / Open | ⌘S / ⇧⌘S / ⌘O |
+| Undo / Redo | ⌘Z / ⇧⌘Z or ⌘Y |
+| Copy / Cut / Paste / Select all | ⌘C / ⌘X / ⌘V / ⌘A |
+| Duplicate / Group / Ungroup | ⌘D / ⌘G / ⇧⌘G |
+| Text / Rectangle / Circle / Line | T / R / C / L |
+| Move / Larger move | Arrow / Shift+Arrow |
+| Bring forward / Send backward | ⌘] / ⌘[ |
+| Bring to front / Send to back | ⌥⌘] / ⌥⌘[ |
+| Show layers / Copy style / Paste style | ⌥1 / ⌥⌘C / ⌥⌘V |
+| Link / Component / Comment | ⌘K / ⌥⌘K / ⌥⌘N |
+| Add page / Delete page | ⌘Enter / ⌘Delete |
+| Zoom / Fit / Pan | ⌘+ or ⌘− / ⌘0 / hold Space and drag |
+
+Inputs, rich text and an actively edited canvas textbox keep normal text editing shortcuts.
 
 ## Develop and build
 
-Requires Node.js 22.12+ and macOS for Mac packaging. The verified local toolchain uses Node 26.5.0.
+Use Node.js 22.12+ and macOS for native packaging. The verified toolchain on this Mac is Node 26.5.0.
 
 ```sh
 npm ci
-node node_modules/electron/install.js
-npm run prepare:models
 npm run start
 ```
 
-The explicit Electron install command is useful when an npm install policy skips dependency scripts. Ordinary `npm ci` with Electron installation enabled already prepares the runtime.
+If dependency installation skipped Electron's install script, run `node node_modules/electron/install.js` first. For hot reload, run `npm run dev`, then `VISRO_DEV_URL=http://127.0.0.1:5173 npm run desktop`. The local browser editor can be opened at the development URL; encrypted Gemini, native clipboard, printing and FFmpeg services run in the Mac app.
 
-For hot reload, run `npm run dev` in one terminal and `VISRO_DEV_URL=http://127.0.0.1:5173 npm run desktop` in another. For packaging, run `npm run dist:mac`. The wrapper stages and signs the app outside Documents/iCloud, verifies the complete bundle, then copies the flat installers into `release/`. Build scripts verify and reuse the 95.4 MiB of bundled cutout assets; a fresh checkout downloads them from IMG.LY's official versioned endpoint with size/SHA-256 checks. `npm run typecheck` checks TypeScript and `npm test` runs editor and desktop-service tests.
+```sh
+npm run typecheck
+npm test
+npm run dist:mac
+```
 
-## Scope and provenance
+The build prepares verified background models, PDF assets, offline fonts and signed Apple silicon media tools. Cached assets are checked and reused; missing assets are obtained from their pinned sources. Packaging stages outside Documents/iCloud, signs and verifies the complete bundle, then copies flat DMG/ZIP installers into `release/`.
 
-The requested MIT-licensed REA fork is [prakharsingh1/rea](https://github.com/prakharsingh1/rea), checked out in the sibling `../rea` folder. REA is an analysis tool; it is not the design editor and is not a runtime dependency of Visro. Visro uses independent source, UI, templates, and document format. See [the research notes](docs/RESEARCH.md) for ArtCraft's public clean-room approach and static Canva desktop observations.
+## Reference, provenance and boundaries
 
-Visro implements the workflows above. It does not provide full Canva parity: real-time collaboration, Canva's licensed content/marketplace, cloud document import/sync, video editing, social publishing, and print fulfillment are absent. The [feature inventory](docs/FEATURES.md) records the complete first-build boundaries. Full parity is an ongoing product roadmap, not a property of substituting a Gemini key.
+The requested MIT REA fork is [prakharsingh1/rea](https://github.com/prakharsingh1/rea), with a sibling checkout at `../rea`. REA is a research tool, not Visro's editor engine or runtime dependency.
 
-Source is AGPL-3.0-only because of IMG.LY's local background-removal dependency. See LICENSE and THIRD_PARTY_NOTICES.md. The source ZIP shipped with the build includes the corresponding application source, lockfile, tests, and reproducible model preparation script. See [validation results](docs/VALIDATION.md) for completed checks and the live Gemini acceptance check that still needs your key.
+Visro's independent editor follows the visible installed Canva Mac app's navigation, panels and familiar input behavior. The reference is recorded in [RESEARCH.md](docs/RESEARCH.md). Canva's private server source and its hosted services are not available through its installed client.
+
+This build substantially expands the local workflows; it is not complete 1:1 Canva parity. Remaining local limits include an infinite whiteboard engine, advanced video animation/captions, video background removal, full document/Excel compatibility and the entire effects/catalog collection. Cloud synchronization, live teams, paid stock, remote publishing and print fulfillment are outside the user's local-projects/Gemini-only choice. [FEATURES.md](docs/FEATURES.md) and [PARITY.md](docs/PARITY.md) record exact boundaries; [VALIDATION.md](docs/VALIDATION.md) separates verified behavior from pending live AI acceptance.
+
+Source is AGPL-3.0-only because of the IMG.LY background-removal dependency. See LICENSE and THIRD_PARTY_NOTICES.md. The release's source ZIP includes application source, tests, lockfile, licenses and reproducible asset preparation scripts.

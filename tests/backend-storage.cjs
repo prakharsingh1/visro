@@ -11,13 +11,132 @@ const { devURL, httpsURL, contentSecurityPolicy, createAssetHandler } = require(
 
 const KEY = 'fake-gemini-key-for-tests-123456';
 const CIPHER = Buffer.from('opaque-system-keychain-ciphertext');
-const storage = { isEncryptionAvailable: () => true, encryptString: (key) => { assert.equal(key, KEY); return CIPHER; }, decryptString: (cipher) => { assert.deepEqual(cipher, CIPHER); return KEY; } };
+const storage = { isAsyncEncryptionAvailable: async () => true, encryptStringAsync: async (key) => { assert.equal(key, KEY); return CIPHER; }, decryptStringAsync: async (cipher) => { assert.deepEqual(cipher, CIPHER); return { result: KEY, shouldReEncrypt: false }; } };
 
 async function fixture(t, mock = storage) {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'visro-key-test-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   return { directory, store: createSettingsStore({ directory, safeStorage: mock }) };
 }
+
+test('passive settings reads and model changes never probe or decrypt Keychain, even with a saved encrypted key', async (t) => {
+  let calls = 0;
+  const forbidden = () => { calls++; throw new Error('Passive reads must never enter Keychain.'); };
+  const { directory, store } = await fixture(t, { isEncryptionAvailable: forbidden, encryptString: forbidden, decryptString: forbidden, isAsyncEncryptionAvailable: forbidden, encryptStringAsync: forbidden, decryptStringAsync: forbidden });
+  const empty = await store.getSettings();
+  assert.equal(empty.hasKey, false);
+  assert.equal(Object.hasOwn(empty, 'encryptionAvailable'), false);
+  assert.equal(Object.hasOwn(empty, 'secureStorage'), false);
+  await fs.writeFile(path.join(directory, 'settings.json'), JSON.stringify({ encryptedKey: CIPHER.toString('base64'), textModel: 'gemini-test-model' }));
+  const saved = await store.getSettings();
+  assert.equal(saved.hasKey, true);
+  assert.equal(saved.textModel, 'gemini-test-model');
+  assert.equal(saved.apiKey, undefined);
+  assert.equal(saved.encryptedKey, undefined);
+  assert.ok(!JSON.stringify(saved).includes(CIPHER.toString('base64')));
+  assert.equal(saved.encryptionAvailable, undefined);
+  await store.saveSettings({ imageModel: 'image-new', apiKey: '' });
+  assert.equal((await store.getSettings()).hasKey, true);
+  await store.saveSettings({ clearKey: true });
+  assert.equal((await store.getSettings()).hasKey, false);
+  await assert.rejects(store.getCredentials(), /add your Gemini API key/i);
+  assert.equal(calls, 0);
+});
+
+test('explicit key save and AI credential use perform real secure checks while later passive reads use cached capability', async (t) => {
+  let checks = 0, encryptions = 0, decryptions = 0;
+  const { store } = await fixture(t, {
+    isAsyncEncryptionAvailable: async () => { checks++; return true; },
+    encryptStringAsync: async (key) => { encryptions++; assert.equal(key, KEY); return CIPHER; },
+    decryptStringAsync: async (cipher) => { decryptions++; assert.deepEqual(cipher, CIPHER); return { result: KEY, shouldReEncrypt: false }; },
+  });
+  assert.equal((await store.saveSettings({ apiKey: KEY })).encryptionAvailable, true);
+  assert.deepEqual({ checks, encryptions, decryptions }, { checks: 1, encryptions: 1, decryptions: 0 });
+  assert.equal((await store.getSettings()).secureStorage, true);
+  assert.equal(checks, 1);
+  assert.equal((await store.getCredentials()).apiKey, KEY);
+  assert.deepEqual({ checks, encryptions, decryptions }, { checks: 2, encryptions: 1, decryptions: 1 });
+});
+
+test('delayed asynchronous secure storage preserves the event-loop heartbeat and never invokes synchronous APIs', async (t) => {
+  let synchronousCalls = 0, ticks = 0;
+  const forbidden = () => { synchronousCalls++; throw new Error('Synchronous secure storage is forbidden.'); };
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const provider = {
+    isEncryptionAvailable: forbidden, encryptString: forbidden, decryptString: forbidden,
+    isAsyncEncryptionAvailable: async () => { await delay(30); return true; },
+    encryptStringAsync: async (key) => { await delay(20); assert.equal(key, KEY); return CIPHER; },
+    decryptStringAsync: async (cipher) => { await delay(20); assert.deepEqual(cipher, CIPHER); return { result: KEY, shouldReEncrypt: false }; },
+  };
+  const { directory, store } = await fixture(t, provider);
+  const timer = setInterval(() => ticks++, 5);
+  t.after(() => clearInterval(timer));
+  await store.saveSettings({ apiKey: KEY });
+  const restored = createSettingsStore({ directory, safeStorage: provider });
+  assert.equal((await restored.getSettings()).hasKey, true);
+  assert.equal((await restored.getSettings()).encryptionAvailable, undefined);
+  assert.equal((await restored.getCredentials()).apiKey, KEY);
+  assert.ok(ticks >= 8, 'Timers must continue during asynchronous Keychain initialization/encryption/decryption.');
+  assert.equal(synchronousCalls, 0);
+});
+
+test('legacy ciphertext rotates through the async provider without dropping concurrent model changes', async (t) => {
+  const legacy = Buffer.from('v10-legacy-cipher'), rotated = Buffer.from('current-protected-cipher');
+  let beginEncryption, finishEncryption;
+  const started = new Promise((resolve) => { beginEncryption = resolve; });
+  const encrypted = new Promise((resolve) => { finishEncryption = resolve; });
+  const { directory, store } = await fixture(t, {
+    isAsyncEncryptionAvailable: async () => true,
+    decryptStringAsync: async (cipher) => { assert.deepEqual(cipher, legacy); return { result: KEY, shouldReEncrypt: true }; },
+    encryptStringAsync: async (key) => { assert.equal(key, KEY); beginEncryption(); return encrypted; },
+  });
+  await fs.writeFile(path.join(directory, 'settings.json'), JSON.stringify({ encryptedKey: legacy.toString('base64'), textModel: 'original-model' }));
+  const credential = store.getCredentials();
+  await started;
+  await store.saveSettings({ textModel: 'latest-model', imageModel: 'latest-image', voiceModel: 'latest-voice', videoModel: 'latest-video' });
+  finishEncryption(rotated);
+  assert.equal((await credential).apiKey, KEY);
+  const disk = JSON.parse(await fs.readFile(path.join(directory, 'settings.json'), 'utf8'));
+  assert.equal(disk.encryptedKey, rotated.toString('base64'));
+  assert.equal(disk.textModel, 'latest-model');
+  assert.equal(disk.imageModel, 'latest-image');
+  assert.equal(disk.voiceModel, 'latest-voice');
+  assert.equal(disk.videoModel, 'latest-video');
+  assert.ok(!JSON.stringify(disk).includes(KEY));
+  assert.equal((await fs.stat(path.join(directory, 'settings.json'))).mode & 0o777, 0o600);
+});
+
+test('explicit key removal or replacement wins over delayed async ciphertext rotation', async (t) => {
+  for (const operation of ['clear', 'replace']) {
+    const legacy = Buffer.from('v10-legacy-cipher'), rotated = Buffer.from('rotated-cipher'), replacement = Buffer.from('replacement-cipher');
+    const newKey = 'fake-replacement-gemini-key-123456';
+    let beginEncryption, finishEncryption;
+    const started = new Promise((resolve) => { beginEncryption = resolve; });
+    const pending = new Promise((resolve) => { finishEncryption = resolve; });
+    const { directory, store } = await fixture(t, {
+      isAsyncEncryptionAvailable: async () => true,
+      decryptStringAsync: async () => ({ result: KEY, shouldReEncrypt: true }),
+      encryptStringAsync: async (key) => { if (key === newKey) return replacement; beginEncryption(); return pending; },
+    });
+    await fs.writeFile(path.join(directory, 'settings.json'), JSON.stringify({ encryptedKey: legacy.toString('base64') }));
+    const credential = store.getCredentials(); await started;
+    await store.saveSettings(operation === 'clear' ? { clearKey: true } : { apiKey: newKey });
+    finishEncryption(rotated); await credential;
+    const disk = JSON.parse(await fs.readFile(path.join(directory, 'settings.json'), 'utf8'));
+    assert.equal(disk.encryptedKey, operation === 'clear' ? null : replacement.toString('base64'));
+  }
+});
+
+test('missing async methods never fall back to synchronous storage or overwrite an existing ciphertext', async (t) => {
+  let synchronousCalls = 0;
+  const forbidden = () => { synchronousCalls++; throw new Error('Forbidden sync fallback.'); };
+  const { directory, store } = await fixture(t, { isEncryptionAvailable: forbidden, encryptString: forbidden, decryptString: forbidden });
+  await fs.writeFile(path.join(directory, 'settings.json'), JSON.stringify({ encryptedKey: CIPHER.toString('base64') }));
+  await assert.rejects(store.saveSettings({ apiKey: KEY }), /secure key storage is unavailable/i);
+  await assert.rejects(store.getCredentials(), /unlock your macOS keychain/i);
+  assert.equal(JSON.parse(await fs.readFile(path.join(directory, 'settings.json'), 'utf8')).encryptedKey, CIPHER.toString('base64'));
+  assert.equal(synchronousCalls, 0);
+});
 
 test('saved API keys are encrypted, private on disk, and absent from public settings', async (t) => {
   const { directory, store } = await fixture(t);
@@ -30,7 +149,7 @@ test('saved API keys are encrypted, private on disk, and absent from public sett
   assert.ok(!disk.includes(KEY));
   assert.equal(JSON.parse(disk).encryptedKey, CIPHER.toString('base64'));
   assert.equal((await fs.stat(path.join(directory, 'settings.json'))).mode & 0o777, 0o600);
-  assert.deepEqual(await store.getCredentials(), { apiKey: KEY, textModel: 'gemini-test-model', imageModel: 'gemini-2.5-flash-image' });
+  assert.deepEqual(await store.getCredentials(), { apiKey: KEY, textModel: 'gemini-test-model', imageModel: 'gemini-2.5-flash-image', voiceModel: 'gemini-3.1-flash-tts-preview', videoModel: 'veo-3.1-generate-preview' });
 });
 
 test('blank key updates preserve credentials; explicit deletion removes them', async (t) => {
@@ -44,7 +163,7 @@ test('blank key updates preserve credentials; explicit deletion removes them', a
 });
 
 test('secure storage absence never falls back to storing a key as plaintext', async (t) => {
-  const { directory, store } = await fixture(t, { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('must not encrypt'); } });
+  const { directory, store } = await fixture(t, { isAsyncEncryptionAvailable: async () => false, encryptStringAsync: async () => { throw new Error('must not encrypt'); }, decryptStringAsync: async () => { throw new Error('must not decrypt'); } });
   await assert.rejects(store.saveSettings({ apiKey: KEY }), /secure key storage/i);
   await assert.rejects(fs.access(path.join(directory, 'settings.json')));
   assert.equal((await store.getSettings()).encryptionAvailable, false);
@@ -53,7 +172,7 @@ test('secure storage absence never falls back to storing a key as plaintext', as
 test('concurrent settings writes preserve both the key and selected models', async (t) => {
   const { store } = await fixture(t);
   await Promise.all([store.saveSettings({ apiKey: KEY }), store.saveSettings({ textModel: 'text-a' }), store.saveSettings({ imageModel: 'image-b' })]);
-  assert.deepEqual(await store.getCredentials(), { apiKey: KEY, textModel: 'text-a', imageModel: 'image-b' });
+  assert.deepEqual(await store.getCredentials(), { apiKey: KEY, textModel: 'text-a', imageModel: 'image-b', voiceModel: 'gemini-3.1-flash-tts-preview', videoModel: 'veo-3.1-generate-preview' });
 });
 
 test('malformed settings do not expose file content or secrets in errors', async (t) => {

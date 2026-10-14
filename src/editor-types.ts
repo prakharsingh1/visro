@@ -1,4 +1,12 @@
-export type ShapeType = "rect" | "circle" | "triangle" | "line" | "star";
+export type ShapeType = "rect" | "circle" | "triangle" | "line" | "star" | "ellipse" | "diamond" | "pentagon" | "hexagon" | "arrow" | "heart" | "blob";
+export type TextEffect = 'none' | 'shadow' | 'outline' | 'neon' | 'lift' | 'hollow' | 'splice';
+export type FrameShape = 'circle' | 'rounded' | 'arch' | 'diamond';
+export interface PageMetadata { notes?: string; duration?: number; animation?: string }
+export interface ElementMetadata { link?: string; altText?: string; duration?: number }
+export interface ImageEffects { brightness: number; contrast: number; saturation: number; blur: number; grayscale: boolean }
+export interface ImageCropRect { left: number; top: number; width: number; height: number }
+export interface TableOptions { rows: number; columns: number; data?: string[][]; header?: boolean }
+export interface ChartOptions { type: 'bar' | 'line' | 'pie' | 'donut'; labels: string[]; values: number[]; colors?: string[] }
 export type TextRole = "heading" | "subheading" | "body";
 export type ArrangeDirection = "front" | "back" | "up" | "down";
 export type Alignment =
@@ -50,6 +58,8 @@ export interface ProjectPage {
   name: string;
   background: string;
   canvas: Record<string, unknown>;
+  metadata?: PageMetadata;
+  backgroundGradient?: { colors: string[]; angle: number };
 }
 
 export interface VisroProject {
@@ -60,6 +70,8 @@ export interface VisroProject {
   pages: ProjectPage[];
   activePageId: string;
   brand: { colors: string[]; fonts: string[] };
+  kind?: 'design' | 'document' | 'sheet' | 'whiteboard' | 'website' | 'video';
+  content?: unknown;
 }
 
 export interface LayerInfo {
@@ -94,6 +106,13 @@ export interface SelectedObject {
   visible: boolean;
   count: number;
   isImage: boolean;
+  underline: boolean;
+  linethrough: boolean;
+  stroke: string;
+  strokeWidth: number;
+  textEffect: TextEffect;
+  gradient?: { colors: string[]; angle: number };
+  metadata?: ElementMetadata;
 }
 
 export type SelectionState = SelectedObject;
@@ -117,6 +136,9 @@ export interface SelectionUpdate {
   width?: number;
   height?: number;
   angle?: number;
+  underline?: boolean;
+  linethrough?: boolean;
+  charSpacing?: number;
 }
 
 export interface EditorState {
@@ -126,12 +148,16 @@ export interface EditorState {
   zoom: number;
   canUndo: boolean;
   canRedo: boolean;
-  pages: { id: string; name: string }[];
+  pages: { id: string; name: string; metadata?: PageMetadata }[];
   activePageId: string;
   background: string;
   layers: LayerInfo[];
   dirty: boolean;
   brand: { colors: string[]; fonts: string[] };
+  revision: number;
+  pageMetadata?: PageMetadata;
+  backgroundGradient?: { colors: string[]; angle: number };
+  kind?: VisroProject['kind'];
 }
 
 export interface EditorOptions {

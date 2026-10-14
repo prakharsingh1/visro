@@ -1,0 +1,3 @@
+# Preserve verbatim upstream license bytes, including their original line endings.
+public/fonts/*-OFL.txt -whitespace
+licenses/* -whitespace

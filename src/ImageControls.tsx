@@ -1,0 +1,10 @@
+import {useEffect,useState} from "react";
+import {Scissors,Sparkles,Upload} from "lucide-react";
+import type {StudioEditor} from "./editor";
+import type {SelectionState} from "./editor-types";
+export function ImageControls({getEditor,selected,onRemove,onMask,onAI,onReplace}:{getEditor:()=>StudioEditor|null;selected:SelectionState|null;onRemove:()=>void;onMask:()=>void;onAI:()=>void;onReplace:()=>void}){
+  const [adjust,setAdjust]=useState<Record<string,number>>({brightness:0,contrast:0,saturation:0});
+  useEffect(()=>{const values=getEditor()?.getImageEffects();if(values)setAdjust({brightness:values.brightness,contrast:values.contrast,saturation:values.saturation});},[selected?.id]);
+  if(selected?.type!=="image")return <p className="small-hint">Select a photo to edit it.</p>;
+  return <div className="feature-panel"><button className="full-button coral" onClick={onRemove}><Scissors size={18}/>BG Remover</button><button className="full-button" onClick={onMask}>Erase / Restore</button><button className="full-button" onClick={onAI}><Sparkles size={18}/>Magic Edit</button><h3>Adjust</h3>{["brightness","contrast","saturation"].map(effect=><label className="range-label" key={effect}>{effect[0].toUpperCase()+effect.slice(1)}<span>{Math.round((adjust[effect]||0)*100)}</span><input aria-label={effect} type="range" min={-1} max={1} step={.02} value={adjust[effect]||0} onChange={e=>{const value=Number(e.target.value);setAdjust(s=>({...s,[effect]:value}));getEditor()?.applyEffects({[effect]:value});}}/></label>)}<button className="quiet-button" onClick={()=>{setAdjust({brightness:0,contrast:0,saturation:0});getEditor()?.applyEffects({brightness:0,contrast:0,saturation:0});}}>Reset adjustments</button><h3>Crop</h3><div className="position-actions">{([['1:1',1],['16:9',16/9],['3:4',.75],['4:3',4/3]] as const).map(([label,ratio])=><button key={label} onClick={()=>getEditor()?.cropImage(ratio)}>{label}</button>)}</div><button className="full-button" onClick={onReplace}><Upload size={18}/>Replace image</button></div>;
+}
