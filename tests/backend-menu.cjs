@@ -11,7 +11,7 @@ test('focused text uses native edit history and clipboard commands without canva
     assert.equal(await dispatchEditorCommand(contents, action, () => assert.fail('Focused input must not edit the canvas.')), true);
   }
   assert.deepEqual(calls, ['undo', 'redo', 'cut', 'copy', 'paste', 'selectAll']);
-  assert.ok(expressions.every((expression) => expression.includes("matches('input,textarea')") && expression.includes('isContentEditable')));
+  assert.ok(expressions.every((expression) => expression.includes("field.tagName==='TEXTAREA'") && expression.includes('isContentEditable')));
 });
 
 test('canvas commands notify only the editor, including paste when an OS image is present', async () => {
@@ -31,4 +31,16 @@ test('closing renderers and unknown commands cannot receive native or canvas edi
   assert.equal(await dispatchEditorCommand({ isDestroyed: () => false }, 'untrusted-command', () => assert.fail('Unknown action')), false);
   assert.equal(await dispatchEditorCommand({ isDestroyed: () => false }, 'constructor', () => assert.fail('Inherited property')), false);
   assert.equal(await dispatchEditorCommand({ isDestroyed: () => false, executeJavaScript: async () => { throw new Error('Renderer gone'); } }, 'undo', () => assert.fail('Closing renderer')), false);
+});
+
+
+test('range and colour controls route history to the project while text fields retain native editing', async () => {
+  const vm=require('node:vm');
+  for(const field of [null,{tagName:'INPUT',type:'range'},{tagName:'INPUT',type:'color'},{tagName:'INPUT',type:'checkbox'},{tagName:'SELECT'},{tagName:'BUTTON'},{tagName:'INPUT',type:'text'},{tagName:'INPUT',type:'number'},{tagName:'INPUT',type:'search'},{tagName:'TEXTAREA'},{tagName:'DIV',isContentEditable:true}]){
+    const native=Boolean(field&&(field.isContentEditable||field.tagName==='TEXTAREA'||field.tagName==='INPUT'&&['text','number','search'].includes(field.type)));
+    const calls=[];
+    const contents={isDestroyed:()=>false,executeJavaScript:async expression=>vm.runInNewContext(expression,{document:{activeElement:field}}),redo:()=>calls.push('text')};
+    await dispatchEditorCommand(contents,'redo',()=>calls.push('project'));
+    assert.deepEqual(calls,[native?'text':'project'],JSON.stringify(field));
+  }
 });

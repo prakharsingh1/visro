@@ -65,7 +65,7 @@ async function dispatchEditorCommand(contents, action, sendMenu) {
   try {
     // isContentEditable includes inherited and plaintext-only editable regions.
     // Fabric's hidden textarea also needs native text history while editing.
-    const textFocused = await contents.executeJavaScript("Boolean(document.activeElement && (document.activeElement.matches('input,textarea') || document.activeElement.isContentEditable))");
+    const textFocused = await contents.executeJavaScript("(() => { const field=document.activeElement; return Boolean(field && (field.isContentEditable || field.tagName==='TEXTAREA' || (field.tagName==='INPUT' && ['text','search','password','email','url','tel','number'].includes(field.type || 'text')))); })()");
     if (contents.isDestroyed()) return false;
     if (textFocused) contents[nativeCommand](); else sendMenu(action);
     return true;
@@ -254,16 +254,25 @@ function boot() {
     const template = [
       ...(isMac ? [{ label: 'Visro', submenu: [{ role: 'about' }, { type: 'separator' }, { label: 'Settings…', accelerator: 'CmdOrCtrl+,', click: () => menuAction('settings') }, { type: 'separator' }, { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] }] : []),
       { label: 'File', submenu: [
-        { label: 'New Design', accelerator: 'CmdOrCtrl+N', click: () => { currentProjectPath = null; menuAction('new'); } },
+        { label: 'New Design', accelerator: 'CmdOrCtrl+T', click: () => { currentProjectPath = null; menuAction('new'); } },
+        { label: 'New Design', accelerator: 'CmdOrCtrl+N', visible: false, acceleratorWorksWhenHidden: true, click: () => { currentProjectPath = null; menuAction('new'); } },
+        { label: 'Home', accelerator: 'CmdOrCtrl+Shift+H', click: () => menuAction('home') },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => menuAction('open') },
         { type: 'separator' },
         { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => menuAction('save') },
         { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => menuAction('save-as') },
         { label: 'Export…', accelerator: 'CmdOrCtrl+Shift+E', click: () => menuAction('export') },
-        { type: 'separator' }, { role: isMac ? 'close' : 'quit' },
+        { type: 'separator' }, { label: 'Close Design', accelerator: 'CmdOrCtrl+W', click: () => menuAction('close-design') },
+        { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', click: () => mainWindow?.close() },
       ] },
       { label: 'Edit', submenu: [{ label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => void editMenuAction('undo') }, { label: 'Redo', accelerator: 'CmdOrCtrl+Shift+Z', click: () => void editMenuAction('redo') }, { label: 'Redo', accelerator: 'CmdOrCtrl+Y', visible: false, acceleratorWorksWhenHidden: true, click: () => void editMenuAction('redo') }, { type: 'separator' }, { label: 'Cut', accelerator: 'CmdOrCtrl+X', click: () => void editMenuAction('cut') }, { label: 'Copy', accelerator: 'CmdOrCtrl+C', click: () => void editMenuAction('copy') }, { label: 'Paste', accelerator: 'CmdOrCtrl+V', click: () => void editMenuAction('paste') }, { label: 'Select All', accelerator: 'CmdOrCtrl+A', click: () => void editMenuAction('select-all') }] },
       { label: 'View', submenu: [{ label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: () => menuAction('zoom-in') }, { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: () => menuAction('zoom-out') }, { label: 'Fit Canvas', accelerator: 'CmdOrCtrl+0', click: () => menuAction('fit') }, { type: 'separator' }, { role: 'togglefullscreen' }, ...(developmentURL ? [{ role: 'toggleDevTools' }] : [])] },
+      { label: 'Tab', submenu: [
+        { label: 'Next Tab', accelerator: 'Alt+CmdOrCtrl+Right', click: () => menuAction('next-tab') },
+        { label: 'Previous Tab', accelerator: 'Alt+CmdOrCtrl+Left', click: () => menuAction('previous-tab') },
+        { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: () => menuAction('reopen-design') },
+        ...Array.from({length:9},(_,index)=>({label:`Select Tab ${index+1}`,accelerator:`CmdOrCtrl+${index+1}`,visible:false,acceleratorWorksWhenHidden:true,click:()=>menuAction(`tab-${index+1}`)})),
+      ] },
       { label: 'Window', submenu: [{ role: 'minimize' }, { role: 'zoom' }, ...(isMac ? [{ type: 'separator' }, { role: 'front' }] : [])] },
       { label: 'Help', submenu: [{ label: 'Get a Gemini API key', click: () => shell.openExternal('https://aistudio.google.com/app/apikey') }, { label: 'Gemini documentation', click: () => shell.openExternal('https://ai.google.dev/gemini-api/docs') }] },
     ];

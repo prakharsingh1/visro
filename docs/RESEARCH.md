@@ -1,6 +1,6 @@
 # Visro implementation research
 
-Reviewed 14 October 2026; installed Canva observations were made on 13 October. Visro is an independent design app inspired by Canva's familiar workflows, built with its own document format, interface, templates, and Gemini integration.
+Reviewed 16 October 2026; installed Canva observations were made on 13 and 16 October. Visro is an independent design app inspired by Canva's familiar workflows, built with its own document format, interface, templates, and Gemini integration.
 
 ## What the requested REA fork does
 
@@ -44,11 +44,11 @@ For the product surface, Canva's [official Mac app listing](https://apps.apple.c
 
 ## Visual and input reference
 
-Visible chrome and menus in the installed **Canva 1.126.0** app were observed separately from the static REA analysis. The current dark Home has a 72px collapsed rail, rounded main surface, gradient heading, broad purple-bordered search and twelve circular quick-create categories. The editor uses 40px native tabs, a 56px gradient header, 72px rail, floating context toolbar and a dark workspace near `#0e1013`. Position is a 360px drawer on the **left**, Comments opens on the right, and Notes below the canvas. Position's Arrange/Layers tabs, order/alignment controls and advanced geometry fields were checked directly.
+Visible chrome and menus in the installed **Canva 1.126.0** app were observed separately from the static REA analysis. The current dark Home has a 72px collapsed rail, rounded main surface, gradient heading, broad purple-bordered search and twelve circular quick-create categories. The editor uses 40px native tabs, a 56px gradient header, 72px rail, floating context toolbar and a dark workspace near `#0e1013`. Position is a 360px drawer on the **left**, starting below the combined 96px tabs/header; Comments opens on the right, and Notes below the canvas. Visro’s earlier extra 57px Position margin was removed after the reference comparison. Position's Arrange/Layers tabs, order/alignment controls and advanced geometry fields were checked directly.
 
 The icon observations included the Brand briefcase with infinity mark; Elements heart, triangle, music and circle; Tools pen with lower squiggle; Components nested hexagons; empty rounded Comments bubble; and the quick-create pie/easel presentation, heart chat bubble and whiteboard crop frame. Visro's SVG glyphs are its own recreations from observed geometry. No complete proprietary editor icon source was recovered or copied, and pixel-identical original glyphs are not claimed.
 
-Native menu labels confirmed `⌘C` Copy, `⌘V` Paste, `⌘D` Duplicate, `⌥⌘C` Copy style, `⌥⌘N` Comment, `⌘]`/`⌘[` forward/backward and `⌥⌘]`/`⌥⌘[` front/back. Other shortcut equivalence is not inferred from generic macOS conventions. Actual Visro keyboard/pointer checks are described below and in release validation.
+Native menu labels confirmed `⌘C` Copy, `⌘V` Paste, `⌘D` Duplicate, `⌥⌘C` Copy style, `⌥⌘N` Comment, `⌘]`/`⌘[` forward/backward and `⌥⌘]`/`⌥⌘[` front/back. Other shortcut equivalence is not inferred from generic macOS conventions. Further direct interaction observations and implementation-specific increments are distinguished below. Actual Visro keyboard/pointer checks are described below and in release validation.
 
 ### Font source and distribution
 
@@ -109,3 +109,24 @@ These requests require internet, an API-enabled project and access to the config
 ## 16 October interaction additions
 
 Canva's [official page view settings](https://www.canva.com/help/page-view-settings/), [guide help](https://www.canva.com/help/adding-and-removing-guides/) and [keyboard shortcuts](https://www.canva.com/en_gb/help/canva-keyboard-shortcuts/) were checked for File → Settings placement, ruler dragging and Shift+R. Visro implements these locally with per-page guide metadata; its 5% safe-margin overlay is a visual guide, not a printer-specific bleed specification. The independent DOM overlay is excluded from artwork exports.
+
+
+## 16 October template library and content provenance
+
+Visro now includes **500 original editable layouts**: the existing 46 retain their IDs, and 454 additions cover 26 composition families, 23 categories and 19 collections. The additions include eighteen fictional brand collections plus a quarterly calendar collection, with original copy and code-native vector illustrations. Formats include social posts, stories, posters, flyers, slides, brochures, newsletters, menus, price lists, invitations, business cards, CVs, infographics, checklists, planners, worksheets, certificates, video thumbnails, podcast covers, labels, cards and calendars. The full catalog also retains the existing Logo category.
+
+These are Visro Originals, not Canva’s “top 500.” Canva’s [Content License Agreement, §9.8](https://www.canva.com/policies/content-license-agreement/) restricts using its licensed content to compete with Canva. Its content was not downloaded, scraped or repackaged as Visro templates. The independent gallery offers name/description search, category/color filters, saved stars, pagination and a larger preview before use; it renders 24 cards per Home page or 18 per editor panel.
+
+The additions use seventeen of the bundled open font families. Glyph advances were measured from those loaded font files at regular and bold weights and stored in `src/template-font-metrics.json`; text authoring uses these metrics with a conservative width allowance. A real browser/Fabric pass instantiated all **4,649 new text objects** after loading the fonts and found no authored-height overflow. A contact sheet covering all 26 composition families was inspected. The real gallery flow filtered a menu, previewed it, created a 28-object canvas, moved its title with a pointer drag and arrow input, and observed the changed coordinates in the saved project. These checks establish editable local layouts; they do not prove equivalence to Canva’s licensed catalog. Evidence is in `output/playwright/template-font-audit.json`, `template-edit-flow.json` and `visro-original-templates-contact.png`.
+
+## 16 October direct input and reliability work
+
+The installed Canva **1.126.0** app was used with a blank test design named **Visro interaction reference**. Visible menus, element controls and overlapping-object interaction were checked without copying private user designs. In that reference, `⌘`-click selected an element behind the front object; Visro implements the same selection behavior. Its interface glyphs remain independent SVG reconstructions, and the installed Canva Sans runtime source remains separate from the public repository.
+
+The current source adds searchable Quick actions (`/` or `⌘E`), sidebar toggle (`⌘/`), canvas-focused Tab/Shift+Tab layer navigation, `⇧⌥L` lock, `⌘F1/F2/F3` focus destinations and Shift+F10 selected-element actions. `⌘`+Arrow resizing uses 1px or 10px with Shift and retains the selection’s top-left position. Option-comma/period rotation uses 1° or 15° with Shift. A direct Option+period input changed Canva’s selected object from 0° to 1°; Cmd+Right changed width from 600px to 601px while X/Y stayed fixed. The larger Shift rotation increment has **not** been verified against Canva. Native design-tab commands include `⌘T`, `⌘W`, `⇧⌘T`, `⌥⌘←/→` and `⌘1…9`; `⇧⌘W` closes the window and `⇧⌘H` opens Home. Browser-reserved tab commands remain with the browser.
+
+A separate development hot-reload test changed the editor while a save was pending, then observed the same edited state after the engine remounted and the autosave delay had passed. This is a specific lifecycle regression check, rather than a guarantee of no future freezes. Packaged drag, clipboard, cutout and reopen acceptance is tracked in [VALIDATION.md](VALIDATION.md).
+
+## 0.4 local captions and timeline
+
+The media workflow now shares one playhead across design scenes, video, audio and caption preview. Users can add manual timed text or import SRT/WebVTT, change cue text/start/end, seek from a cue, adjust style and export SRT/WebVTT. Caption fonts, colors, box opacity, alignment and top/middle/bottom placement are adjustable. The local FFmpeg path bakes enabled captions into MP4/WebM/GIF output. This is timed caption editing and rendering; automatic speech transcription is still absent. Media behavior and final binary acceptance belong to the release-specific checks in [VALIDATION.md](VALIDATION.md).

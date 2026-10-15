@@ -3,7 +3,8 @@
 // This explicit smoke runner launches a built desktop renderer and drives CDP
 // using only Node's native fetch/WebSocket and an isolated Chromium profile.
 // Project fixtures and autosaves remain inside that disposable profile.
-const { spawn } = require('node:child_process');
+const { spawn, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
@@ -116,6 +117,101 @@ async function runNativeEditingRegression(renderer, main) {
   } finally { await renderer.evaluate("document.querySelector('#visro-smoke-native-text')?.remove()"); }
 }
 
+async function runNativeTabsRegression(renderer, main) {
+  if (!main) return { skipped: true, reason: 'The isolated main-process inspector is unavailable.' };
+  const electronAPI = "process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron')";
+  renderer.nativeTabsTrace = [];
+  const clickMenu = async (menu, accelerator) => {
+    renderer.nativeTabsTrace.push({ menu, accelerator, before: await renderer.evaluate("({id:localStorage.getItem('visro-active-design'),tabs:JSON.parse(localStorage.getItem('visro-workspace-tabs')||'[]'),home:Boolean(document.querySelector('.home-shell'))})") });
+    assert.equal(await main.evaluate(`(()=>{const menu=${electronAPI}.Menu.getApplicationMenu().items.find(item=>item.label===${JSON.stringify(menu)});const item=menu?.submenu?.items.find(item=>item.accelerator===${JSON.stringify(accelerator)});if(!item||typeof item.click!=='function')return false;item.click();return true;})()`), true, `Native ${menu} ${accelerator} must exist.`);
+  };
+  const originalId = await renderer.evaluate("localStorage.getItem('visro-active-design')"), before = await renderer.evaluate("document.querySelectorAll('[role=tablist][aria-label=\"Open designs\"] [role=tab]').length");
+  const waitActive = id => waitForRenderer(renderer, `localStorage.getItem('visro-active-design')===${JSON.stringify(id)}&&!document.querySelector('.home-shell,.busy-toast,.canvas-loading')`, `Native tab selection did not open ${id} after ${renderer.nativeTabsTrace.at(-1)?.accelerator}.`);
+  await clickMenu('File', 'CmdOrCtrl+T');
+  await waitForRenderer(renderer, `localStorage.getItem('visro-active-design')!==${JSON.stringify(originalId)}&&!document.querySelector('.busy-toast,.canvas-loading')`, 'CmdT must open a new local design.');
+  const createdId = await renderer.evaluate("localStorage.getItem('visro-active-design')");
+  await waitForRenderer(renderer, `document.querySelectorAll('[role=tablist][aria-label="Open designs"] [role=tab]').length===${before + 1}`, 'The new design must appear in the native tab strip.');
+  assert.equal(await renderer.evaluate("document.querySelectorAll('[role=tablist][aria-label=\"Open designs\"] [role=tab]').length"), before + 1);
+  await clickMenu('Tab', 'Alt+CmdOrCtrl+Left'); await waitActive(originalId);
+  await clickMenu('Tab', 'Alt+CmdOrCtrl+Right'); await waitActive(createdId);
+  await clickMenu('File', 'CmdOrCtrl+W'); await waitActive(originalId);
+  assert.equal(await renderer.evaluate("document.querySelectorAll('[role=tablist][aria-label=\"Open designs\"] [role=tab]').length"), before);
+  await clickMenu('Tab', 'CmdOrCtrl+Shift+T'); await waitActive(createdId);
+  const tabs = await renderer.evaluate("JSON.parse(localStorage.getItem('visro-workspace-tabs'))");
+  await clickMenu('Tab', 'CmdOrCtrl+1'); await waitActive(tabs[0].id);
+  await clickMenu('Tab', 'CmdOrCtrl+9'); await waitActive(createdId);
+  await clickMenu('File', 'CmdOrCtrl+Shift+H');
+  await waitForRenderer(renderer, "Boolean(document.querySelector('.home-shell'))", 'Native Home command must open Home.');
+  await clickMenu('Tab', 'Alt+CmdOrCtrl+Left'); await waitActive(originalId);
+  return { newTab: true, nextPrevious: true, closeAndReopen: true, numberedTabs: true, home: true, restoredOriginal: true, countBefore: before, countAfter: before + 1 };
+}
+
+async function runNativeCaptionRegression(renderer, main, profile, enginePath, screenshotPath) {
+  if (!main) return { skipped: true, reason: 'The isolated main-process inspector is unavailable.' };
+  const originalId = await renderer.evaluate("localStorage.getItem('visro-active-design')"), originalName = await renderer.evaluate("document.querySelector('input[aria-label=\"Design name\"]')?.value");
+  const electronAPI = "process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron')";
+  const destination = path.join(profile, 'native-caption-export.mp4');
+  const text = 'Native caption edited café';
+  await renderer.evaluate(`(async()=>{const image=document.createElement('canvas');image.width=320;image.height=180;const context=image.getContext('2d');context.fillStyle='#112244';context.fillRect(0,0,320,180);const project={version:1,name:'Native caption acceptance',width:320,height:180,pages:[{id:'caption-page',name:'Page 1',background:'#112244',canvas:{version:'7.4.0',objects:[],background:'#112244'}}],activePageId:'caption-page',brand:{colors:['#112244'],fonts:['Arial']},kind:'video',content:{scenes:[{id:'caption-still',name:'Caption scene',kind:'image',image:image.toDataURL(),duration:2,transition:'none'}],audio:[],captions:[{id:'caption',start:.2,end:1.3,text:'Native caption QA'}]}};const record={id:'native-caption-acceptance',name:project.name,updated:Date.now(),project};const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('visro-studio');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});await new Promise((resolve,reject)=>{const transaction=db.transaction('projects','readwrite');transaction.objectStore('projects').put(record);transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);});db.close();localStorage.setItem('visro-active-design',record.id);return true;})()`);
+  await renderer.command('Page.reload'); await openHomeDesign(renderer, 'Native caption acceptance');
+  await waitForRenderer(renderer, "Boolean(document.querySelector('.media-studio input[aria-label=\"Timeline playhead\"]'))", 'The packaged video workspace must expose its playhead.');
+  const scrub = async time => {
+    const point = await renderer.evaluate(`(()=>{const input=document.querySelector('.media-studio input[aria-label="Timeline playhead"]'),r=input.getBoundingClientRect();return{x:r.left+8+(r.width-16)*${time}/Number(input.max),y:r.top+r.height/2};})()`);
+    await renderer.command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', buttons: 1, clickCount: 1 });
+    await renderer.command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', buttons: 0, clickCount: 1 });
+  };
+  await scrub(.4);
+  await waitForRenderer(renderer, "document.querySelector('[aria-label=\"Caption preview\"]')?.textContent==='Native caption QA'", 'Timed captions must preview at the actual native playhead.');
+  await renderer.evaluate("Array.from(document.querySelectorAll('.media-library button')).find(button=>button.textContent.trim()==='Captions').click()");
+  await waitForRenderer(renderer, "Boolean(document.querySelector('textarea[aria-label=\"Caption text 1\"]'))", 'The caption editor must be available in the packaged app.');
+  await renderer.evaluate("(()=>{const input=document.querySelector('textarea[aria-label=\"Caption text 1\"]');input.focus();input.select();})()");
+  await renderer.command('Input.insertText', { text });
+  await waitForRenderer(renderer, `document.querySelector('[aria-label="Caption preview"]')?.textContent===${JSON.stringify(text)}`, 'Native caption editing must update the timed preview.');
+  assert.equal(await renderer.evaluate("(()=>{const button=document.querySelector('.topbar button[aria-label=\"Undo (⌘Z)\"],.topbar button[title=\"Undo (⌘Z)\"]');if(!button)return false;button.click();return true;})()"), true, 'Project Undo must be available in the video workspace.');
+  await waitForRenderer(renderer, "Number(document.querySelector('.media-studio input[aria-label=\"Timeline playhead\"]')?.value)===0", 'Video project Undo must refresh the timeline from restored metadata.');
+  await scrub(.4);
+  await waitForRenderer(renderer, "document.querySelector('[aria-label=\"Caption preview\"]')?.textContent==='Native caption QA'", 'Video project Undo must restore the prior caption text.');
+  assert.equal(await main.evaluate(`(()=>{const edit=${electronAPI}.Menu.getApplicationMenu().items.find(item=>item.label==='Edit');const item=edit?.submenu?.items.find(item=>item.accelerator==='CmdOrCtrl+Shift+Z');if(!item||typeof item.click!=='function')return false;item.click();return true;})()`), true, 'Native project Redo must be available.');
+  await waitForRenderer(renderer, "Number(document.querySelector('.media-studio input[aria-label=\"Timeline playhead\"]')?.value)===0", 'Native Redo must refresh video history even when the playhead slider has focus.');
+  await scrub(.4);
+  await waitForRenderer(renderer, `document.querySelector('[aria-label="Caption preview"]')?.textContent===${JSON.stringify(text)}`, 'Native project Redo must restore the edited caption.');
+  await waitForRenderer(renderer, `(async()=>{const saved=await ${readSavedProject};return saved?.project?.content?.captions?.[0]?.text===${JSON.stringify(text)};})()`, 'Edited captions must autosave to the local project.');
+  const patched = await main.evaluate(`(()=>{const dialog=${electronAPI}.dialog;globalThis.__visroSmokeSaveDialog=dialog.showSaveDialog;dialog.showSaveDialog=async()=>({canceled:false,filePath:${JSON.stringify(destination)}});return true;})()`);
+  assert.equal(patched, true);
+  try {
+    await renderer.evaluate("Array.from(document.querySelectorAll('.media-studio button')).find(button=>button.textContent.trim()==='Export video').click()");
+    await waitForRenderer(renderer, "document.querySelector('.toast')?.textContent?.includes('Video exported: native-caption-export.mp4')", 'The native caption film must render through the actual export workflow.', 30000);
+  } finally {
+    await main.evaluate(`(()=>{const dialog=${electronAPI}.dialog;if(globalThis.__visroSmokeSaveDialog){dialog.showSaveDialog=globalThis.__visroSmokeSaveDialog;delete globalThis.__visroSmokeSaveDialog;}return true;})()`);
+  }
+  const frames = [];
+  for (const time of [.1, .7, 1.6]) {
+    const { stdout } = await promisify(execFile)(enginePath, ['-hide_banner', '-loglevel', 'error', '-ss', String(time), '-i', destination, '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { encoding: 'buffer', maxBuffer: 2 * 1024 * 1024 });
+    assert.equal(stdout.length, 320 * 180 * 3);
+    let white = 0;
+    for (let i = 0; i < stdout.length; i += 3) if (stdout[i] > 190 && stdout[i + 1] > 190 && stdout[i + 2] > 190) white++;
+    frames.push(white);
+  }
+  assert.equal(frames[0], 0, 'Native caption export must hide text before its cue.');
+  assert.ok(frames[1] > 20, 'Native caption export must burn visible text into video frames.');
+  assert.equal(frames[2], 0, 'Native caption export must hide text after its cue.');
+  await renderer.command('Page.reload'); await openHomeDesign(renderer, 'Native caption acceptance');
+  await waitForRenderer(renderer, "Boolean(document.querySelector('.media-studio input[aria-label=\"Timeline playhead\"]'))", 'The saved caption film must reopen.');
+  await scrub(.4);
+  await waitForRenderer(renderer, `document.querySelector('[aria-label="Caption preview"]')?.textContent===${JSON.stringify(text)}`, 'Edited captions must survive a full packaged renderer reload.');
+  await renderer.evaluate("Array.from(document.querySelectorAll('.media-library button')).find(button=>button.textContent.trim()==='Captions').click()");
+  await waitForRenderer(renderer, "Boolean(document.querySelector('textarea[aria-label=\"Caption text 1\"]'))", 'The saved caption track must remain editable after reopening.');
+  if (screenshotPath) {
+    const screenshot = await renderer.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    const file = path.resolve(screenshotPath).replace(/\.png$/i, '-captions.png');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, Buffer.from(screenshot.data, 'base64'));
+  }
+  await renderer.evaluate(`localStorage.setItem('visro-active-design',${JSON.stringify(originalId)})`);
+  await renderer.command('Page.reload'); await openHomeDesign(renderer, originalName);
+  return { timedPreview: true, editable: true, projectUndo: true, nativeProjectRedo: true, autosaveRestored: true, nativeExport: true, frameWhitePixels: frames, outputBytes: (await fs.stat(destination)).size, originalDesignRestored: true };
+}
+
 async function runClipboardRegression(renderer, main) {
   if (!main) return { skipped: true, reason: 'The isolated main-process inspector is unavailable; the clipboard was not changed.' };
   const electronAPI = "process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron')";
@@ -193,7 +289,10 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
     const record=${JSON.stringify(record)};
     const db=await new Promise((resolve,reject)=>{const request=indexedDB.open('visro-studio');request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});
     await new Promise((resolve,reject)=>{const transaction=db.transaction('projects','readwrite');transaction.objectStore('projects').put(record);transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);});
-    db.close();localStorage.setItem('visro-active-design',record.id);return true;
+    db.close();localStorage.setItem('visro-active-design',record.id);
+    // Seeding replaces the active design without the UI's departure-save flow.
+    // Keep workspace tabs consistent instead of retaining an unsaved launch tab.
+    localStorage.setItem('visro-workspace-tabs',JSON.stringify([{id:record.id,name:record.name}]));return true;
   })()`);
   await cdp.command('Page.reload');
   await openHomeDesign(cdp, project.name);
@@ -211,7 +310,18 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   // Use actual painted pixels rather than guessing Fabric's viewport transform.
   // CSS overlays, retina density and the opened Position panel can all change
   // the relationship between canvas bitmap and native client coordinates.
-  const paintedPoint = (fill) => cdp.evaluate(`(()=>{const canvas=document.querySelector('.lower-canvas'),r=canvas.getBoundingClientRect(),pixels=canvas.getContext('2d',{willReadFrequently:true}).getImageData(0,0,canvas.width,canvas.height).data;return (${rasterPointForFill.toString()})(pixels,canvas.width,canvas.height,{left:r.left,top:r.top,width:r.width,height:r.height},${JSON.stringify(fill)});})()`);
+  const paintedPoint = (fill) => cdp.evaluate(`(()=>{
+    const started=performance.now(),canvas=document.querySelector('.lower-canvas'),r=canvas.getBoundingClientRect(),scale=Math.min(1,640/Math.max(canvas.width,canvas.height));
+    const width=Math.max(1,Math.round(canvas.width*scale)),height=Math.max(1,Math.round(canvas.height*scale));
+    const sampler=window.__visroSmokePaintSampler||(window.__visroSmokePaintSampler=document.createElement('canvas'));
+    if(sampler.width!==width||sampler.height!==height){sampler.width=width;sampler.height=height;}
+    const context=sampler.getContext('2d',{willReadFrequently:true});context.clearRect(0,0,width,height);context.drawImage(canvas,0,0,width,height);
+    const pixels=context.getImageData(0,0,width,height).data;
+    const point=(${rasterPointForFill.toString()})(pixels,width,height,{left:r.left,top:r.top,width:r.width,height:r.height,sourceBitmapWidth:canvas.width,sourceBitmapHeight:canvas.height},${JSON.stringify(fill)});
+    const probe=window.__visroSmokePaintProbe||(window.__visroSmokePaintProbe={reads:0,sourcePixels:0,sampledPixels:0,maxMs:0,totalMs:0,maxSampleDimension:640}),elapsed=performance.now()-started;
+    probe.reads++;probe.sourcePixels+=canvas.width*canvas.height;probe.sampledPixels+=width*height;probe.maxMs=Math.max(probe.maxMs,elapsed);probe.totalMs+=elapsed;
+    return point;
+  })()`);
   const click = async (point) => {
     await cdp.command('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 });
     await cdp.command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 });
@@ -260,6 +370,8 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   const persisted = await cdp.evaluate(readSavedProject);
   const persistedObject = persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).find((object) => object.id === target.id);
   const heartbeat = await cdp.evaluate("({...window.__visroSmokeHeartbeat})");
+  const paintProbe = await cdp.evaluate("({...window.__visroSmokePaintProbe})");
+  cdp.gestureSummary = { changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, paintProbe };
   assert.ok(heartbeat.ticks > 10 && heartbeat.moves >= 300, 'Real pointer moves and the renderer heartbeat must continue through all gestures.');
   assert.ok(heartbeat.maxGap < 1500, `The native renderer must remain responsive during repeated movement: ${JSON.stringify({ heartbeat, maxGestureMs })}.`);
   assert.ok(maxGestureMs < 2000, `A native movement gesture must not stall the renderer: ${maxGestureMs} ms.`);
@@ -312,10 +424,10 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, Buffer.from(screenshot.data, 'base64'));
   }
-  return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, firstSelection, finalSelection, restoredSelection, keyboardNudgedSelection, arrowNudge: 1, shiftArrowNudge: 10, hoverHighlight: true, contextMenu, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
+  return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, paintProbe, firstSelection, finalSelection, restoredSelection, keyboardNudgedSelection, arrowNudge: 1, shiftArrowNudge: 10, hoverHighlight: true, contextMenu, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
 }
 
-async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
+async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
   const root = path.resolve(__dirname, '..');
   let executable, args;
   if (appPath) {
@@ -330,7 +442,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
   delete environment.ELECTRON_RUN_AS_NODE;
   delete environment.VISRO_DEV_URL;
   args.push('--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', `--user-data-dir=${profile}`);
-  if (clipboard) args.push('--inspect=0');
+  if (clipboard || captions) args.push('--inspect=0');
   const child = spawn(executable, args, { cwd: root, env: environment, stdio: ['ignore', 'ignore', 'pipe'] });
   let debuggerURL;
   let mainInspectorURL;
@@ -447,8 +559,8 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
     assert.equal(result.mediaEngine.available, true, 'Packaged FFmpeg must be available without user PATH.');
     assert.equal(result.mediaEngine.bundled, true);
     assert.match(result.mediaEngine.version, /^9\.0\.2/);
-    if (clipboard) {
-      progress('preserving and testing native clipboard');
+    if (clipboard || captions) {
+      progress('checking native runtime version and asynchronous storage');
       if (mainInspectorURL) mainCDP = await connectCDP(mainInspectorURL);
       if (mainCDP) {
         result.appVersion = await mainCDP.evaluate("process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron').app.getVersion()");
@@ -457,9 +569,12 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
         result.asyncEncryptionAPI = await mainCDP.evaluate("(()=>{const {safeStorage}=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron');return ['isAsyncEncryptionAvailable','encryptStringAsync','decryptStringAsync'].every(name=>typeof safeStorage[name]==='function');})()");
         assert.equal(result.asyncEncryptionAPI, true, 'The shipped Electron binary must expose non-blocking secure-storage methods.');
       }
-      result.clipboard = await runClipboardRegression(cdp, mainCDP);
-      progress('checking native focused text Undo and Redo');
-      result.nativeEditing = await runNativeEditingRegression(cdp, mainCDP);
+      if (clipboard) {
+        progress('preserving and testing native clipboard');
+        result.clipboard = await runClipboardRegression(cdp, mainCDP);
+        progress('checking native focused text Undo and Redo');
+        result.nativeEditing = await runNativeEditingRegression(cdp, mainCDP);
+      }
     }
     if (fonts) {
       progress('checking actual offline and installed fonts');
@@ -478,6 +593,15 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
     }
     if (projectPath) { progress('checking native pointer gestures, autosave and restore'); result.gestures = await runGestureRegression(cdp, projectPath, screenshotPath); }
     else { progress('opening initial design'); await openHomeDesign(cdp); }
+    if (mainCDP) {
+      progress('checking native design tab commands');
+      result.nativeTabs = await runNativeTabsRegression(cdp, mainCDP);
+    }
+    if (captions) {
+      progress('checking native timed caption editing and rendered video frames');
+      const enginePath = appPath ? path.join(path.dirname(path.dirname(executable)), 'Resources/media-tools/ffmpeg') : path.join(root, 'build/media-tools/ffmpeg');
+      result.captions = await runNativeCaptionRegression(cdp, mainCDP, profile, enginePath, screenshotPath);
+    }
     if (cutoutPath) {
       progress('uploading local cutout fixture');
       const fixturePath = path.resolve(cutoutPath);
@@ -548,7 +672,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
         const file = path.resolve(screenshotPath).replace(/\.png$/i, '-failure.png');
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(file, Buffer.from(screenshot.data, 'base64'));
-        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},gestureTrace:${JSON.stringify(error.smokeGestureTrace || cdp.gestureTrace || [])},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
+        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},gestureTrace:${JSON.stringify(error.smokeGestureTrace || cdp.gestureTrace || [])},gestureSummary:${JSON.stringify(cdp.gestureSummary || null)},nativeTabsTrace:${JSON.stringify(cdp.nativeTabsTrace || [])},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
         await fs.writeFile(file.replace(/\.png$/i, '.json'), `${JSON.stringify(state, null, 2)}\n`);
       } catch { /* Preserve the actual assertion if the renderer is stalled. */ }
     }
@@ -580,7 +704,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
 
 if (require.main === module) {
   const argument = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; };
-  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
+  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
     if (error.validation) process.stdout.write(`${JSON.stringify({ ...error.validation, cleanup: { ok: false, error: error.message } }, null, 2)}\n`);
     if (error.validationError) process.stderr.write(`Native validation failed: ${error.validationError}\n`);
     process.stderr.write(`Native smoke failed: ${error.message}\n`);

@@ -1,4 +1,5 @@
 import type { DesignElement, DesignTemplate } from "./editor-types";
+import { ORIGINAL_TEMPLATE_LIBRARY } from "./template-library.ts";
 
 const text = (
   text: string,
@@ -580,7 +581,7 @@ const ORIGINAL_TEMPLATES: DesignTemplate[] = [
  ],'A landscape certificate with editable recipient, program and signature lines.'),
 ];
 
-export const TEMPLATES: DesignTemplate[] = [...STARTER_TEMPLATES,...ORIGINAL_TEMPLATES];
+export const TEMPLATES: DesignTemplate[] = [...STARTER_TEMPLATES,...ORIGINAL_TEMPLATES,...ORIGINAL_TEMPLATE_LIBRARY];
 
 export const TEMPLATE_CATEGORIES = [
   "All",

@@ -166,10 +166,11 @@ export class StudioEditor {
   private panMode = false;
   private panPoint?: Point;
   private drawingBeforePan = false;
-  private nudgeFrame?: number;
-  private pendingNudgeKey = '';
+  private transformFrame?: number;
+  private pendingTransformKey = '';
   private styleClipboard?: Record<string, unknown>;
   private optionDrag?: OptionDrag;
+  private removeLayerPicker?: () => void;
 
   constructor(element: HTMLCanvasElement, options: EditorOptions = {}) {
     this.options = options;
@@ -192,6 +193,15 @@ export class StudioEditor {
       perPixelTargetFind: true,
       targetFindTolerance: 3,
     });
+    const pickBehind = (event: MouseEvent): void => {
+      if (event.button !== 0 || event.altKey || event.shiftKey || (!event.metaKey && !event.ctrlKey) || this.isTextEditing() || this.panMode || this.canvas.isDrawingMode) return;
+      this.canvas.altSelectionKey = event.metaKey ? 'metaKey' : 'ctrlKey';
+      this.cycleAt(this.canvas.getViewportPoint(event));
+    };
+    // Capture before Fabric chooses its transform target. Its documented
+    // altSelectionKey then keeps the chosen underlying layer draggable.
+    this.canvas.upperCanvasEl.addEventListener('mousedown', pickBehind, true);
+    this.removeLayerPicker = () => this.canvas.upperCanvasEl.removeEventListener('mousedown', pickBehind, true);
     this.canvas.on("selection:created", () => this.selectionChanged());
     this.canvas.on("selection:updated", () => this.selectionChanged());
     this.canvas.on("selection:cleared", () => this.selectionChanged());
@@ -1044,6 +1054,8 @@ export class StudioEditor {
     const objects = this.canvas.getActiveObjects() as StudioObject[];
     const movable = objects.filter((object) => !object.visroLocked);
     if (!selection || !movable.length) return;
+    const key = `nudge:${movable.map((object) => object.id).join(',')}`;
+    if (this.pendingTransformKey && this.pendingTransformKey !== key) this.flushPendingChanges();
     if (selection instanceof ActiveSelection && movable.length === objects.length) {
       selection.set({ left: selection.left + dx, top: selection.top + dy });
       selection.setCoords();
@@ -1059,17 +1071,72 @@ export class StudioEditor {
       if (selection instanceof ActiveSelection) { selection.triggerLayout(); selection.setCoords(); }
     }
     this.hoverTarget = undefined;
-    this.pendingNudgeKey = `nudge:${movable.map((object) => object.id).join(',')}`;
+    this.queueTransform(key);
+  }
+
+  /** Step through editable top-level layers without changing the document. */
+  cycleSelection(direction: 1 | -1 = 1): SelectedObject | null {
+    if (this.destroyed || this.restoring || this.isTextEditing() || this.panMode || this.canvas.isDrawingMode) return this.getSelected();
+    this.flushPendingChanges();
+    const objects = this.canvas.getObjects().filter(object => object.visible && !(object as StudioObject).visroLocked && object.selectable);
+    if (!objects.length) { this.deselect(); return null; }
+    const active = new Set(this.canvas.getActiveObjects());
+    const indices = objects.map((object, index) => active.has(object) ? index : -1).filter(index => index >= 0);
+    const anchor = indices.length ? direction === 1 ? Math.max(...indices) : Math.min(...indices) : direction === 1 ? -1 : objects.length;
+    const object = objects[(anchor + direction + objects.length) % objects.length];
+    this.canvas.setActiveObject(object);
+    this.hoverTarget = undefined;
     this.canvas.requestRenderAll();
-    this.nudgeFrame ??= util.requestAnimFrame(() => this.flushPendingChanges());
+    return this.getSelected();
+  }
+
+  /** Rotate a selection about its center, preserving every child transform. */
+  rotateSelection(deltaDegrees: number): void {
+    if (!Number.isFinite(deltaDegrees) || !deltaDegrees || this.destroyed || this.restoring || this.isTextEditing()) return;
+    const selection = this.canvas.getActiveObject();
+    const objects = this.canvas.getActiveObjects() as StudioObject[];
+    if (!selection || !objects.length || objects.some(object => object.visroLocked)) return;
+    const key = `rotate:${objects.map(object => object.id).join(',')}`;
+    if (this.pendingTransformKey && this.pendingTransformKey !== key) this.flushPendingChanges();
+    const center = selection.getRelativeCenterPoint();
+    selection.rotate(((selection.angle + deltaDegrees % 360) % 360 + 360) % 360);
+    selection.setPositionByOrigin(center, 'center', 'center');
+    selection.setCoords();
+    this.hoverTarget = undefined;
+    this.queueTransform(key);
+  }
+
+  /** Resize along the selection's own axes, in document pixels. */
+  resizeSelection(dx: number, dy: number): void {
+    if (!Number.isFinite(dx) || !Number.isFinite(dy) || (!dx && !dy) || this.destroyed || this.restoring || this.isTextEditing()) return;
+    const selection = this.canvas.getActiveObject();
+    const objects = this.canvas.getActiveObjects() as StudioObject[];
+    if (!selection || !objects.length || objects.some(object => object.visroLocked)) return;
+    const key = `resize:${dx ? 'x' : ''}${dy ? 'y' : ''}:${objects.map(object => object.id).join(',')}`;
+    if (this.pendingTransformKey && this.pendingTransformKey !== key) this.flushPendingChanges();
+    const stroke = selection.strokeUniform ? selection.strokeWidth : 0;
+    const width = selection.getScaledWidth(), height = selection.getScaledHeight();
+    const targetWidth = bounded(width + dx, stroke + 1, MAX_DESIGN_SIZE * 4);
+    const targetHeight = bounded(height + dy, stroke + 1, MAX_DESIGN_SIZE * 4);
+    if (dx) selection.set('scaleX', selection.scaleX * (targetWidth - stroke) / Math.max(.000001, width - stroke));
+    if (dy) selection.set('scaleY', selection.scaleY * (targetHeight - stroke) / Math.max(.000001, height - stroke));
+    selection.setCoords();
+    this.hoverTarget = undefined;
+    this.queueTransform(key);
+  }
+
+  private queueTransform(key: string): void {
+    this.pendingTransformKey = key;
+    this.canvas.requestRenderAll();
+    this.transformFrame ??= util.requestAnimFrame(() => this.flushPendingChanges());
   }
 
   flushPendingChanges(): void {
-    if (!this.pendingNudgeKey) return;
-    const key = this.pendingNudgeKey;
-    this.pendingNudgeKey = '';
-    if (this.nudgeFrame !== undefined) util.cancelAnimFrame(this.nudgeFrame);
-    this.nudgeFrame = undefined;
+    if (!this.pendingTransformKey) return;
+    const key = this.pendingTransformKey;
+    this.pendingTransformKey = '';
+    if (this.transformFrame !== undefined) util.cancelAnimFrame(this.transformFrame);
+    this.transformFrame = undefined;
     this.commit(key);
   }
 
@@ -1105,6 +1172,22 @@ export class StudioEditor {
     const object = [...this.canvas.getObjects()].reverse().find((candidate) => candidate.visible && (point.includeLocked || !(candidate as StudioObject).visroLocked) && candidate.containsPoint(scene) && !this.canvas.isTargetTransparent(candidate, point.x, point.y));
     if (object && this.canvas.getActiveObject() instanceof ActiveSelection && this.canvas.getActiveObjects().includes(object)) return this.getSelected();
     if (object) this.canvas.setActiveObject(object);
+    else this.canvas.discardActiveObject();
+    this.hoverTarget = undefined;
+    this.canvas.requestRenderAll();
+    return this.getSelected();
+  }
+
+  /** Cycle through visible pixels in an overlapping stack, front to back. */
+  cycleAt(point: { x: number; y: number }): SelectedObject | null {
+    if (this.destroyed || this.restoring || this.panMode || this.canvas.isDrawingMode || this.isTextEditing() || !Number.isFinite(point.x) || !Number.isFinite(point.y)) return this.getSelected();
+    this.flushPendingChanges();
+    const scene = new Point(point.x, point.y).transform(util.invertTransform(this.canvas.viewportTransform));
+    const candidates = [...this.canvas.getObjects()].reverse().filter(object => object.visible && object.selectable && !(object as StudioObject).visroLocked && object.containsPoint(scene) && !this.canvas.isTargetTransparent(object, point.x, point.y));
+    const active = new Set(this.canvas.getActiveObjects());
+    const current = candidates.findIndex(object => active.has(object));
+    const next = candidates.length ? candidates[(current + 1) % candidates.length] : undefined;
+    if (next) this.canvas.setActiveObject(next);
     else this.canvas.discardActiveObject();
     this.hoverTarget = undefined;
     this.canvas.requestRenderAll();
@@ -1878,9 +1961,10 @@ export class StudioEditor {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.removeLayerPicker?.(); this.removeLayerPicker = undefined;
     this.optionDrag?.finish(); this.optionDrag = undefined;
-    if (this.nudgeFrame !== undefined) util.cancelAnimFrame(this.nudgeFrame);
-    this.nudgeFrame = undefined; this.pendingNudgeKey = '';
+    if (this.transformFrame !== undefined) util.cancelAnimFrame(this.transformFrame);
+    this.transformFrame = undefined; this.pendingTransformKey = '';
     this.lifecycle.abort();
     this.canvas.off();
     // Settle synchronously before React can reuse the same DOM canvas. Fabric
@@ -2070,11 +2154,11 @@ export class StudioEditor {
 
   private commit(historyKey = ''): void {
     if (this.restoring || this.destroyed) return;
-    if (this.pendingNudgeKey) {
-      historyKey ||= this.pendingNudgeKey;
-      this.pendingNudgeKey = '';
-      if (this.nudgeFrame !== undefined) util.cancelAnimFrame(this.nudgeFrame);
-      this.nudgeFrame = undefined;
+    if (this.pendingTransformKey) {
+      historyKey ||= this.pendingTransformKey;
+      this.pendingTransformKey = '';
+      if (this.transformFrame !== undefined) util.cancelAnimFrame(this.transformFrame);
+      this.transformFrame = undefined;
     }
     const snapshot = this.serialize();
     if (!projectsEqual(this.snapshots[this.historyIndex], snapshot)) {
@@ -2096,7 +2180,7 @@ export class StudioEditor {
 
   private selectionChanged(): void {
     if (this.destroyed || this.suppressEvents || this.restoring) return;
-    if (this.pendingNudgeKey) { this.flushPendingChanges(); return; }
+    if (this.pendingTransformKey) { this.flushPendingChanges(); return; }
     const active = this.canvas.getActiveObject();
     if (active instanceof ActiveSelection) active.set(INTERACTION_STYLE);
     this.options.onSelection?.(this.getSelected());

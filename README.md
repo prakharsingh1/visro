@@ -12,16 +12,16 @@ Open **File → Visro settings…** or your profile's Settings, paste your key f
 
 ## Create and edit
 
-- Start with 46 original editable templates, or create a presentation, social design, video, print layout, rich document, whiteboard, sheet, website or custom canvas.
-- Drag objects directly. Purple hover outlines identify the object under the pointer; click selects it. Option-drag duplicates an object or selection in one Undo. Shift selects several. Arrow keys move selected objects by 1px; Shift+Arrow moves 10px. Undo preserves fractional positions.
-- Use the left rail for Templates, Elements, Text, Brand, Uploads, Tools, Projects and Apps. **Position** opens on the left with Arrange/Layers, ordering, alignment, distribution and exact geometry. Comments open on the right; Notes sit below the canvas.
+- Start with **500 original editable templates**, or create a presentation, social design, video, print layout, rich document, whiteboard, sheet, website or custom canvas. The template browser searches names and descriptions, filters categories/colors, saves stars and previews a layout before use. It displays 24 results per Home page or 18 in the editor panel.
+- Drag objects directly. Purple hover outlines identify the object under the pointer; click selects it. Option-drag duplicates an object or selection in one Undo. Shift selects several. Arrow keys move selected objects by 1px; Shift+Arrow moves 10px. Undo preserves fractional positions. Tab/Shift+Tab cycles layers when the canvas has focus; ⌘-click selects an element behind another. ⌘+Arrow resizes by 1px and ⇧⌘+Arrow by 10px while preserving the top-left position.
+- Use the left rail for Templates, Elements, Text, Brand, Uploads, Tools, Projects and Apps. **Position** opens on the left with Arrange/Layers, ordering, alignment, distribution and exact geometry. Comments open on the right; Notes sit below the canvas. The Position drawer starts directly below the 96px combined tab/header area. Press `/` or ⌘E for searchable Quick actions; ⌘/ toggles the sidebar.
 - Use the floating context toolbar for typography, color, spacing, opacity, photo editing, crop, flips, effects and position. Right-click an object for copy/paste, duplicate, ordering, alignment, grouping, locks, links, alternative text and other applicable actions.
 - Use 21 bundled open font families or upload a local font. Canva Sans loads from an existing local Canva installation when available; its binary is not distributed with Visro. Visro settings offers light, dark and system appearance.
 - **File → Settings** provides rulers/guides (Shift+R), draggable guides, column/row guide grids, snapping, guide locks and a 5% safe-margin preview. Guides are saved per page and stay outside exports.
 - Insert photos/SVGs, draw, use image frames, build editable tables/charts, generate QR codes, save reusable components and create multiple pages from CSV data.
 - Remove photo backgrounds offline with bundled IS-Net. Erase/restore brushes refine the real alpha channel. Interactive crop works in original image coordinates and preserves the placed frame's proportions.
-- Rich documents support headings, formatting, lists, images, tables and Find/Replace with native Undo. Sheets provide references, arithmetic, SUM/AVERAGE/MIN/MAX/COUNT, CSV/TSV, record-preserving sorting, row/column insertion/deletion with formula repair, Find/Replace and undo/redo. Local video/audio supports timeline ordering, trims, timing, volume and MP4/WebM/GIF rendering with bundled FFmpeg.
-- Home provides recent projects, search, folders, stars and Trash. Brand kits store named color/font/logo sets. Comments and named versions are local.
+- Rich documents support headings, formatting, lists, images, tables and Find/Replace with native Undo. Sheets provide references, arithmetic, SUM/AVERAGE/MIN/MAX/COUNT, CSV/TSV, record-preserving sorting, row/column insertion/deletion with formula repair, Find/Replace and undo/redo. Local video/audio supports timeline ordering, trims, timing, volume and MP4/WebM/GIF rendering with bundled FFmpeg. The unified playhead synchronizes scenes, audio and caption preview. Add/edit timed captions, import/export SRT or WebVTT and bake styled captions into rendered video; automatic speech transcription is not included.
+- Design tabs support new, close, reopen, numbered selection and previous/next navigation without losing pending edits. Home provides recent projects, search, folders, stars and Trash. Brand kits store named color/font/logo sets. Comments and named versions are local.
 
 Designs autosave into IndexedDB. Repeated large photos are stored once as local blobs; project lists load small summaries rather than every photo. **Save** writes a portable `.visro` file with reused images bundled once. **Open** imports it. PNG/JPEG/SVG/PDF/PPTX, document HTML/PDF, sheet CSV, static website HTML and media exports are supported. PDF import renders pages for annotation; it does not recover editable source layers. Complex PowerPoint artwork is rendered into slide images; simple supported objects remain editable.
 
@@ -29,6 +29,9 @@ Designs autosave into IndexedDB. Repeated large photos are stored once as local 
 
 | Action | Shortcut |
 | --- | --- |
+| New design / Close design / Reopen closed design (Mac app) | ⌘T / ⌘W / ⇧⌘T |
+| Previous / Next design tab (Mac app) | ⌥⌘← / ⌥⌘→ |
+| Select design tab / Home / Close window (Mac app) | ⌘1…⌘9 / ⇧⌘H / ⇧⌘W |
 | Save / Save as / Open | ⌘S / ⇧⌘S / ⌘O |
 | Undo / Redo | ⌘Z / ⇧⌘Z or ⌘Y |
 | Copy / Cut / Paste / Select all | ⌘C / ⌘X / ⌘V / ⌘A |
@@ -37,6 +40,13 @@ Designs autosave into IndexedDB. Repeated large photos are stored once as local 
 | Rulers and guides / Duplicate by dragging | Shift+R / Option-drag |
 | Find and replace in Docs and Sheets | ⌘F |
 | Move / Larger move | Arrow / Shift+Arrow |
+| Resize / Larger resize | ⌘+Arrow / ⇧⌘+Arrow |
+| Rotate / Larger rotate | ⌥, or ⌥. / ⇧⌥, or ⇧⌥. |
+| Next / Previous layer (canvas focus) | Tab / Shift+Tab |
+| Select an element behind / Lock or unlock | ⌘-click / ⇧⌥L |
+| Quick actions / Toggle sidebar | `/` or ⌘E / ⌘/ |
+| Focus toolbar / Canvas / Sidebar | ⌘F1 / ⌘F2 / ⌘F3 |
+| Selected-element menu | Shift+F10 |
 | Bring forward / Send backward | ⌘] / ⌘[ |
 | Bring to front / Send to back | ⌥⌘] / ⌥⌘[ |
 | Show layers / Copy style / Paste style | ⌥1 / ⌥⌘C / ⌥⌘V |
@@ -44,7 +54,7 @@ Designs autosave into IndexedDB. Repeated large photos are stored once as local 
 | Add page / Delete page | ⌘Enter / ⌘Delete |
 | Zoom / Fit / Pan | ⌘+ or ⌘− / ⌘0 / hold Space and drag |
 
-Inputs, rich text and an actively edited canvas textbox keep normal text editing shortcuts.
+Inputs, rich text and an actively edited canvas textbox keep normal text editing shortcuts. Rotation increments are 1° or 15° with Shift. The 1° Option+period increment was measured in Canva; its larger Shift increment has not been verified. Browser-reserved tab commands are provided by the native Mac app.
 
 ## Develop and build
 
@@ -71,6 +81,8 @@ The requested MIT REA fork is [prakharsingh1/rea](https://github.com/prakharsing
 
 Visro's independent editor follows the visible installed Canva Mac app's navigation, panels and familiar input behavior. The reference is recorded in [RESEARCH.md](docs/RESEARCH.md). Canva's private server source and its hosted services are not available through its installed client.
 
-This build substantially expands the local workflows; it is not complete 1:1 Canva parity. Remaining local limits include an infinite whiteboard engine, advanced video animation/captions, video background removal, full document/Excel compatibility and the entire effects/catalog collection. Cloud synchronization, live teams, paid stock, remote publishing and print fulfillment are outside the user's local-projects/Gemini-only choice. [FEATURES.md](docs/FEATURES.md) and [PARITY.md](docs/PARITY.md) record exact boundaries; [VALIDATION.md](docs/VALIDATION.md) separates verified behavior from pending live AI acceptance.
+**Visro Originals** preserves the first 46 layouts and adds 454 layouts across 26 composition families, 23 categories and 19 collections. These use original copy, fictional brands, editable vectors and bundled open fonts. They are not Canva’s “top 500.” Canva’s [Content License Agreement, §9.8](https://www.canva.com/policies/content-license-agreement/) restricts using its licensed content to compete with Canva, so Visro does not redistribute that catalog.
+
+This build substantially expands the local workflows; it is not complete 1:1 Canva parity. Remaining local limits include an infinite whiteboard engine, advanced video keyframes, automatic transcription, video background removal, full document/Excel compatibility and the entire effects/catalog collection. Cloud synchronization, live teams, paid stock, remote publishing and print fulfillment are outside the user's local-projects/Gemini-only choice. [FEATURES.md](docs/FEATURES.md) and [PARITY.md](docs/PARITY.md) record exact boundaries; [VALIDATION.md](docs/VALIDATION.md) separates verified behavior from pending live AI acceptance.
 
 Source is AGPL-3.0-only because of the IMG.LY background-removal dependency. See LICENSE and THIRD_PARTY_NOTICES.md. The release's source ZIP includes application source, tests, lockfile, licenses and reproducible asset preparation scripts.

@@ -71,6 +71,9 @@ import {
 } from "lucide-react";
 import { StudioEditor } from "./editor";
 import { Home } from "./Home";
+import { TemplateBrowser } from "./TemplateBrowser";
+import { QuickActions, type QuickAction } from "./QuickActions";
+import {normalizeWorkspaceTabs,upsertWorkspaceTab,type WorkspaceTab} from './workspace-tabs';
 import {PositionPanel} from "./PositionPanel";
 import {ImageControls} from "./ImageControls";
 import {ElementMenu,type ElementAction} from "./ElementMenu";
@@ -260,6 +263,14 @@ export default function App() {
     [customFonts, setCustomFonts] = useState<string[]>([]),
     [fileMenu, setFileMenu] = useState(false), [presentAuto, setPresentAuto] = useState(false);
   const [maskSources,setMaskSources]=useState<{original:string;current:string}|null>(null);
+  const [quickActionsOpen,setQuickActionsOpen]=useState(false);
+  const workspaceActionRef=useRef<(action:string)=>void>(()=>{});
+  const [workspaceTabs,setWorkspaceTabsState]=useState<WorkspaceTab[]>(()=>{try{return normalizeWorkspaceTabs(JSON.parse(localStorage.getItem('visro-workspace-tabs')||'[]'));}catch{return [];}});
+  const workspaceTabsRef=useRef(workspaceTabs);
+  const setWorkspaceTabs=useCallback((update:WorkspaceTab[]|((tabs:WorkspaceTab[])=>WorkspaceTab[]))=>{const next=typeof update==='function'?update(workspaceTabsRef.current):update;workspaceTabsRef.current=next;setWorkspaceTabsState(next);},[]);
+  const [initialClosedTabs]=useState<WorkspaceTab[]>(()=>{try{return normalizeWorkspaceTabs(JSON.parse(localStorage.getItem('visro-closed-tabs')||'[]')).slice(0,10);}catch{return [];}});
+  const closedTabs=useRef<WorkspaceTab[]>(initialClosedTabs),closedTabIds=useRef(new Set(initialClosedTabs.map(t=>t.id))),closingTabIds=useRef(new Set<string>());
+  const forgetClosedTab=useCallback((id:string)=>{closedTabIds.current.delete(id);closedTabs.current=closedTabs.current.filter(t=>t.id!==id);localStorage.setItem('visro-closed-tabs',JSON.stringify(closedTabs.current));},[]);
   const [panelOpen,setPanelOpen]=useState(false),[commentsOpen,setCommentsOpen]=useState(false),[notesOpen,setNotesOpen]=useState(false),[pagesOpen,setPagesOpen]=useState(true),[gridView,setGridView]=useState(false),[mediaEpoch,setMediaEpoch]=useState(0),[pageThumbnails,setPageThumbnails]=useState<Record<string,string>>({});
   const [contextMenu,setContextMenu]=useState<{x:number;y:number}|null>(null),[elementDialog,setElementDialog]=useState<{kind:'link'|'alt'|'component';value:string}|null>(null),[components,setComponents]=useState<Awaited<ReturnType<typeof listAssets>>>([]);
   const getEditor=useCallback(()=>engine.current,[]);
@@ -320,6 +331,8 @@ export default function App() {
   useEffect(() => {
     nameRef.current = name;
   }, [name]);
+  useEffect(()=>{if(ready&&!closedTabIds.current.has(activeId.current))setWorkspaceTabs(tabs=>{const previous=tabs.find(t=>t.id===activeId.current);return previous?.name===name?tabs:upsertWorkspaceTab(tabs,{id:activeId.current,name});});},[ready,name]);
+  useEffect(()=>localStorage.setItem('visro-workspace-tabs',JSON.stringify(workspaceTabs)),[workspaceTabs]);
   useEffect(() => { setThemePreference(theme); setDark(document.documentElement.dataset.theme === "dark"); return watchSystemTheme(() => setDark(document.documentElement.dataset.theme === "dark")); }, [theme]);
   const toggleTheme = () => setTheme(dark ? "light" : "dark");
   useEffect(()=>{localStorage.setItem('visro-view-settings',JSON.stringify(viewSettings));engine.current?.setSnapping(Boolean(viewSettings.snapping));},[viewSettings,ready]);
@@ -404,6 +417,7 @@ export default function App() {
 
   useEffect(() => {
     if (!canvasRef.current || !viewportRef.current) return;
+    initializedProject.current=false;setReady(false);
     let alive = true;
     const startupGeneration=projectGeneration.current,startupId=activeId.current;
     const studio = new StudioEditor(canvasRef.current, {
@@ -437,7 +451,8 @@ export default function App() {
         setCustomFonts(assets.filter(a => a.kind === "font").map(a => a.name));
         setUploads(assets.filter(a => a.kind === "image" || a.kind === "logo").map(a => a.data));
         if(current&&!stableProject.current)stableProject.current={id:startupId,name:current.name,project:current.project as Parameters<StudioEditor['loadProject']>[0]};
-        return current;
+        const snapshot=stableProject.current;
+        return snapshot?.id===startupId?{id:snapshot.id,name:snapshot.name,project:snapshot.project,updated:Date.now()}:current;
       } catch(e){notify(e instanceof Error?e.message:"Could not prepare the design library.");return undefined;}
     })();
     startupPreparation.current=preparation.then(()=>undefined,()=>undefined);
@@ -458,6 +473,7 @@ export default function App() {
         resize();
         studio.fit();
         stableProject.current={id:startupId,name:current?.name??TEMPLATES[0].name,project:studio.serialize(current?.name??TEMPLATES[0].name)};
+        localStorage.setItem('visro-active-design',startupId);
         initializedProject.current=true;
         if (alive) setReady(true);
       } catch (e) {
@@ -467,6 +483,7 @@ export default function App() {
       }
     })();
     return () => {
+      if(initializedProject.current&&!switchingProject.current){try{studio.flushPendingChanges();stableProject.current={id:activeId.current,name:nameRef.current,project:studio.serialize(nameRef.current)};}catch{/* Preserve the last complete snapshot during a cancelled load. */}}
       alive = false;
       observer.disconnect();
       studio.destroy();
@@ -475,7 +492,7 @@ export default function App() {
     };
   }, [notify]);
   useEffect(() => {
-    if (!ready || !engine.current || switchingProject.current) return;
+    if (!ready || !initializedProject.current || !engine.current || switchingProject.current) return;
     const studio = engine.current, id = activeId.current, revision = state.revision;
     const generation=projectGeneration.current;
     const timer = setTimeout(async () => {
@@ -568,11 +585,13 @@ export default function App() {
   const historyEdit=useCallback((redo=false)=>{
     if(mode==='sheet'){document.querySelector<HTMLButtonElement>(`.sheet-suite [aria-label="${redo?'Redo':'Undo'} sheet edit"]`)?.click();return;}
     if(mode==='document'){document.querySelector<HTMLButtonElement>(`[aria-label="${redo?'Redo':'Undo'} document edit"]`)?.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));return;}
+    if(mode==='video'){const studio=engine.current;if(studio)void (redo?studio.redo():studio.undo()).then(()=>{if(engine.current===studio)setMediaEpoch(v=>v+1);}).catch(error=>notify(error instanceof Error?error.message:'Could not restore this video edit.'));return;}
     if(redo)void engine.current?.redo();else void engine.current?.undo();
-  },[mode]);
+  },[mode,notify]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if(e.key==='Escape'){if(cropSource){setCropSource(null);return;}if(maskSources){setMaskSources(null);return;}if(guidesDialog){setGuidesDialog(false);return;}if(elementDialog){setElementDialog(null);return;}if(contextMenu){setContextMenu(null);return;}if(modal){setModal(null);return;}if(toolbarPopover){setToolbarPopover(null);return;}if(fileMenu){setFileMenu(false);return;}}
+      if(quickActionsOpen)return;
       if(cropSource||maskSources)return;
       if(contextMenu&&e.key.startsWith('Arrow'))return;
       const target = e.target as HTMLElement;
@@ -583,6 +602,19 @@ export default function App() {
       const studio=engine.current;
       if(studio?.isTextEditing())return;
       const cmd = e.metaKey || e.ctrlKey;
+      if(desktop&&cmd&&e.altKey&&['ArrowLeft','ArrowRight'].includes(e.key))return;
+      if((cmd&&e.code==='KeyE')||(!cmd&&!e.altKey&&e.key==='/')){e.preventDefault();setQuickActionsOpen(true);return;}
+      if(cmd&&e.code==='Slash'){e.preventDefault();setPanelOpen(v=>!v);setInspectorOpen(false);return;}
+      if(cmd&&e.altKey&&e.code==='Semicolon'){e.preventDefault();setViewSettings(v=>({...v,locked:!v.locked}));return;}
+      if(cmd&&e.altKey&&['Digit2','Digit3'].includes(e.code)){e.preventDefault();setPagesOpen(true);setGridView(e.code==='Digit3');return;}
+      if(cmd&&e.altKey&&e.code==='KeyP'){e.preventDefault();void showPresent();return;}
+      if(cmd&&e.code==='F2'){e.preventDefault();const canvas=studio?.canvas.upperCanvasEl;if(canvas){canvas.tabIndex=0;canvas.focus({preventScroll:true});}return;}
+      if(cmd&&e.code==='F1'){e.preventDefault();document.querySelector<HTMLButtonElement>('.context-toolbar button')?.focus();return;}
+      if(cmd&&e.code==='F3'){e.preventDefault();setPanelOpen(true);requestAnimationFrame(()=>document.querySelector<HTMLInputElement>('.asset-panel input')?.focus());return;}
+      if(e.shiftKey&&e.code==='F10'){e.preventDefault();const bounds=studio?.getSelectionBounds(),rect=viewportRef.current?.getBoundingClientRect();if(bounds&&rect)setContextMenu({x:rect.left+bounds.left+bounds.width/2,y:rect.top+bounds.top+bounds.height});return;}
+      if(e.altKey&&e.shiftKey&&e.code==='KeyL'){e.preventDefault();const selected=studio?.getSelected();if(selected)studio?.setLayerLocked(selected.id,!selected.locked);return;}
+      if(e.altKey&&!cmd&&['Comma','Period'].includes(e.code)){e.preventDefault();studio?.rotateSelection((e.shiftKey?15:1)*(e.code==='Comma'?-1:1));return;}
+      if(e.key==='Tab'&&!cmd&&(target===document.body||target.closest('canvas'))&&mode==='design'){e.preventDefault();studio?.cycleSelection(e.shiftKey?-1:1);return;}
       if(e.shiftKey&&!cmd&&!e.altKey&&e.code==='KeyR'){e.preventDefault();setViewSettings(v=>({...v,rulers:!v.rulers}));return;}
       if(e.key==='Escape'&&contextMenu){e.preventDefault();setContextMenu(null);return;}
       if(e.altKey&&!cmd&&e.code==='Digit1'){e.preventDefault();setPositionTab("layers");setInspectorOpen(true);setPanelOpen(false);return;}
@@ -593,7 +625,7 @@ export default function App() {
       if(cmd&&e.altKey&&e.key.toLowerCase()==='n'){e.preventDefault();setCommentsOpen(true);return;}
       if(cmd&&['=','+','-'].includes(e.key)){e.preventDefault();studio?.setZoom((studio.getState().zoom||.5)*(e.key==='-'?1/1.1:1.1));return;}
       if(cmd&&e.key==='0'){e.preventDefault();studio?.fit();return;}
-      if(cmd&&e.shiftKey&&e.key.toLowerCase()==='l'){e.preventDefault();const cur=studio?.getSelected();if(cur)studio?.setLayerLocked(cur.id,!cur.locked);return;}
+      if(cmd&&e.shiftKey&&['KeyL','KeyR','KeyC','KeyJ'].includes(e.code)&&selected?.type==='text'){e.preventDefault();studio?.updateSelected({align:e.code==='KeyL'?'left':e.code==='KeyR'?'right':e.code==='KeyC'?'center':'justify'});return;}
       if(cmd&&['b','i','u'].includes(e.key.toLowerCase())&&selected?.type==='text'){e.preventDefault();const k=e.key.toLowerCase();studio?.updateSelected(k==='b'?{fontWeight:selected.fontWeight==='bold'||selected.fontWeight===700?400:700}:k==='i'?{fontStyle:selected.fontStyle==='italic'?'normal':'italic'}:{underline:!selected.underline});return;}
 
       if (desktop && cmd && !e.altKey && ["s","o","z","y","c","x","v","a","n","=","+","-","0",","].includes(e.key.toLowerCase())) return;
@@ -627,7 +659,7 @@ export default function App() {
       } else if (cmd && ["[","]"].includes(e.key)) {
         e.preventDefault();engine.current?.arrange(e.key==="["?(e.altKey?"back":"down"):(e.altKey?"front":"up"));
       } else if (["ArrowLeft","ArrowRight","ArrowUp","ArrowDown"].includes(e.key)) {
-        if(studio?.getSelected()){e.preventDefault();const step=e.shiftKey?10:1;studio.nudge(e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0,e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0);}
+        if(studio?.getSelected()){e.preventDefault();const step=e.shiftKey?10:1,dx=e.key==="ArrowLeft"?-step:e.key==="ArrowRight"?step:0,dy=e.key==="ArrowUp"?-step:e.key==="ArrowDown"?step:0;if(cmd)studio.resizeSelection(dx,dy);else studio.nudge(dx,dy);}
       } else if (e.key === "Escape") {
         setModal(null);engine.current?.deselect();
         setDrawing(false);
@@ -643,7 +675,7 @@ export default function App() {
     const blur=()=>{engine.current?.setPanMode(false);engine.current?.flushPendingChanges();};
     window.addEventListener("keydown",key);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
     return()=>{window.removeEventListener('keydown',key);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
-  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit]);
+  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit,quickActionsOpen,mode]);
   useEffect(() => {
     if (!desktop) return;
     return desktop.onMenu((action) => {
@@ -837,6 +869,7 @@ export default function App() {
     if(generation===projectGeneration.current&&id===activeId.current){setHomeRefresh(v=>v+1);setHome(true);}
   });
   const openDesign = (d:SavedDesign) => void work("Opening design", async () => {
+    forgetClosedTab(d.id);
     await switchProject(async()=>{const record=await getDesign(d.id);if(!record)throw new Error("This project is no longer available.");return{id:d.id,name:record.name,project:record.project as Parameters<StudioEditor['loadProject']>[0]};});
   });
   const createFormat = (w:number,h:number,title:string) => void work("Creating design", async () => {
@@ -850,31 +883,74 @@ export default function App() {
   });
   const update = (changes: Parameters<StudioEditor["updateSelected"]>[0]) =>
     engine.current?.updateSelected(changes);
-  const templateCards=useMemo(()=>TEMPLATES.filter(
-                  (t) =>
-                    !search ||
-                    `${t.name} ${t.category}`
-                      .toLowerCase()
-                      .includes(search.toLowerCase()),
-                ).map((t) => (
-                  <button
-                    className="template-card"
-                    key={t.id}
-                    onClick={() => useTemplate(t.id, t.name)}
-                  >
-                    <TemplatePreview
-                      template={t}
-                      index={TEMPLATES.indexOf(t)}
-                    />
-                    <div className="template-meta">
-                      <span>{t.name}</span>
-                      <ArrowUpRight size={13} />
-                    </div>
-                    <small>
-                      {t.width} × {t.height}
-                    </small>
-                  </button>
-                )),[search,useTemplate]);
+  const openWorkspaceTab=(id:string)=>void work('Opening design',async()=>{
+    forgetClosedTab(id);
+    if(id===activeId.current&&ready){setHome(false);setWorkspaceTabs(tabs=>upsertWorkspaceTab(tabs,{id,name:nameRef.current}));return;}
+    await switchProject(async()=>{
+      const record=await getDesign(id);
+      if(!record){setWorkspaceTabs(tabs=>tabs.filter(t=>t.id!==id));throw new Error('This design is no longer in your local library.');}
+      return{id:record.id,name:record.name,project:record.project as Parameters<StudioEditor['loadProject']>[0]};
+    });
+  });
+  const closeWorkspaceTab=(id:string)=>void work('Saving design',async()=>{
+    const tab=workspaceTabsRef.current.find(t=>t.id===id);if(!tab||closingTabIds.current.has(id))return;
+    closingTabIds.current.add(id);
+    const requestedGeneration=projectGeneration.current;
+    try{
+      if(id===activeId.current){
+        const studio=await waitForStableStudio();
+        // A different tab may have finished opening while the editor was busy.
+        if(id===activeId.current){studio.flushPendingChanges();const projectName=nameRef.current,project=studio.serialize(projectName);await storeDesign({id,name:projectName,updated:Date.now(),project});}
+      }
+      closedTabs.current=[tab,...closedTabs.current.filter(t=>t.id!==id)].slice(0,10);closedTabIds.current.add(id);localStorage.setItem('visro-closed-tabs',JSON.stringify(closedTabs.current));
+      const index=workspaceTabsRef.current.findIndex(t=>t.id===id);
+      setWorkspaceTabs(tabs=>tabs.filter(t=>t.id!==id));
+      if(id!==activeId.current||requestedGeneration!==projectGeneration.current)return;
+      const remaining=workspaceTabsRef.current,next=remaining[Math.min(index,remaining.length-1)];
+      if(next){await switchProject(async()=>{
+        const candidate=workspaceTabsRef.current.find(t=>t.id===next.id)??workspaceTabsRef.current[0];
+        const record=candidate&&await getDesign(candidate.id);
+        if(!record)throw new Error('This design is no longer in your local library.');
+        return{id:record.id,name:record.name,project:record.project as Parameters<StudioEditor['loadProject']>[0]};
+      });}
+      else{setHomeRefresh(v=>v+1);setHome(true);}
+    }finally{closingTabIds.current.delete(id);}
+  });
+  workspaceActionRef.current=(action:string)=>{
+    if(action==='home')goHome();
+    else if(action==='close-design'){if(!home)closeWorkspaceTab(activeId.current);}
+    else if(action==='reopen-design'){const tab=closedTabs.current.shift();if(tab)openWorkspaceTab(tab.id);}
+    else if(action==='next-tab'||action==='previous-tab'){const index=workspaceTabs.findIndex(t=>t.id===activeId.current),next=workspaceTabs[(index+(action==='next-tab'?1:-1)+workspaceTabs.length)%workspaceTabs.length];if(next)openWorkspaceTab(next.id);}
+    else if(action.startsWith('tab-')){const index=Number(action.slice(4))-1,tab=workspaceTabs[index===8?workspaceTabs.length-1:index];if(tab)openWorkspaceTab(tab.id);}
+  };
+  useEffect(()=>{if(!desktop)return;return desktop.onMenu(action=>workspaceActionRef.current(action));},[]);
+  const quickActions:QuickAction[]=[
+    {id:'text',label:'Add text',shortcut:'T',run:()=>engine.current?.addText('heading')},
+    ...(['rect','circle','line','triangle','star'] as const).map(type=>({id:type,label:`Add ${type==='rect'?'rectangle':type}`,shortcut:type==='rect'?'R':type==='circle'?'C':type==='line'?'L':'',run:()=>engine.current?.addShape(type)})),
+    {id:'templates',label:'Search templates',keywords:'designs layouts',run:()=>choosePanel('templates')},
+    {id:'layers',label:'Show layers panel',shortcut:'⌥1',run:()=>{setPositionTab('layers');setInspectorOpen(true);setPanelOpen(false);}},
+    {id:'position',label:'Show position panel',keywords:'align arrange geometry',run:()=>{setPositionTab('arrange');setInspectorOpen(true);setPanelOpen(false);}},
+    {id:'duplicate',label:'Duplicate selection',shortcut:'⌘D',disabled:!selected,run:()=>void engine.current?.duplicate()},
+    {id:'group',label:'Group selection',shortcut:'⌘G',disabled:!selected||selected.count<2,run:()=>engine.current?.group()},
+    {id:'ungroup',label:'Ungroup selection',shortcut:'⇧⌘G',disabled:!selected,run:()=>engine.current?.ungroup()},
+    {id:'lock',label:selected?.locked?'Unlock element':'Lock element',shortcut:'⌥⇧L',disabled:!selected,run:()=>{if(selected)engine.current?.setLayerLocked(selected.id,!selected.locked);}},
+    ...(['front','back','up','down'] as const).map(direction=>({id:`arrange-${direction}`,label:direction==='front'?'Bring to front':direction==='back'?'Send to back':direction==='up'?'Bring forward':'Send backward',disabled:!selected,run:()=>engine.current?.arrange(direction)})),
+    ...(['left','center','right','top','middle','bottom'] as const).map(direction=>({id:`align-${direction}`,label:`Align ${direction}`,disabled:!selected,run:()=>engine.current?.align(direction)})),
+    {id:'background',label:'Remove background',keywords:'photo cutout bg remover',disabled:selected?.type!=='image',run:()=>void removeBackground()},
+    {id:'crop',label:'Crop photo',disabled:selected?.type!=='image',run:openCrop},
+    {id:'guides',label:'Show rulers and guides',shortcut:'⇧R',run:()=>setViewSettings(v=>({...v,rulers:!v.rulers}))},
+    {id:'gridguides',label:'Add guides',keywords:'columns rows margins',run:()=>setGuidesDialog(true)},
+    {id:'addpage',label:'Add page',shortcut:'⌘Return',run:()=>void engine.current?.addPage()},
+    {id:'duplicatepage',label:'Duplicate page',run:()=>void engine.current?.duplicatePage()},
+    {id:'notes',label:'Show notes',run:()=>setNotesOpen(v=>!v)},
+    {id:'comments',label:'Show comments',shortcut:'⌥⌘N',run:()=>setCommentsOpen(true)},
+    {id:'fit',label:'Fit canvas',shortcut:'⌘0',run:()=>engine.current?.fit()},
+    {id:'present',label:'Present design',shortcut:'⌥⌘P',run:()=>void showPresent()},
+    {id:'download',label:'Download design',keywords:'export png jpg pdf powerpoint',run:()=>setModal('export')},
+    {id:'save',label:'Save project',shortcut:'⌘S',run:()=>void save()},
+    {id:'settings',label:'Visro settings',shortcut:'⌘,',keywords:'Gemini API key theme',run:()=>setModal('settings')},
+  ];
+
   const nav = [
     {id:'templates' as const,label:'Templates',Icon:TemplatesIcon},{id:'elements' as const,label:'Elements',Icon:ElementsIcon},{id:'text' as const,label:'Text',Icon:TextIcon},{id:'brand' as const,label:'Brand',Icon:BrandIcon},{id:'uploads' as const,label:'Uploads',Icon:UploadsIcon},{id:'draw' as const,label:'Tools',Icon:ToolsIcon},{id:'projects' as const,label:'Projects',Icon:ProjectsIcon},{id:'apps' as const,label:'Apps',Icon:AppsIcon},{id:'components' as const,label:'Components',Icon:ComponentsIcon},{id:'audio' as const,label:'Audio',Icon:AudioIcon},{id:'background' as const,label:'Background',Icon:BackgroundIcon},{id:'charts' as const,label:'Charts',Icon:ChartsIcon},
   ];
@@ -899,10 +975,10 @@ export default function App() {
   return (
     <div className={`studio-app ${desktop?"native-desktop":""} ${inspectorOpen?"inspector-open position-open":panelOpen?"panel-open":""} ${commentsOpen?"comments-open":""} ${notesOpen?"notes-open":""} ${home?"home-open":""}`}>
       {home && <Home dark={dark} onTheme={toggleTheme} onSettings={()=>setModal("settings")} refresh={homeRefresh} onOpen={openDesign} onCreate={createFormat} onTemplate={useTemplate} onImport={()=>projectRef.current?.click()} onNavigate={p=>{setHome(false);choosePanel(p);}}/>}
-      <div className="desktop-tabs"><button className="desktop-home-tab" aria-label="Home" onClick={goHome}><StudioIcon name="home" size={22}/></button><button className="desktop-tab" onClick={()=>setHome(false)}><StudioIcon name={mode==='document'?'document':mode==='sheet'?'sheet':mode==='video'?'video':'presentation'} size={20}/><span>{name} — Visro</span></button><button className="desktop-new-tab" aria-label="New design" onClick={()=>void newDesign()}><Plus size={22}/></button></div>
+      <div className="desktop-tabs"><button className="desktop-home-tab" aria-label="Home" title="Home (⇧⌘H)" onClick={goHome}><StudioIcon name="home" size={22}/></button><div className="desktop-tab-list" role="tablist" aria-label="Open designs">{workspaceTabs.map(tab=><div key={tab.id} className={`desktop-tab-shell ${!home&&tab.id===activeId.current?'active':''}`}><button className="desktop-tab" role="tab" aria-selected={!home&&tab.id===activeId.current} onClick={()=>openWorkspaceTab(tab.id)}><StudioIcon name="presentation" size={19}/><span>{tab.name} — Visro</span></button><button className="desktop-tab-close" aria-label={`Close ${tab.name} tab`} onClick={()=>closeWorkspaceTab(tab.id)}><X size={14}/></button></div>)}</div><button className="desktop-new-tab" aria-label="New design" title="New design (⌘T)" onClick={()=>void newDesign()}><Plus size={22}/></button></div>
       <header className="topbar">
         <div ref={fileMenuRef} className="top-menu-wrap"><button className="quiet-button top-menu" aria-expanded={fileMenu} onClick={()=>setFileMenu(!fileMenu)}>File <ChevronDown size={13}/></button>{fileMenu&&<div className="file-menu">{[["New design",()=>void newDesign()],["Open project",()=>void open()],["Save project",()=>void save()],["Your projects",goHome],["Version history",()=>{choosePanel("tools");setToolTab("versions");}]].map(([label,fn])=><button key={String(label)} onClick={()=>{setFileMenu(false);(fn as ()=>void)();}}>{String(label)}</button>)}
-          <div className="file-settings-wrap" onMouseEnter={()=>setViewMenu(true)}><button className="file-settings-trigger" aria-expanded={viewMenu} onClick={()=>setViewMenu(!viewMenu)} onKeyDown={e=>{if(e.key==='ArrowRight'){e.preventDefault();setViewMenu(true);}}}>Settings <ChevronRight size={15}/></button>{viewMenu&&<div className="file-menu view-settings-menu">
+          <div className="file-settings-wrap" onMouseEnter={()=>setViewMenu(true)}><button className="file-settings-trigger" aria-expanded={viewMenu} onClick={()=>setViewMenu(true)} onKeyDown={e=>{if(e.key==='ArrowRight'){e.preventDefault();setViewMenu(true);}}}>Settings <ChevronRight size={15}/></button>{viewMenu&&<div className="file-menu view-settings-menu">
             {([['rulers','Show rulers and guides','⇧R'],['margins','Show margins',''],['snapping','Snap to elements',''],['locked','Lock guides','']] as const).map(([key,label,shortcut])=><button key={key} role="menuitemcheckbox" aria-checked={Boolean(viewSettings[key])} onClick={()=>setViewSettings(v=>({...v,[key]:!v[key]}))}><span className="menu-check">{viewSettings[key]&&<Check size={15}/>}</span>{label}<kbd>{shortcut}</kbd></button>)}
             <button onClick={()=>{setGuidesDialog(true);setFileMenu(false);}}>Add guides</button><button disabled={!state.pageMetadata?.guides?.x.length&&!state.pageMetadata?.guides?.y.length} onClick={()=>engine.current?.setPageMetadata({guides:{x:[],y:[]}})}>Clear guides</button>
           </div>}</div><button onClick={()=>{setFileMenu(false);setModal('settings');}}>Visro settings…</button>
@@ -1013,23 +1089,7 @@ export default function App() {
                   Slides
                 </button>
               </div>
-              <div className="section-label">
-                <span>Templates</span>
-                <span>
-                  {
-                    TEMPLATES.filter(
-                      (t) =>
-                        !search ||
-                        `${t.name} ${t.category}`
-                          .toLowerCase()
-                          .includes(search.toLowerCase()),
-                    ).length
-                  }
-                </span>
-              </div>
-              <div className="template-grid">
-                {templateCards}
-              </div>
+              <TemplateBrowser query={search} compact onUse={useTemplate}/>
               <button
                 className="blank-card"
                 onClick={() => {
@@ -1348,7 +1408,7 @@ export default function App() {
             className="canvas-viewport"
             style={{pointerEvents:ready?undefined:"none"}}
             ref={viewportRef}
-            onPointerDown={e=>{if((e.target as HTMLElement).closest('canvas')){interactionRef.current=true;viewportRef.current?.classList.add('interacting');}}}
+            onPointerDown={e=>{if((e.target as HTMLElement).closest('canvas')){interactionRef.current=true;viewportRef.current?.classList.add('interacting');const canvas=engine.current?.canvas.upperCanvasEl;if(canvas&&!engine.current?.isTextEditing()){canvas.tabIndex=0;canvas.focus({preventScroll:true});}}}}
             onPointerUp={()=>{interactionRef.current=false;viewportRef.current?.classList.remove('interacting');}}
             onContextMenuCapture={e=>{e.preventDefault();if(mode!=='design')return;const r=viewportRef.current!.getBoundingClientRect();const cur=engine.current?.selectAt({x:e.clientX-r.left,y:e.clientY-r.top,includeLocked:true});if(cur)setContextMenu({x:e.clientX,y:e.clientY});}}
             onDragOver={(e) => e.preventDefault()}
@@ -1489,6 +1549,7 @@ export default function App() {
           e.target.value = "";
         }}
       />
+      {quickActionsOpen&&<QuickActions actions={quickActions} onClose={()=>setQuickActionsOpen(false)}/>}
       {contextMenu&&<ElementMenu x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
       {guidesDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setGuidesDialog(false);}}><section className="modal element-dialog" role="dialog" aria-modal="true" aria-label="Add guides"><button className="modal-close icon-button" aria-label="Close guides" onClick={()=>setGuidesDialog(false)}><X size={20}/></button><h2>Add guides</h2><form onSubmit={e=>{e.preventDefault();const {columns,rows,gap,margin}=guideGrid;const positions=(count:number,size:number)=>{if(!count)return[];const available=size-2*margin-(count-1)*gap;if(available<=0)throw new Error('The margin and gap must fit inside the page.');const cell=available/count;return [...new Set(Array.from({length:count+1},(_,i)=>i===count?size-margin:margin+i*(cell+gap)).flatMap((v,i)=>i>0&&i<count&&gap?[v-gap,v]:[v]))];};try{engine.current?.setPageMetadata({guides:{x:positions(columns,state.width),y:positions(rows,state.height)}});setViewSettings(v=>({...v,rulers:true,snapping:true}));setGuidesDialog(false);}catch(error){notify((error as Error).message);}}}><NumberField label="Columns" value={guideGrid.columns} min={0} max={24} step={1} onChange={columns=>setGuideGrid(v=>({...v,columns:Math.round(columns)}))}/><NumberField label="Rows" value={guideGrid.rows} min={0} max={24} step={1} onChange={rows=>setGuideGrid(v=>({...v,rows:Math.round(rows)}))}/><NumberField label="Gap (px)" value={guideGrid.gap} min={0} max={state.width/2} onChange={gap=>setGuideGrid(v=>({...v,gap}))}/><NumberField label="Margin (px)" value={guideGrid.margin} min={0} max={Math.min(state.width,state.height)/2} onChange={margin=>setGuideGrid(v=>({...v,margin}))}/><button className="full-button coral" type="submit">Add guides</button></form></section></div>}
       {elementDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setElementDialog(null);}}><section className="modal element-dialog"><button className="modal-close icon-button" aria-label="Close" onClick={()=>setElementDialog(null)}><X size={20}/></button><h2>{elementDialog.kind==='link'?'Link':elementDialog.kind==='alt'?'Alternative text':'Create component'}</h2><form onSubmit={e=>{e.preventDefault();void work("Saving element",async()=>{const d=elementDialog;if(d.kind==='component'){const objects=await engine.current!.exportSelectedObjects();await storeAsset({id:crypto.randomUUID(),kind:'component',name:d.value.trim()||'Component',data:JSON.stringify(objects),updated:Date.now()});notify('Component saved. Find it in Components.');}else engine.current?.setElementMetadata(d.kind==='link'?{link:d.value.trim()}:{altText:d.value});setElementDialog(null);});}}><label className="field-label">{elementDialog.kind==='link'?'Enter a link':elementDialog.kind==='alt'?'Describe this element':'Name'}<input autoFocus aria-label={elementDialog.kind==='link'?'Element link':elementDialog.kind==='alt'?'Alternative text':'Component name'} value={elementDialog.value} onChange={e=>setElementDialog({...elementDialog,value:e.target.value})}/></label><button className="full-button coral" type="submit">Save</button></form></section></div>}

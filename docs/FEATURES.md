@@ -6,11 +6,12 @@ Visro is a local Mac creative app with Gemini assistance. Projects, assets, bran
 
 | Area | Current implementation |
 | --- | --- |
-| Home and projects | Collapsible navigation, recent project thumbnails, search, folders, starred designs, Trash/restore, import/reopen and automatic local saves. Project lists read summaries without loading every design's image data. |
-| Reference interface | Current Canva Mac 1.126.0 layout observed directly: 40px desktop tabs, 56px gradient header, 72px editor rail, floating context controls, left Position drawer, right Comments drawer and bottom Notes. Light, dark and system themes; shared rounded outline glyphs. |
+| Home and projects | Collapsible navigation, recent project thumbnails, search, folders, starred designs, Trash/restore, import/reopen and automatic local saves. Project lists read summaries without loading every design's image data. Open-design tabs support close/reopen, previous/next and numbered selection, with pending edits flushed before switching. |
+| Reference interface | Current Canva Mac 1.126.0 layout observed directly: 40px desktop tabs, 56px gradient header, 72px editor rail, floating context controls, left Position drawer beginning at y=96 below the combined tabs/header, right Comments drawer and bottom Notes. Light, dark and system themes; independently reconstructed rounded outline glyphs and polished tab spacing. |
 | Fonts | 21 bundled open font families with 23 faces, uploaded local fonts, searchable font drawer and previews. Canva Sans is loaded at runtime from an existing Canva installation when available; its proprietary binary is not distributed with Visro. |
-| Templates and formats | 46 original editable templates across 15 categories, plus presentation, social, video, print, document, whiteboard, sheet, website and custom-size creation. |
-| Design canvas | Editable text, shapes, photos, SVGs and drawings; drag, Option-drag duplication, scale, rotate, group/ungroup, selection and hover outlines, undo/redo, arrow-key nudges, alignment, snapping, distribution, layers, visibility and locks. |
+| Templates and formats | 500 original editable templates: 46 preserved plus 454 additions in 26 composition families, 23 categories and 19 collections. Search, category/color filters, saved stars and preview-before-use; paged 24 per Home view or 18 per editor panel. Presentation, social, video, print, document, whiteboard, sheet, website and custom-size creation. |
+| Design canvas | Editable text, shapes, photos, SVGs and drawings; drag, Option-drag duplication, scale, rotate, group/ungroup, selection and hover outlines, undo/redo, Tab/Shift+Tab layer cycling with canvas focus, ⌘-click behind, 1px/10px arrow nudges and ⌘+Arrow resizing that preserves the top-left position. Keyboard rotation is 1°/15°; alignment, snapping, distribution, visibility and locks remain available. |
+| Quick actions and keyboard access | `/` or ⌘E searches available actions; ⌘/ toggles the sidebar. ⌘F1/F2/F3 focus toolbar/canvas/sidebar; Shift+F10 opens selected-element actions; ⇧⌥L toggles the selected layer lock. Native Mac tab/window shortcuts are listed in the README. |
 | Rulers and guides | File → Settings, Shift+R, page-specific draggable guides, grid generation, guide locking/deletion, guide snapping and a 5% safe-margin preview. View furniture stays out of exports. |
 | Text | Font size, colors, spacing, alignment, lists, uppercase, bold/italic, underline/strikethrough and shadow/outline/neon/lift/hollow/splice effects. |
 | Elements | Original graphics and icon/emoji collections, sticky notes, gradients, circle/rounded/arch/diamond image frames, editable charts and tables, QR codes and reusable local components. |
@@ -21,7 +22,7 @@ Visro is a local Mac creative app with Gemini assistance. Projects, assets, bran
 | Local review | Per-project comments with resolve/reopen and named version snapshots. Restore preserves a snapshot of the state being replaced. |
 | Documents | Rich text headings/paragraphs, lists, quotes, font/color/alignment controls, Find/Replace with reversible Replace all, native Undo/Redo, HTML export and transfer of document text to the design canvas. |
 | Sheets | Local cells, references/arithmetic, SUM/AVERAGE/MIN/MAX/COUNT, record-preserving numeric/text sort, optional header, row/column insertion/deletion with formula repair, Undo/Redo, Find/Replace, Enter/Tab navigation, tab-separated paste, CSV import/export and transfer into an editable design table. |
-| Video and audio | Local media library, design-page scenes, timeline, clip trim/duration/volume, reorder/duplicate/delete, audio timing/volume and local MP4/WebM/GIF rendering through bundled FFmpeg. |
+| Video and audio | Local media library, design-page scenes, timeline, clip trim/duration/volume, reorder/duplicate/delete, audio timing/volume and one playhead for scenes/audio/captions. Manual timed captions, SRT/WebVTT import/export, styling and preview, with captions baked into MP4/WebM/GIF through bundled FFmpeg. |
 | Gemini design and text | Structured editable design generation, writing, rewrite, summarize, translation, remix and layout adaptation. |
 | Gemini images | Generate images or edit a selected source image; preview the returned result and insert/apply it to the local project. |
 | Gemini voice and video | Speech generation with voice selection and WAV playback/import; Veo text-to-video or selected-image animation, aspect/duration controls, progress, cancellation and local result playback/import. |
@@ -31,11 +32,11 @@ Visro is a local Mac creative app with Gemini assistance. Projects, assets, bran
 
 ## Practical boundaries
 
-- The original templates, graphics and bundled fonts cover a much smaller collection than Canva's licensed catalog. Imported assets and local kits extend the user's library.
+- The 500 templates are Visro Originals, with original copy and editable vector artwork. They are not a copied or ranked selection from Canva. Canva’s [Content License Agreement, §9.8](https://www.canva.com/policies/content-license-agreement/) restricts using licensed content in a competing catalog. Imported assets and local kits extend the user’s library.
 - Whiteboard uses a large design canvas, drawing and sticky notes; it has no separate infinite board engine or multiplayer cursors.
 - Sheets support up to 200 rows and 26 columns with a limited formula engine. Documents do not implement complete DOCX import or word-processor pagination.
 - Charts and tables are editable groups. They do not retain a live connection to external databases.
-- The media editor supports scenes, trims, audio and basic transitions. It does not provide professional keyframe editing, automatic captions, motion tracking or video background removal. Browser preview is simpler than final FFmpeg output.
+- The media editor supports scenes, trims, audio and basic transitions. Manual timed captions are included; automatic speech transcription, professional keyframes, motion tracking and video background removal are not. Browser playback and final FFmpeg rendering have different rendering paths; exact acceptance is recorded in VALIDATION.md.
 - Photo cutout uses local segmentation. Hair, glass and complicated backgrounds can need erase/restore refinement; there is no universal layer reconstruction tool.
 - Gemini, TTS and Veo access, response behavior, quota and billing depend on the user's Google project and configured models. Visro does not add another AI provider or promise every Canva AI capability through one key.
 - PDF import renders pages for annotation; imported pages do not recover the source's editable text or layers. Export format fidelity has format-specific limits.
@@ -47,5 +48,7 @@ Visro is a local Mac creative app with Gemini assistance. Projects, assets, bran
 Ordinary editing, local projects, imported assets, kits, comments, versions, document/sheet work, exports and bundled photo removal run locally. Gemini needs internet and enabled model access. Installing source dependencies and preparing model/font/runtime assets initially needs internet; the prepared application includes its inference model, open fonts and FFmpeg runtime.
 
 The storage implementation deduplicates image data into local blobs, reads lightweight summaries for libraries, hydrates only an opened design and coalesces saves. In the measured 20-page repeated-photo fixture, a repeat save fell from 279ms to 2.82ms and the observed frame gap fell from 1083ms to 50ms. Real browser pointer and keyboard regressions also passed. Those measurements describe the tested fixture on this Mac, rather than a guarantee for every document or a claim of constant 60fps.
+
+All 4,649 text objects in the new template library were measured with real Fabric textboxes after loading the bundled fonts; none exceeded their authored height. A 26-composition contact sheet was visually inspected, and a template was created, dragged and autosaved through the real gallery. These checks establish the tested layouts, not complete Canva template fidelity. A separate development hot-reload check preserved edits that were pending autosave.
 
 Current reference comparisons are in [PARITY.md](PARITY.md). Research provenance, font handling and dependency licenses are in [RESEARCH.md](RESEARCH.md).

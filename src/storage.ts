@@ -163,7 +163,6 @@ export async function storeDesign(record: SavedDesign): Promise<void> {
     // The old summary contains folder/star/trash metadata without cloning its photos.
     await persistDesign({ ...old, ...record });
   });
-  localStorage.setItem('visro-active-design', record.id);
 }
 export async function getDesign(id: string): Promise<SavedDesign | undefined> {
   const record = await get<SavedDesign>('projects', id);

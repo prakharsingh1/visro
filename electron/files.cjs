@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
-const FORMATS = { png: { mime: 'image/png', extension: 'png' }, jpg: { mime: 'image/jpeg', extension: 'jpg' }, jpeg: { mime: 'image/jpeg', extension: 'jpg' }, svg: { mime: 'image/svg+xml', extension: 'svg' }, pdf: { mime: 'application/pdf', extension: 'pdf' }, html: { mime: 'text/html', extension: 'html' }, csv: { mime: 'text/csv', extension: 'csv' }, txt: { mime: 'text/plain', extension: 'txt' }, pptx: { mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', extension: 'pptx' } };
+const FORMATS = { png: { mime: 'image/png', extension: 'png' }, jpg: { mime: 'image/jpeg', extension: 'jpg' }, jpeg: { mime: 'image/jpeg', extension: 'jpg' }, svg: { mime: 'image/svg+xml', extension: 'svg' }, pdf: { mime: 'application/pdf', extension: 'pdf' }, html: { mime: 'text/html', extension: 'html' }, csv: { mime: 'text/csv', extension: 'csv' }, txt: { mime: 'text/plain', extension: 'txt' }, srt: { mime: 'application/x-subrip', extension: 'srt' }, vtt: { mime: 'text/vtt', extension: 'vtt' }, pptx: { mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', extension: 'pptx' } };
 
 function safeName(input, fallback = 'Untitled') {
   if (typeof input !== 'string') return fallback;
@@ -47,8 +47,8 @@ function parseProject(content) {
 function decodeExport(input) {
   if (!input || typeof input !== 'object') throw new Error('Choose an export format.');
   const format = Object.hasOwn(FORMATS, input.format) ? FORMATS[input.format] : null;
-  if (!format) throw new Error('Choose PNG, JPG, SVG, PDF, PPTX, HTML, CSV, or TXT export.');
-  const name = safeName(input.name || 'Visro design').replace(/\.(png|jpe?g|svg|pdf|pptx|html|csv|txt)$/i, '');
+  if (!format) throw new Error('Choose PNG, JPG, SVG, PDF, PPTX, HTML, CSV, TXT, SRT, or VTT export.');
+  const name = safeName(input.name || 'Visro design').replace(/\.(png|jpe?g|svg|pdf|pptx|html|csv|txt|srt|vtt)$/i, '');
   let data;
   if (format.extension === 'svg') {
     if (typeof input.svg !== 'string') throw new Error('SVG export requires a readable SVG document.');

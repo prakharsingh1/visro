@@ -8,6 +8,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { decodeImage } = require('./gemini.cjs');
 const { safeName } = require('./files.cjs');
+const { validateCaptions, buildASS } = require('./captions.cjs');
 
 const ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const MEDIA_EXTENSIONS = new Set(['.mp4', '.mov', '.m4v', '.webm', '.mkv', '.avi', '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.opus']);
@@ -46,7 +47,8 @@ function validateTimeline(input) {
   if (duration > (input.format === 'gif' ? 120 : 3600)) throw new Error(input.format === 'gif' ? 'GIF timelines can be up to 2 minutes long.' : 'Video timelines can be up to 1 hour long.');
   if (input.audio && (!Array.isArray(input.audio) || input.audio.length > 16)) throw new Error('Add up to 16 audio tracks.');
   const audio = (input.audio || []).map((track) => ({ mediaId: mediaId(track.mediaId), start: number(track.start, 0, 0, duration, 'Audio position'), trimStart: number(track.trimStart, 0, 0, 3600, 'Audio trim start'), duration: number(track.duration, duration, 0.1, 3600, 'Audio duration'), volume: number(track.volume, 1, 0, 2, 'Audio volume') }));
-  return { name: safeName(input.name, 'Visro film'), width, height, fps, format: input.format, clips, audio, duration };
+  const captions = validateCaptions(input.captions, duration, input.captionStyle, height);
+  return { name: safeName(input.name, 'Visro film'), width, height, fps, format: input.format, clips, audio, duration, ...captions };
 }
 
 function createMediaService({ directory, toolsDirectory, developmentToolsDirectory, allowSystemFallback = false, onProgress = () => {} }) {
@@ -69,10 +71,10 @@ function createMediaService({ directory, toolsDirectory, developmentToolsDirecto
     throw new Error('The local media rendering engine is missing. Reinstall Visro or run the media-tool preparation script.');
   }
 
-  function run(binary, args, { signal, progress, duration, timeout = 60000 } = {}) {
+  function run(binary, args, { signal, progress, duration, timeout = 60000, cwd } = {}) {
     return new Promise((resolve, reject) => {
       if (signal?.aborted) { reject(new Error('Media export cancelled.')); return; }
-      const child = spawn(binary, args, { shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(binary, args, { shell: false, cwd, stdio: ['ignore', 'pipe', 'pipe'] });
       let stdout = '', stderr = '', timedOut = false, cancelTimer;
       const abort = () => { child.kill('SIGTERM'); cancelTimer = setTimeout(() => child.kill('SIGKILL'), 1500); };
       signal?.addEventListener('abort', abort, { once: true });
@@ -246,7 +248,7 @@ function createMediaService({ directory, toolsDirectory, developmentToolsDirecto
     const work = path.join(directory, `.export-${job.id}`);
     await fs.mkdir(work, { recursive: true, mode: 0o700 });
     const emit = (phase, percent, message) => onProgress({ jobId: job.id, phase, percent: Math.round(percent), message });
-    const ff = (args, options = {}) => run(engine.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...args], { signal: job.controller.signal, timeout: 3600000, ...options });
+    const ff = (args, options = {}) => run(engine.ffmpeg, ['-hide_banner', '-loglevel', 'error', '-nostdin', '-y', ...args], { signal: job.controller.signal, timeout: 3600000, cwd: work, ...options });
     const localInput = (file) => ['-protocol_whitelist', 'file,pipe', '-format_whitelist', DEMUXERS, '-i', file];
     const fitFilter = (w, h, fit) => fit === 'cover' ? `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1` : `scale=${w}:${h}:force_original_aspect_ratio=decrease,pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
     async function writeImage(decoded, name) { const extension = { 'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp' }[decoded.mimeType]; const file = path.join(work, name.replace(/\.png$/, extension)); await fs.writeFile(file, Buffer.from(decoded.data, 'base64')); return file; }
@@ -302,6 +304,15 @@ function createMediaService({ directory, toolsDirectory, developmentToolsDirecto
         filters.push(`${inputs.join('')}amix=inputs=${inputs.length}:duration=first:normalize=0,alimiter=limit=0.95[audio]`);
         movie = path.join(work, 'mixed.mp4');
         await ff([...args, '-filter_complex', filters.join(';'), '-map', '0:v', '-map', '[audio]', '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', '-t', String(timeline.duration), movie]);
+      }
+      if (timeline.captions.length) {
+        emit('captions', 78, 'Rendering your captions');
+        // The filter uses a fixed relative file in its private working folder;
+        // no caption text or user-controlled path enters the filter expression.
+        await fs.writeFile(path.join(work, 'timeline-captions.ass'), buildASS(timeline.captions, timeline.captionStyle, timeline.width, timeline.height), { mode: 0o600 });
+        const captioned = path.join(work, 'captioned.mp4');
+        await ff(['-i', movie, '-vf', 'ass=filename=timeline-captions.ass', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-threads', '2', '-c:a', 'copy', '-t', String(timeline.duration), '-progress', 'pipe:1', captioned], { duration: timeline.duration, progress: fraction => emit('captions', 78 + fraction * 6, 'Rendering your captions') });
+        movie = captioned;
       }
       emit('encode', 85, `Encoding ${timeline.format.toUpperCase()}`);
       const rendered = path.join(work, `rendered.${timeline.format}`);

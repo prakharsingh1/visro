@@ -39,6 +39,7 @@ export const TemplatePreview = memo(function TemplatePreview({
                   fontFamily={e.fontFamily || "Arial"}
                   fontWeight={e.fontWeight}
                   fontStyle={e.fontStyle}
+                  letterSpacing={(e.letterSpacing || 0) * (e.fontSize || 32) / 1000}
                   textAnchor={
                     e.align === "center"
                       ? "middle"
@@ -73,9 +74,13 @@ export const TemplatePreview = memo(function TemplatePreview({
                   rx={w / 2}
                   ry={h / 2}
                   fill={e.fill}
+                  stroke={e.stroke}
+                  strokeWidth={e.strokeWidth}
                 />
               ) : e.type === "triangle" ? (
-                <polygon points={`${w / 2},0 ${w},${h} 0,${h}`} fill={e.fill} />
+                <polygon points={`${w / 2},0 ${w},${h} 0,${h}`} fill={e.fill} stroke={e.stroke} strokeWidth={e.strokeWidth} />
+              ) : e.type === "star" ? (
+                <polygon points={Array.from({length:10},(_,n)=>{const a=n*Math.PI/5-Math.PI/2,r=n%2?.42:1;return `${w/2+Math.cos(a)*w/2*r},${h/2+Math.sin(a)*h/2*r}`;}).join(' ')} fill={e.fill} stroke={e.stroke} strokeWidth={e.strokeWidth} />
               ) : e.type === "line" ? (
                 <line
                   x1="0"
@@ -92,6 +97,8 @@ export const TemplatePreview = memo(function TemplatePreview({
                   fill={e.fill}
                   rx={e.rx || 0}
                   ry={e.ry || 0}
+                  stroke={e.stroke}
+                  strokeWidth={e.strokeWidth}
                 />
               )}
             </g>

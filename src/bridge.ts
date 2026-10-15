@@ -74,6 +74,18 @@ export interface TimelineAudio {
   duration?: number;
   volume?: number;
 }
+export interface CaptionCue { id: string; start: number; end: number; text: string }
+export interface CaptionStyle {
+  fontFamily: 'Arial' | 'Helvetica Neue' | 'Georgia' | 'Courier New';
+  fontSize: number;
+  color: string;
+  background: string;
+  box: boolean;
+  backgroundOpacity: number;
+  position: 'top' | 'middle' | 'bottom';
+  align: 'left' | 'center' | 'right';
+  margin: number;
+}
 export interface TimelineExport {
   name: string;
   width: number;
@@ -82,10 +94,12 @@ export interface TimelineExport {
   format: 'mp4' | 'webm' | 'gif';
   clips: TimelineClip[];
   audio?: TimelineAudio[];
+  captions?: CaptionCue[];
+  captionStyle?: CaptionStyle;
 }
 export interface MediaProgress {
   jobId: string;
-  phase: 'import' | 'render' | 'mix' | 'encode' | 'complete' | 'cancelled';
+  phase: 'import' | 'render' | 'mix' | 'captions' | 'encode' | 'complete' | 'cancelled';
   percent: number;
   message: string;
 }

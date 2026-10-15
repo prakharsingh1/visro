@@ -22,14 +22,146 @@ before(async () => {
 
 function studio(options) { return new StudioEditor(environment.document.createElement('canvas'), options); }
 
-function pointerDrag(editor, point, dx, dy, { altKey = false, move = true } = {}) {
+function pointerDrag(editor, point, dx, dy, { altKey = false, metaKey = false, ctrlKey = false, move = true } = {}) {
   editor.canvas.renderAll();
   const pointer = point.transform(editor.canvas.viewportTransform);
-  const event = (type, x, y, buttons) => new environment.window.MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons, altKey, bubbles: true });
+  const event = (type, x, y, buttons) => new environment.window.MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons, altKey, metaKey, ctrlKey, bubbles: true });
   editor.canvas.upperCanvasEl.dispatchEvent(event('mousedown', pointer.x, pointer.y, 1));
   if (move) environment.document.dispatchEvent(event('mousemove', pointer.x + dx * editor.state.zoom, pointer.y + dy * editor.state.zoom, 1));
   environment.document.dispatchEvent(event('mouseup', pointer.x + dx * editor.state.zoom, pointer.y + dy * editor.state.zoom, 0));
 }
+
+test('Command-click cycles overlapping visible layers and immediately drags the picked layer without moving the cover', async () => {
+  const editor = studio({ width: 500, height: 500 });
+  try {
+    await editor.insertDesign({ name: 'Overlapping elements', width: 500, height: 500, background: '#ffffff', elements: [
+      { type: 'rect', name: 'Back', x: 100, y: 100, width: 180, height: 180, fill: '#ff00aa' },
+      { type: 'rect', name: 'Hidden', x: 100, y: 100, width: 180, height: 180, fill: '#000000' },
+      { type: 'rect', name: 'Locked', x: 100, y: 100, width: 180, height: 180, fill: '#ffcc00' },
+      { type: 'rect', name: 'Front', x: 100, y: 100, width: 180, height: 180, fill: '#336699' },
+      { type: 'text', name: 'Empty bounds', text: 'A', x: 20, y: 100, width: 400, fontSize: 28, fill: '#000000' },
+    ] });
+    const objects = editor.canvas.getObjects(), [back, hidden, locked, front] = objects;
+    editor.setLayerVisibility(hidden.id, false); editor.setLayerLocked(locked.id, true);
+    editor.selectLayer(front.id); editor.setZoom(.7); editor.pan(23, -19);
+    const revision = editor.state.revision;
+    const { Point } = await import('fabric'); const point = new Point(180, 180);
+    pointerDrag(editor, point, 0, 0, { metaKey: true, move: false });
+    assert.equal(editor.selected.id, back.id); assert.equal(editor.state.revision, revision, 'picking must not alter history');
+    pointerDrag(editor, point, 0, 0, { metaKey: true, move: false });
+    assert.equal(editor.selected.id, front.id, 'the stack wraps while ignoring hidden, locked and transparent pixels');
+    pointerDrag(editor, point, 33, -17, { metaKey: true });
+    assert.equal(editor.selected.id, back.id);
+    assert.ok(Math.abs(back.left - 133) < .00001); assert.ok(Math.abs(back.top - 83) < .00001);
+    assert.equal(front.left, 100); assert.equal(front.top, 100); assert.equal(locked.left, 100); assert.equal(locked.top, 100);
+    assert.equal(editor.canvas.getObjects().length, 5, 'Command-drag must not duplicate');
+    await editor.undo();
+    editor.selectLayer(front.id);
+    pointerDrag(editor, point, 0, 0, { ctrlKey: true, move: false });
+    assert.equal(editor.selected.id, back.id, 'Control-click uses the same behavior on other platforms');
+    pointerDrag(editor, point, 20, 5);
+    assert.equal(editor.selected.id, front.id, 'ordinary dragging still targets the frontmost visible unlocked layer');
+    const restoredFront = editor.canvas.getObjects().find(object => object.id === front.id);
+    assert.ok(Math.abs(restoredFront.left - 120) < .00001); assert.ok(Math.abs(restoredFront.top - 105) < .00001);
+  } finally { editor.destroy(); }
+});
+
+test('Tab selection cycles visible unlocked layers, treats groups as one element and never changes history', async () => {
+  const editor = studio();
+  try {
+    editor.addShape('rect'); const first = editor.canvas.getActiveObject();
+    editor.addShape('circle'); const locked = editor.canvas.getActiveObject(); editor.setLayerLocked(locked.id, true);
+    editor.addShape('triangle'); const hidden = editor.canvas.getActiveObject(); editor.setLayerVisibility(hidden.id, false);
+    editor.addShape('star'); const child = editor.canvas.getActiveObject();
+    editor.addShape('rect');
+    const { ActiveSelection } = await import('fabric');
+    editor.canvas.setActiveObject(new ActiveSelection([child, editor.canvas.getActiveObject()], { canvas: editor.canvas })); editor.group();
+    const group = editor.canvas.getActiveObject();
+    editor.addText(); const last = editor.canvas.getActiveObject();
+    const before = editor.serialize(), revision = editor.state.revision;
+    editor.deselect();
+    assert.equal(editor.cycleSelection(1).id, first.id);
+    assert.equal(editor.cycleSelection(1).id, group.id);
+    assert.equal(editor.cycleSelection(1).id, last.id);
+    assert.equal(editor.cycleSelection(1).id, first.id, 'forward navigation wraps at the top layer');
+    assert.equal(editor.cycleSelection(-1).id, last.id);
+    editor.deselect(); assert.equal(editor.cycleSelection(-1).id, last.id);
+    editor.selectAll(); assert.equal(editor.cycleSelection(1).id, first.id);
+    editor.selectAll(); assert.equal(editor.cycleSelection(-1).id, last.id);
+    editor.editSelectedText(); assert.equal(editor.cycleSelection(1).id, last.id, 'Tab must remain available to the direct text editor');
+    editor.canvas.getActiveObject().exitEditing();
+    assert.equal(editor.canvas.getActiveObjects().length, 1);
+    assert.equal(editor.state.revision, revision);
+    assert.deepEqual(editor.serialize(), before);
+  } finally { editor.destroy(); }
+});
+
+test('keyboard rotation preserves the center and transformed group children, with one coalesced undo', async () => {
+  let changes = 0;
+  const editor = studio({ onChange: () => changes++ });
+  try {
+    editor.addShape('rect'); editor.updateSelected({ left: 110.25, top: 130.75 });
+    editor.addShape('circle'); editor.updateSelected({ left: 430.5, top: 510.25 });
+    editor.selectAll(); editor.group();
+    const group = editor.canvas.getActiveObject();
+    group.set({ angle: 29, scaleX: 1.2, scaleY: .7, skewX: 11, flipX: true }); group.setCoords();
+    editor.canvas.fire('object:modified', { target: group });
+    const center = group.getCenterPoint(), children = group.getObjects(), ids = [group.id, ...children.map(child => child.id)];
+    const before = children.map(child => child.calcTransformMatrix()), revision = editor.state.revision;
+    changes = 0;
+    for (let index = 0; index < 100; index++) editor.rotateSelection(.1);
+    assert.equal(changes, 0, 'key repeat must not synchronously rerender React');
+    assert.ok(Math.abs(group.angle - 39) < .000001);
+    assert.ok(group.getCenterPoint().distanceFrom(center) < .000001);
+    const { util } = await import('fabric');
+    const radians = 10 * Math.PI / 180, cosine = Math.cos(radians), sine = Math.sin(radians);
+    const rotation = [cosine, sine, -sine, cosine, center.x * (1 - cosine) + center.y * sine, center.y * (1 - cosine) - center.x * sine];
+    children.forEach((child, index) => {
+      const expected = util.multiplyTransformMatrices(rotation, before[index]);
+      child.calcTransformMatrix().forEach((value, coordinate) => assert.ok(Math.abs(value - expected[coordinate]) < .00001));
+    });
+    assert.deepEqual([group.id, ...children.map(child => child.id)], ids);
+    editor.flushPendingChanges(); assert.equal(changes, 1); assert.equal(editor.state.revision, revision + 1);
+    await editor.undo(); const restored = editor.canvas.getObjects()[0];
+    restored.getObjects().forEach((child, index) => child.calcTransformMatrix().forEach((value, coordinate) => assert.ok(Math.abs(value - before[index][coordinate]) < .001)));
+  } finally { editor.destroy(); }
+});
+
+test('keyboard resizing changes logical selection dimensions without moving its anchor or editing locked layers', async () => {
+  let changes = 0;
+  const editor = studio({ onChange: () => changes++ });
+  try {
+    editor.addShape('rect'); editor.updateSelected({ left: 120.25, top: 160.75 });
+    editor.addShape('circle'); editor.updateSelected({ left: 470.5, top: 560.25 });
+    editor.selectAll(); editor.updateSelected({ angle: 37 });
+    const selection = editor.canvas.getActiveObject(), objects = editor.canvas.getActiveObjects();
+    const initialCenter = selection.getRelativeCenterPoint();
+    selection.set({ originX: 'left', originY: 'top' }); selection.setPositionByOrigin(initialCenter, 'center', 'center');
+    selection.set({ scaleX: 1.1, scaleY: .8, skewX: 9, flipX: true }); selection.setCoords();
+    editor.canvas.fire('object:modified', { target: selection });
+    const anchor = { left: selection.left, top: selection.top }, width = selection.getScaledWidth(), height = selection.getScaledHeight();
+    const before = objects.map(object => object.calcTransformMatrix()), revision = editor.state.revision;
+    const local = objects.map(object => object.calcOwnMatrix());
+    changes = 0;
+    for (let index = 0; index < 10; index++) editor.resizeSelection(1, -1);
+    assert.equal(changes, 0);
+    assert.ok(Math.abs(selection.getScaledWidth() - width - 10) < .00001);
+    assert.ok(Math.abs(selection.getScaledHeight() - height + 10) < .00001);
+    assert.deepEqual({ left: selection.left, top: selection.top }, anchor);
+    objects.forEach((object, index) => assert.deepEqual(object.calcOwnMatrix(), local[index], 'resizing a multiple selection must preserve child coordinates'));
+    editor.flushPendingChanges(); assert.equal(changes, 1); assert.equal(editor.state.revision, revision + 1);
+    await editor.undo();
+    editor.canvas.getObjects().forEach((object, index) => object.calcTransformMatrix().forEach((value, coordinate) => assert.ok(Math.abs(value - before[index][coordinate]) < .001)));
+    editor.selectAll(); editor.setLayerLocked(objects[0].id, true);
+    const frozen = editor.canvas.getActiveObjects().map(object => object.calcTransformMatrix()), lockedRevision = editor.state.revision;
+    editor.rotateSelection(15); editor.resizeSelection(10, 10); editor.flushPendingChanges();
+    editor.canvas.getActiveObjects().forEach((object, index) => assert.deepEqual(object.calcTransformMatrix(), frozen[index]));
+    assert.equal(editor.state.revision, lockedRevision);
+    editor.addText(); const text = editor.canvas.getActiveObject(), textTransform = text.calcTransformMatrix(); text.isEditing = true;
+    editor.rotateSelection(1); editor.resizeSelection(1, 0); editor.flushPendingChanges();
+    assert.deepEqual(text.calcTransformMatrix(), textTransform); text.isEditing = false;
+  } finally { editor.destroy(); }
+});
 
 test('Option-drag duplicates a transformed group immediately and waits for its image copy before one undo transaction', async () => {
   const editor = studio();

@@ -10,6 +10,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const { createMediaService, validateTimeline } = require('../electron/media.cjs');
 const { decodeExport } = require('../electron/files.cjs');
+const { validateCaptions, buildASS } = require('../electron/captions.cjs');
 
 const root = path.resolve(__dirname, '..');
 const tools = path.join(root, 'build/media-tools');
@@ -28,12 +29,51 @@ test('timeline validates duration, geometry, volume and opaque library IDs befor
 });
 
 test('HTML, CSV and text exports validate MIME and preserve UTF-8 bytes', () => {
-  for (const [format, mime, text] of [['html', 'text/html', '<!doctype html><p>Visro café</p>'], ['csv', 'text/csv', 'Month,Sales\nJan,12'], ['txt', 'text/plain', 'A clear idea']]) {
+  for (const [format, mime, text] of [['html', 'text/html', '<!doctype html><p>Visro café</p>'], ['csv', 'text/csv', 'Month,Sales\nJan,12'], ['txt', 'text/plain', 'A clear idea'], ['srt', 'application/x-subrip', '1\n00:00:00,000 --> 00:00:01,000\nCafé'], ['vtt', 'text/vtt', 'WEBVTT\n\n00:00:00.000 --> 00:00:01.000\nCafé']]) {
     const exported = decodeExport({ name: `draft.${format}`, format, dataURL: `data:${mime};charset=utf-8;base64,${Buffer.from(text).toString('base64')}` });
     assert.equal(exported.name, `draft.${format}`);
     assert.equal(exported.data.toString('utf8'), text);
   }
   assert.throws(() => decodeExport({ name: 'draft', format: 'csv', dataURL: 'data:text/html;base64,PGI+' }), /chosen format/);
+});
+
+test('caption export validates timing, styling and plain text before starting FFmpeg', () => {
+  const accepted = validateCaptions([{ start: .2, end: 1, text: 'Café मुंबई\n{\\pos(0,0)} literal \\N' }], 2, { fontSize: 20, position: 'top', align: 'left' }, 90);
+  const ass = buildASS(accepted.captions, accepted.captionStyle, 160, 90);
+  assert.match(ass, /PlayResX: 160/); assert.match(ass, /Café मुंबई\\N/);
+  assert.ok(!ass.includes('{\\pos(0,0)}')); assert.ok(ass.includes('\\{')); assert.ok(ass.includes('\\\u2060N'));
+  for (const cue of [{ start: -1, end: 1, text: 'x' }, { start: 1, end: 1, text: 'x' }, { start: 0, end: 3, text: 'x' }, { start: 0, end: 1, text: '\x00bad' }, { start: 0, end: 1, text: 'x'.repeat(2001) }]) assert.throws(() => validateCaptions([cue], 2));
+  assert.throws(() => validateCaptions([], 2, { fontFamily: 'Arial:movie=https://example.invalid' }));
+  assert.throws(() => validateCaptions([], 2, { color: 'white;movie=secret' }));
+  assert.throws(() => validateCaptions(Array(1001).fill({ start: 0, end: 1, text: 'x' }), 2));
+});
+
+test('real FFmpeg burns caption text only inside its timed range in MP4, WebM and GIF frames', { skip: !existsSync(ffmpeg) }, async t => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'visro-caption-integration-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }));
+  const image = path.join(directory, 'black.png');
+  await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'color=c=black:s=320x180', '-frames:v', '1', image]);
+  const imageURL = `data:image/png;base64,${(await fs.readFile(image)).toString('base64')}`;
+  const events = [], service = createMediaService({ directory: path.join(directory, 'library'), toolsDirectory: tools, onProgress: e => events.push(e) });
+  for (const format of ['mp4', 'webm', 'gif']) {
+    const output = path.join(directory, `captions.${format}`);
+    await service.exportTimeline({ name: 'Caption test', width: 320, height: 180, fps: 20, format, clips: [{ kind: 'image', image: imageURL, duration: 1.5 }], captions: [{ id: 'first', start: .4, end: 1, text: 'LOCAL Café' }], captionStyle: { fontFamily: 'Arial', fontSize: 24, position: 'top', box: false, color: '#FFFFFF' } }, output);
+    const frames = [];
+    for (const time of [.15, .65, 1.2]) {
+      const { stdout } = await run(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-ss', String(time), '-i', output, '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'], { encoding: 'buffer', maxBuffer: 2 * 1024 * 1024 });
+      assert.equal(stdout.length, 320 * 180 * 3);
+      let white = 0, below = 0;
+      for (let i = 0; i < stdout.length; i += 3) if (stdout[i] > 190 && stdout[i + 1] > 190 && stdout[i + 2] > 190) { white++; if (Math.floor(i / 3 / 320) > 90) below++; }
+      frames.push({ white, below });
+    }
+    assert.equal(frames[0].white, 0, `${format} must not show captions before their start`);
+    assert.ok(frames[1].white > 100, `${format} must render visible caption glyphs during the cue`);
+    assert.equal(frames[1].below, 0, `${format} must honor top caption placement`);
+    assert.equal(frames[2].white, 0, `${format} must hide captions after their end`);
+    assert.ok(Math.abs(Number((await service.probe(output)).format.duration) - 1.5) < .2);
+  }
+  assert.ok(events.some(e => e.phase === 'captions'));
+  assert.equal((await fs.readdir(path.join(directory, 'library'))).some(name => name.startsWith('.export-')), false, 'Private caption working files must be removed after rendering.');
 });
 
 test('real bundled FFmpeg imports video/audio, persists catalog, serves seek ranges, and exports MP4/WebM/GIF', { skip: !existsSync(ffmpeg) }, async (t) => {

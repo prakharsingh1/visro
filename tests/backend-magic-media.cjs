@@ -27,9 +27,10 @@ test('speech fills the timeline with real stills and retains the full playable n
   assert.deepEqual(combined.scenes.map((s) => s.duration), [8, 2]);
   assert.deepEqual(existing.audio, []);
   assert.throws(() => withGeneratedMedia({ scenes: [], audio: [] }, voice), /design preview/);
-  assert.throws(() => withGeneratedMedia({ scenes: Array(20).fill(existing.scenes[0]), audio: [] }, video), /20 scenes/);
+  assert.throws(() => withGeneratedMedia({ scenes: Array(100).fill(existing.scenes[0]), audio: [] }, video), /100 scenes/);
   assert.throws(() => withGeneratedMedia({ scenes: [], audio: Array(16).fill({ mediaId: 'x' }) }, voice, image), /16 audio/);
-  assert.throws(() => withGeneratedMedia({ scenes: [], audio: [] }, { ...voice, duration: 2401 }, image), /20 scenes/);
+  assert.equal(withGeneratedMedia({ scenes: [], audio: [] }, { ...voice, duration: 2401 }, image).scenes.length, 21);
+  assert.throws(() => withGeneratedMedia({ scenes: [], audio: [] }, { ...voice, duration: 3601 }, image), /1 hour/);
 });
 test('editable design captures selected-page scale, type and text styling, without image bytes', async () => {
   const { editableDesign, documentParagraphs } = await modulePromise;
@@ -40,4 +41,20 @@ test('editable design captures selected-page scale, type and text styling, witho
   assert.ok(!JSON.stringify(design).includes('PRIVATE-IMAGE'));
   assert.throws(() => editableDesign({ ...project, activePageId: 'first' }), /editable text or shapes/);
   assert.equal(documentParagraphs('A & B\n\n<script>alert(1)</script>\nNext'), '<p>A &amp; B</p><p>&lt;script&gt;alert(1)&lt;/script&gt;<br>Next</p>');
+});
+
+test('AI voice and video appends preserve caption timing, text, style and visibility after local save/restore', async () => {
+  const { existingSequence, withGeneratedMedia } = await modulePromise;
+  const original = { scenes: [{ id: 'old', name: 'Existing scene', kind: 'image', image, duration: 4 }], audio: [], captions: [{ id: 'caption', start: .3, end: 2.7, text: 'Keep café & captions\nsecond line' }], captionStyle: { fontFamily: 'Georgia', fontSize: 28, color: '#abcdef', background: '#111111', box: true, backgroundOpacity: .5, position: 'top', align: 'left', margin: 7 }, burnCaptions: false };
+  const spoken = withGeneratedMedia(existingSequence('video', original), { ...voice, duration: 6 }, image, () => 'voice-scene');
+  const reopened = existingSequence('video', JSON.parse(JSON.stringify(spoken)));
+  const appended = withGeneratedMedia(reopened, video, undefined, () => 'video-scene');
+  assert.deepEqual(appended.captions, original.captions);
+  assert.deepEqual(appended.captionStyle, original.captionStyle);
+  assert.equal(appended.burnCaptions, false);
+  assert.deepEqual(appended.scenes.map(scene => scene.duration), [4, 2, 8]);
+  assert.equal(appended.audio[0].duration, 6);
+  assert.equal(original.scenes.length, 1); assert.equal(original.audio.length, 0);
+  reopened.captions[0].text = 'Changed independently';
+  assert.equal(original.captions[0].text, 'Keep café & captions\nsecond line');
 });
