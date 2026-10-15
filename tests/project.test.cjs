@@ -37,6 +37,22 @@ test('older branding omissions open safely without changing document content', a
   assert.throws(() => parseProject('{broken'), /invalid JSON/);
 });
 
+test('page guides survive a portable round trip and imported guides are bounded', async () => {
+  const { createProject, validateProject, parseProject, stringifyProject } = await projectModule;
+  const project=createProject('Guided layout',1200,900);
+  project.pages[0].metadata={notes:'Keep the title inside the guides.',guides:{x:[0,400,800,1200],y:[40,450,860]}};
+  assert.deepEqual(parseProject(stringifyProject(project)).pages[0].metadata,project.pages[0].metadata);
+  project.pages[0].metadata.guides={x:[-1,Infinity,'12',NaN,1201,30],y:Array.from({length:150},(_,i)=>i)};
+  const opened=validateProject(project);
+  assert.deepEqual(opened.pages[0].metadata.guides.x,[30]);
+  assert.equal(opened.pages[0].metadata.guides.y.length,100);
+  assert.equal(project.pages[0].metadata.guides.y.length,150,'validation must not mutate the source file');
+  for(const guides of [null,false,17,'invalid',{x:null,y:'invalid'}]){
+    project.pages[0].metadata.guides=guides;
+    assert.deepEqual(validateProject(project).pages[0].metadata.guides,{x:[],y:[]},'malformed guides must open without crashing the editor');
+  }
+});
+
 test('original template catalog has unique IDs and valid logical-pixel content', async () => {
   const { TEMPLATES } = await import('../src/templates.ts');
   assert.ok(TEMPLATES.length >= 9);

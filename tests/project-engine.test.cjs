@@ -22,6 +22,137 @@ before(async () => {
 
 function studio(options) { return new StudioEditor(environment.document.createElement('canvas'), options); }
 
+function pointerDrag(editor, point, dx, dy, { altKey = false, move = true } = {}) {
+  editor.canvas.renderAll();
+  const pointer = point.transform(editor.canvas.viewportTransform);
+  const event = (type, x, y, buttons) => new environment.window.MouseEvent(type, { clientX: x, clientY: y, button: 0, buttons, altKey, bubbles: true });
+  editor.canvas.upperCanvasEl.dispatchEvent(event('mousedown', pointer.x, pointer.y, 1));
+  if (move) environment.document.dispatchEvent(event('mousemove', pointer.x + dx * editor.state.zoom, pointer.y + dy * editor.state.zoom, 1));
+  environment.document.dispatchEvent(event('mouseup', pointer.x + dx * editor.state.zoom, pointer.y + dy * editor.state.zoom, 0));
+}
+
+test('Option-drag duplicates a transformed group immediately and waits for its image copy before one undo transaction', async () => {
+  const editor = studio();
+  try {
+    editor.addShape('rect'); editor.updateSelected({ left: 100, top: 160 });
+    editor.addShape('circle'); editor.updateSelected({ left: 380, top: 420 });
+    editor.selectAll(); editor.group();
+    const moving = editor.canvas.getActiveObject();
+    moving.set({ angle: 27, scaleX: 1.2, scaleY: .8, flipX: true, skewX: 9 }); moving.setCoords();
+    editor.canvas.fire('object:modified', { target: moving });
+    const sourceId = moving.id, children = moving.getObjects(), sourceChildIds = children.map(child => child.id);
+    const source = moving.calcTransformMatrix(), childTransforms = children.map(child => child.calcTransformMatrix());
+    const revision = editor.state.revision;
+    let release;
+    const ready = new Promise(resolve => { release = resolve; });
+    const clone = moving.clone.bind(moving);
+    moving.clone = (...args) => { const copy = clone(...args); return ready.then(() => copy); };
+    pointerDrag(editor, children[0].getCenterPoint(), 63, -22, { altKey: true });
+    const moved = moving.calcTransformMatrix();
+    assert.ok(Math.abs(moved[4] - source[4] - 63) < .00001, 'pointer movement must not wait for cloning');
+    assert.ok(Math.abs(moved[5] - source[5] + 22) < .00001);
+    assert.notEqual(moving.id, sourceId);
+    assert.equal(editor.state.revision, revision, 'do not save a partially completed duplication');
+    let exported = false;
+    const pending = editor.exportSelectedObjects().then(result => { exported = true; return result; });
+    await Promise.resolve(); assert.equal(exported, false, 'queued operations must wait for the complete gesture');
+    release(); await pending;
+    assert.equal(editor.canvas.getObjects().length, 2);
+    const stationary = editor.canvas.getObjects().find(object => object.id === sourceId);
+    assert.ok(stationary); assert.deepEqual(stationary.getObjects().map(child => child.id), sourceChildIds);
+    stationary.calcTransformMatrix().forEach((value, coordinate) => assert.ok(Math.abs(value - source[coordinate]) < .001));
+    const ids = new Set();
+    for (const group of editor.canvas.getObjects()) {
+      for (const object of [group, ...group.getObjects()]) { assert.ok(!ids.has(object.id)); ids.add(object.id); }
+    }
+    moving.getObjects().forEach((child, index) => {
+      child.calcTransformMatrix().forEach((value, coordinate) => {
+        const delta = coordinate === 4 ? 63 : coordinate === 5 ? -22 : 0;
+        assert.ok(Math.abs(value - childTransforms[index][coordinate] - delta) < .001);
+      });
+    });
+    assert.equal(editor.canvas.getActiveObject(), moving); assert.equal(editor.state.revision, revision + 1);
+    await editor.undo();
+    assert.equal(editor.canvas.getObjects().length, 1);
+    const restored = editor.canvas.getObjects()[0]; assert.equal(restored.id, sourceId);
+    restored.calcTransformMatrix().forEach((value, coordinate) => assert.ok(Math.abs(value - source[coordinate]) < .001));
+    await editor.redo(); assert.equal(editor.canvas.getObjects().length, 2);
+  } finally { editor.destroy(); }
+});
+
+test('Option-drag preserves a rotated multiple selection while plain drag, Option-click and locks keep their behavior', async () => {
+  const editor = studio();
+  try {
+    editor.addShape('rect'); editor.updateSelected({ left: 110, top: 150 });
+    editor.addShape('circle'); editor.updateSelected({ left: 420, top: 490 });
+    editor.selectAll(); editor.updateSelected({ angle: 31 });
+    const objects = editor.canvas.getActiveObjects(), ids = objects.map(object => object.id), transforms = objects.map(object => object.calcTransformMatrix());
+    pointerDrag(editor, objects[0].getCenterPoint(), -17, 29, { altKey: true });
+    await editor.exportSelectedObjects();
+    assert.equal(editor.canvas.getObjects().length, 4);
+    assert.equal(editor.canvas.getActiveObjects().length, 2);
+    objects.forEach((object, index) => {
+      assert.notEqual(object.id, ids[index]);
+      const matrix = object.calcTransformMatrix();
+      assert.ok(Math.abs(matrix[4] - transforms[index][4] + 17) < .001); assert.ok(Math.abs(matrix[5] - transforms[index][5] - 29) < .001);
+      const source = editor.canvas.getObjects().find(candidate => candidate.id === ids[index]);
+      source.calcTransformMatrix().forEach((value, coordinate) => assert.ok(Math.abs(value - transforms[index][coordinate]) < .001));
+    });
+    await editor.undo(); editor.selectAll();
+    const selected = editor.canvas.getActiveObjects(), before = selected.map(object => object.calcTransformMatrix()), revision = editor.state.revision;
+    pointerDrag(editor, selected[0].getCenterPoint(), 0, 0, { altKey: true, move: false });
+    await editor.exportSelectedObjects();
+    assert.equal(editor.canvas.getObjects().length, 2); assert.equal(editor.state.revision, revision);
+    pointerDrag(editor, selected[0].getCenterPoint(), 12, 9);
+    selected.forEach((object, index) => { const matrix = object.calcTransformMatrix(); assert.ok(Math.abs(matrix[4] - before[index][4] - 12) < .001); assert.ok(Math.abs(matrix[5] - before[index][5] - 9) < .001); });
+    assert.equal(editor.canvas.getObjects().length, 2);
+    editor.setLayerLocked('', true);
+    const locked = selected.map(object => object.calcTransformMatrix());
+    pointerDrag(editor, selected[0].getCenterPoint(), 80, 60, { altKey: true });
+    selected.forEach((object, index) => assert.deepEqual(object.calcTransformMatrix(), locked[index]));
+    assert.equal(editor.canvas.getObjects().length, 2);
+  } finally { editor.destroy(); }
+});
+
+test('user alignment guides snap real pointer drags and disabling snapping keeps exact movement', async () => {
+  const editor = studio({ width: 400, height: 400 });
+  try {
+    await editor.insertDesign({ name: 'Guide targets', width: 400, height: 400, background: '#ffffff', elements: [
+      { type: 'rect', name: 'Movable', x: 100, y: 100, width: 80, height: 50, fill: '#f6bed0' },
+    ] });
+    editor.selectAll(); editor.setZoom(.7);
+    editor.setAlignmentGuides({ x: [147, NaN, -50, 9000], y: [221] }); editor.setSnapping(true);
+    const object = editor.canvas.getActiveObject();
+    pointerDrag(editor, object.getCenterPoint(), 43, 117);
+    assert.ok(Math.abs(object.left - 147) < .00001, `guide x moved to ${object.left}`); assert.ok(Math.abs(object.top - 221) < .00001, `guide y moved to ${object.top}`);
+    editor.setSnapping(false);
+    pointerDrag(editor, object.getCenterPoint(), 3.25, -2.75);
+    assert.ok(Math.abs(object.left - 150.25) < .00001); assert.ok(Math.abs(object.top - 218.25) < .00001);
+  } finally { editor.destroy(); }
+});
+
+test('Option-drag retains a photo crop, frame, original source, adjustments and element metadata', async () => {
+  const editor = studio();
+  try {
+    const source = environment.document.createElement('canvas'); source.width = 300; source.height = 200;
+    const context = source.getContext('2d'); context.fillStyle = '#336699'; context.fillRect(0, 0, 300, 200);
+    await editor.addImage(source.toDataURL('image/png'), 'Framed photograph');
+    editor.updateSelected({ left: 160, top: 230, width: 200, height: 150, angle: 17 });
+    editor.cropSelectedImage({ left: 30, top: 20, width: 200, height: 150 }); editor.addFrame('circle'); editor.flip('horizontal');
+    editor.applyEffects({ brightness: .2, saturation: -.3 }); editor.setElementMetadata({ altText: 'Blue photograph', link: 'https://example.com/photo' });
+    const moving = editor.canvas.getActiveObject(), sourceId = moving.id;
+    const before = moving.toObject(['id', 'visroName', 'visroFrame', 'visroOriginalSrc', 'visroMetadata']);
+    pointerDrag(editor, moving.getCenterPoint(), 41, -19, { altKey: true });
+    await editor.exportSelectedObjects();
+    assert.equal(editor.canvas.getObjects().length, 2);
+    const stationary = editor.canvas.getObjects().find(object => object.id === sourceId);
+    const retained = stationary.toObject(['id', 'visroName', 'visroFrame', 'visroOriginalSrc', 'visroMetadata']);
+    for (const property of ['src', 'cropX', 'cropY', 'width', 'height', 'flipX', 'angle', 'filters', 'clipPath', 'visroFrame', 'visroOriginalSrc', 'visroMetadata']) assert.deepEqual(retained[property], before[property], `duplicating changed ${property}`);
+    assert.notEqual(moving.id, sourceId); assert.equal(editor.canvas.getActiveObject(), moving);
+    await editor.undo(); assert.equal(editor.canvas.getObjects().length, 1); assert.equal(editor.canvas.getObjects()[0].id, sourceId);
+  } finally { editor.destroy(); }
+});
+
 test('arrow nudges respond immediately without rounding or one history snapshot per key repeat', async () => {
   let changes = 0;
   const editor = studio({ onChange: () => changes++ });
@@ -121,6 +252,54 @@ test('multipage export preserves selection, link targets, viewport and document 
     assert.deepEqual(editor.canvas.viewportTransform, viewport); assert.equal(editor.state.revision, revision);
     editor.setElementMetadata({ link: 'https://example.com/after-export' });
     assert.ok(editor.canvas.getActiveObjects().every(object => object.visroMetadata.link === 'https://example.com/after-export'));
+  } finally { editor.destroy(); }
+});
+
+test('thumbnail exports preserve live canvas dimensions and pointer geometry at every zoom', async () => {
+  const editor = studio({ width: 400, height: 300 });
+  try {
+    await editor.insertDesign({ name: 'Export geometry', width: 400, height: 300, background: '#ffffff', elements: [
+      { type: 'rect', name: 'Pink target', x: 100, y: 70, width: 80, height: 60, fill: '#f6bed0' },
+    ] });
+    editor.selectAll();
+    const object = editor.canvas.getActiveObject(), transform = object.calcTransformMatrix();
+    const revision = editor.state.revision;
+    let dimensionChanges = 0, viewportChanges = 0;
+    const setDimensions = editor.canvas.setDimensions.bind(editor.canvas);
+    const setViewportTransform = editor.canvas.setViewportTransform.bind(editor.canvas);
+    editor.canvas.setDimensions = (...args) => { dimensionChanges++; return setDimensions(...args); };
+    editor.canvas.setViewportTransform = (...args) => { viewportChanges++; return setViewportTransform(...args); };
+    const { FabricImage } = await import('fabric');
+    for (const zoom of [.43, 1, 2.3]) {
+      editor.setZoom(zoom); editor.pan(41, -37); editor.canvas.renderAll();
+      dimensionChanges = 0; viewportChanges = 0;
+      const viewport = editor.canvas.viewportTransform;
+      const dimensions = [editor.canvas.width, editor.canvas.height];
+      const domDimensions = [editor.canvas.lowerCanvasEl.width, editor.canvas.lowerCanvasEl.height, editor.canvas.upperCanvasEl.width, editor.canvas.upperCanvasEl.height];
+      const style = editor.canvas.lowerCanvasEl.getAttribute('style');
+      const offset = { ...editor.canvas._offset };
+      const dataURL = await editor.exportImage({ format: 'png', scale: .5 });
+      assert.equal(dimensionChanges, 0, 'a thumbnail must never resize the live DOM canvas');
+      assert.equal(viewportChanges, 0, 'a thumbnail must never recalculate the live pointer viewport');
+      assert.equal(editor.canvas.viewportTransform, viewport);
+      assert.deepEqual([editor.canvas.width, editor.canvas.height], dimensions);
+      assert.deepEqual([editor.canvas.lowerCanvasEl.width, editor.canvas.lowerCanvasEl.height, editor.canvas.upperCanvasEl.width, editor.canvas.upperCanvasEl.height], domDimensions);
+      assert.equal(editor.canvas.lowerCanvasEl.getAttribute('style'), style);
+      assert.deepEqual(editor.canvas._offset, offset);
+      assert.equal(editor.canvas.getActiveObject(), object); assert.deepEqual(object.calcTransformMatrix(), transform);
+      const image = await FabricImage.fromURL(dataURL);
+      assert.equal(image.width, 200); assert.equal(image.height, 150);
+      const painted = environment.document.createElement('canvas'); painted.width = 200; painted.height = 150;
+      const context = painted.getContext('2d'); context.drawImage(image.getElement(), 0, 0);
+      assert.deepEqual([...context.getImageData(60, 45, 1, 1).data], [246, 190, 208, 255], 'exported pink target must remain at document coordinates');
+      assert.deepEqual([...context.getImageData(10, 10, 1, 1).data], [255, 255, 255, 255]);
+      const svg = await editor.exportImage({ format: 'svg' });
+      assert.match(svg, /viewBox="0 0 400 300"/);
+      assert.equal(dimensionChanges, 0); assert.equal(viewportChanges, 0);
+      assert.equal(editor.canvas.viewportTransform, viewport);
+      image.dispose();
+    }
+    assert.equal(editor.state.revision, revision);
   } finally { editor.destroy(); }
 });
 

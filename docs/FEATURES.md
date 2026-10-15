@@ -10,23 +10,24 @@ Visro is a local Mac creative app with Gemini assistance. Projects, assets, bran
 | Reference interface | Current Canva Mac 1.126.0 layout observed directly: 40px desktop tabs, 56px gradient header, 72px editor rail, floating context controls, left Position drawer, right Comments drawer and bottom Notes. Light, dark and system themes; shared rounded outline glyphs. |
 | Fonts | 21 bundled open font families with 23 faces, uploaded local fonts, searchable font drawer and previews. Canva Sans is loaded at runtime from an existing Canva installation when available; its proprietary binary is not distributed with Visro. |
 | Templates and formats | 46 original editable templates across 15 categories, plus presentation, social, video, print, document, whiteboard, sheet, website and custom-size creation. |
-| Design canvas | Editable text, shapes, photos, SVGs and drawings; drag, scale, rotate, group/ungroup, selection and hover outlines, undo/redo, arrow-key nudges, alignment, snapping, distribution, layers, visibility and locks. |
+| Design canvas | Editable text, shapes, photos, SVGs and drawings; drag, Option-drag duplication, scale, rotate, group/ungroup, selection and hover outlines, undo/redo, arrow-key nudges, alignment, snapping, distribution, layers, visibility and locks. |
+| Rulers and guides | File → Settings, Shift+R, page-specific draggable guides, grid generation, guide locking/deletion, guide snapping and a 5% safe-margin preview. View furniture stays out of exports. |
 | Text | Font size, colors, spacing, alignment, lists, uppercase, bold/italic, underline/strikethrough and shadow/outline/neon/lift/hollow/splice effects. |
 | Elements | Original graphics and icon/emoji collections, sticky notes, gradients, circle/rounded/arch/diamond image frames, editable charts and tables, QR codes and reusable local components. |
 | Images | Local upload/replace, crop ratios and interactive crop reposition/resize, flips, cumulative photo adjustments, real offline background removal and erase/restore alpha refinement. Refinement retains the original source so removed pixels can be restored. |
-| Context controls | Copy/paste/duplicate/delete, copy style, layer/align submenus, group/ungroup, component creation, comments, lock, links, element timing and alternative text. Text offers Magic Write and translation; images offer crop/background actions. |
+| Context controls | Copy/paste/duplicate/delete, copy style, layer/align submenus, group/ungroup, component creation, comments, lock, links, timing-panel access and alternative text. Text offers Magic Write and translation; images offer crop/background actions. |
 | Pages and presentation | Real page thumbnails, page/grid navigation, add/duplicate/delete, speaker notes, timer, durations, basic animations and presentation playback. |
 | Brand kits | Named local kits with colors, font choices and imported logos. A kit can be applied to a project; logos can be inserted as editable assets. |
 | Local review | Per-project comments with resolve/reopen and named version snapshots. Restore preserves a snapshot of the state being replaced. |
-| Documents | Rich text headings/paragraphs, lists, quotes, font/color/alignment controls, HTML export and transfer of document text to the design canvas. |
-| Sheets | Local cells, references/arithmetic, SUM/AVERAGE/MIN/MAX/COUNT, tab-separated paste, CSV import/export and transfer into an editable design table. |
+| Documents | Rich text headings/paragraphs, lists, quotes, font/color/alignment controls, Find/Replace with reversible Replace all, native Undo/Redo, HTML export and transfer of document text to the design canvas. |
+| Sheets | Local cells, references/arithmetic, SUM/AVERAGE/MIN/MAX/COUNT, record-preserving numeric/text sort, optional header, row/column insertion/deletion with formula repair, Undo/Redo, Find/Replace, Enter/Tab navigation, tab-separated paste, CSV import/export and transfer into an editable design table. |
 | Video and audio | Local media library, design-page scenes, timeline, clip trim/duration/volume, reorder/duplicate/delete, audio timing/volume and local MP4/WebM/GIF rendering through bundled FFmpeg. |
 | Gemini design and text | Structured editable design generation, writing, rewrite, summarize, translation, remix and layout adaptation. |
 | Gemini images | Generate images or edit a selected source image; preview the returned result and insert/apply it to the local project. |
 | Gemini voice and video | Speech generation with voice selection and WAV playback/import; Veo text-to-video or selected-image animation, aspect/duration controls, progress, cancellation and local result playback/import. |
 | Export and local sharing | Portable `.visro` files, PNG/JPEG/SVG/PDF/PPTX, document HTML, sheet CSV, static website HTML and media exports. Reused embedded images are stored once in portable project files and restored on import. |
 
-“Implemented” describes current code, not proof that every possible input or model succeeds. [VALIDATION.md](VALIDATION.md) records acceptance evidence and the exact packaged build tested. The latest UI, storage and crop changes require final packaged acceptance. Live Gemini requests require a user-entered key with access to the chosen model; no private key was searched for or used during testing.
+“Implemented” describes current code, not proof that every possible input or model succeeds. [VALIDATION.md](VALIDATION.md) records acceptance evidence and the exact packaged build tested. Live Gemini requests require a user-entered key with access to the chosen model; no private key was searched for or used during testing.
 
 ## Practical boundaries
 

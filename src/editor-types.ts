@@ -1,7 +1,7 @@
 export type ShapeType = "rect" | "circle" | "triangle" | "line" | "star" | "ellipse" | "diamond" | "pentagon" | "hexagon" | "arrow" | "heart" | "blob";
 export type TextEffect = 'none' | 'shadow' | 'outline' | 'neon' | 'lift' | 'hollow' | 'splice';
 export type FrameShape = 'circle' | 'rounded' | 'arch' | 'diamond';
-export interface PageMetadata { notes?: string; duration?: number; animation?: string }
+export interface PageMetadata { notes?: string; duration?: number; animation?: string; guides?: {x:number[];y:number[]} }
 export interface ElementMetadata { link?: string; altText?: string; duration?: number }
 export interface ImageEffects { brightness: number; contrast: number; saturation: number; blur: number; grayscale: boolean }
 export interface ImageCropRect { left: number; top: number; width: number; height: number }

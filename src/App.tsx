@@ -74,6 +74,7 @@ import { Home } from "./Home";
 import {PositionPanel} from "./PositionPanel";
 import {ImageControls} from "./ImageControls";
 import {ElementMenu,type ElementAction} from "./ElementMenu";
+import {CanvasGuides} from "./CanvasGuides";
 import BrandKitsPanel from "./BrandKitsPanel";
 import {StudioIcon,TemplatesIcon,ElementsIcon,TextIcon,BrandIcon,UploadsIcon,ToolsIcon,ProjectsIcon,AppsIcon,ComponentsIcon,AudioIcon,BackgroundIcon,ChartsIcon} from "./icons";
 const MagicMediaPanel=lazy(()=>import("./MagicMediaPanel"));
@@ -268,6 +269,9 @@ export default function App() {
   const [positionTab,setPositionTab]=useState<"arrange"|"layers">("arrange"),[colorHex,setColorHex]=useState("#000000");
   const [toolbarPopover,setToolbarPopover]=useState<"spacing"|"transparency"|null>(null),[timerOpen,setTimerOpen]=useState(false),[timerSeconds,setTimerSeconds]=useState(0),[timerRunning,setTimerRunning]=useState(false);
   const [cropSource,setCropSource]=useState<ReturnType<StudioEditor["getImageCropSource"]>>(null);
+  const [viewSettings,setViewSettings]=useState(()=>{try{const value=JSON.parse(localStorage.getItem('visro-view-settings')||'{}');return value&&typeof value==='object'?value as {rulers?:boolean;margins?:boolean;snapping?:boolean;locked?:boolean}:{};}catch{return {};}});
+  const [viewMenu,setViewMenu]=useState(false),[guidesDialog,setGuidesDialog]=useState(false),[guideGrid,setGuideGrid]=useState({columns:3,rows:0,gap:0,margin:0});
+  const fileMenuRef=useRef<HTMLDivElement>(null);
   const openCrop=()=>{const source=engine.current?.getImageCropSource();if(source)setCropSource(source);else notify("Select a photo to crop.");};
   const contentRef = useRef<unknown>(undefined);
   const [apiKey, setApiKey] = useState(""),
@@ -318,6 +322,13 @@ export default function App() {
   }, [name]);
   useEffect(() => { setThemePreference(theme); setDark(document.documentElement.dataset.theme === "dark"); return watchSystemTheme(() => setDark(document.documentElement.dataset.theme === "dark")); }, [theme]);
   const toggleTheme = () => setTheme(dark ? "light" : "dark");
+  useEffect(()=>{localStorage.setItem('visro-view-settings',JSON.stringify(viewSettings));engine.current?.setSnapping(Boolean(viewSettings.snapping));},[viewSettings,ready]);
+  useEffect(()=>{
+    const stop=()=>{interactionRef.current=false;viewportRef.current?.classList.remove('interacting');};
+    window.addEventListener('pointerup',stop);window.addEventListener('pointercancel',stop);window.addEventListener('blur',stop);
+    return()=>{window.removeEventListener('pointerup',stop);window.removeEventListener('pointercancel',stop);window.removeEventListener('blur',stop);};
+  },[]);
+  useEffect(()=>{if(!fileMenu){setViewMenu(false);return;}const outside=(e:PointerEvent)=>{if(!fileMenuRef.current?.contains(e.target as Node))setFileMenu(false);};document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[fileMenu]);
   const fontOptions = [...new Set([...FONTS,...customFonts])];
   useEffect(()=>setColorHex(selected?.fill||state.background),[selected?.id,selected?.fill,state.background]);
   const restoreMode = useCallback((project: {kind?: string; content?: unknown}) => {
@@ -554,19 +565,25 @@ export default function App() {
   const newDesign = useCallback(async () => {
     if(await switchProject(async()=>({id:crypto.randomUUID(),name:"Untitled design",project:createProject("Untitled design",1080,1080,"#ffffff")})))notify("A fresh canvas, ready for your next idea.");
   }, [notify,switchProject]);
+  const historyEdit=useCallback((redo=false)=>{
+    if(mode==='sheet'){document.querySelector<HTMLButtonElement>(`.sheet-suite [aria-label="${redo?'Redo':'Undo'} sheet edit"]`)?.click();return;}
+    if(mode==='document'){document.querySelector<HTMLButtonElement>(`[aria-label="${redo?'Redo':'Undo'} document edit"]`)?.dispatchEvent(new MouseEvent('mousedown',{bubbles:true,cancelable:true}));return;}
+    if(redo)void engine.current?.redo();else void engine.current?.undo();
+  },[mode]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if(e.key==='Escape'){if(cropSource){setCropSource(null);return;}if(maskSources){setMaskSources(null);return;}if(elementDialog){setElementDialog(null);return;}if(contextMenu){setContextMenu(null);return;}if(modal){setModal(null);return;}if(toolbarPopover){setToolbarPopover(null);return;}if(fileMenu){setFileMenu(false);return;}}
+      if(e.key==='Escape'){if(cropSource){setCropSource(null);return;}if(maskSources){setMaskSources(null);return;}if(guidesDialog){setGuidesDialog(false);return;}if(elementDialog){setElementDialog(null);return;}if(contextMenu){setContextMenu(null);return;}if(modal){setModal(null);return;}if(toolbarPopover){setToolbarPopover(null);return;}if(fileMenu){setFileMenu(false);return;}}
       if(cropSource||maskSources)return;
       if(contextMenu&&e.key.startsWith('Arrow'))return;
       const target = e.target as HTMLElement;
       if (target.closest('input,textarea,select,[contenteditable="true"]'))
         return;
       if(!ready||switchingProject.current||!initializedProject.current)return;
-      if(home || (modal&&e.key!=='Escape'))return;
+      if(home || guidesDialog || (modal&&e.key!=='Escape'))return;
       const studio=engine.current;
       if(studio?.isTextEditing())return;
       const cmd = e.metaKey || e.ctrlKey;
+      if(e.shiftKey&&!cmd&&!e.altKey&&e.code==='KeyR'){e.preventDefault();setViewSettings(v=>({...v,rulers:!v.rulers}));return;}
       if(e.key==='Escape'&&contextMenu){e.preventDefault();setContextMenu(null);return;}
       if(e.altKey&&!cmd&&e.code==='Digit1'){e.preventDefault();setPositionTab("layers");setInspectorOpen(true);setPanelOpen(false);return;}
       if(e.code==='Space'&&!cmd){e.preventDefault();studio?.setPanMode(true);return;}
@@ -586,11 +603,11 @@ export default function App() {
       } else if (cmd && e.key.toLowerCase() === "o") {
         e.preventDefault();
         void open();
-      } else if(cmd&&e.key.toLowerCase()==="y"){e.preventDefault();void engine.current?.redo();}
+      } else if(cmd&&e.key.toLowerCase()==="y"){e.preventDefault();historyEdit(true);}
       else if(cmd&&(e.key==="Delete"||e.key==="Backspace")){e.preventDefault();if(engine.current!.getState().pages.length>1)void engine.current?.deletePage();}
       else if (cmd && e.key.toLowerCase() === "z") {
         e.preventDefault();
-        e.shiftKey ? engine.current?.redo() : engine.current?.undo();
+        historyEdit(e.shiftKey);
       } else if (cmd && e.key.toLowerCase() === "c") {
         e.preventDefault(); void copyCanvas();
       } else if (cmd && e.key.toLowerCase() === "x") {
@@ -626,7 +643,7 @@ export default function App() {
     const blur=()=>{engine.current?.setPanMode(false);engine.current?.flushPendingChanges();};
     window.addEventListener("keydown",key);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
     return()=>{window.removeEventListener('keydown',key);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
-  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify]);
+  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit]);
   useEffect(() => {
     if (!desktop) return;
     return desktop.onMenu((action) => {
@@ -647,10 +664,10 @@ export default function App() {
       else if (action === "paste") void pasteCanvas();
       else if (action === "select-all") engine.current?.selectAll();
       else if (action === "settings") setModal("settings");
-      else if (action === "undo") { if(mode==="document"&&document.activeElement?.closest('[contenteditable="true"]')) document.execCommand("undo"); else void engine.current?.undo(); }
-      else if (action === "redo") { if(mode==="document"&&document.activeElement?.closest('[contenteditable="true"]')) document.execCommand("redo"); else void engine.current?.redo(); }
+      else if (action === "undo") historyEdit();
+      else if (action === "redo") historyEdit(true);
     });
-  }, [save,open,newDesign,mode,copyCanvas,pasteCanvas,ready]);
+  }, [save,open,newDesign,mode,copyCanvas,pasteCanvas,ready,historyEdit]);
   const choosePanel = (p: Panel) => {
     setPanel(p);setPanelOpen(true);setInspectorOpen(false);
     if(p==="projects")void listDesignSummaries().then(setLibrary);
@@ -884,10 +901,15 @@ export default function App() {
       {home && <Home dark={dark} onTheme={toggleTheme} onSettings={()=>setModal("settings")} refresh={homeRefresh} onOpen={openDesign} onCreate={createFormat} onTemplate={useTemplate} onImport={()=>projectRef.current?.click()} onNavigate={p=>{setHome(false);choosePanel(p);}}/>}
       <div className="desktop-tabs"><button className="desktop-home-tab" aria-label="Home" onClick={goHome}><StudioIcon name="home" size={22}/></button><button className="desktop-tab" onClick={()=>setHome(false)}><StudioIcon name={mode==='document'?'document':mode==='sheet'?'sheet':mode==='video'?'video':'presentation'} size={20}/><span>{name} — Visro</span></button><button className="desktop-new-tab" aria-label="New design" onClick={()=>void newDesign()}><Plus size={22}/></button></div>
       <header className="topbar">
-        <div className="top-menu-wrap"><button className="quiet-button top-menu" onClick={()=>setFileMenu(!fileMenu)}>File <ChevronDown size={13}/></button>{fileMenu&&<div className="file-menu">{[["New design",()=>void newDesign()],["Open project",()=>void open()],["Save project",()=>void save()],["Your projects",goHome],["Version history",()=>{choosePanel("tools");setToolTab("versions");}],["Settings",()=>setModal("settings")]].map(([label,fn])=><button key={String(label)} onClick={()=>{setFileMenu(false);(fn as ()=>void)();}}>{String(label)}</button>)}</div>}</div>
+        <div ref={fileMenuRef} className="top-menu-wrap"><button className="quiet-button top-menu" aria-expanded={fileMenu} onClick={()=>setFileMenu(!fileMenu)}>File <ChevronDown size={13}/></button>{fileMenu&&<div className="file-menu">{[["New design",()=>void newDesign()],["Open project",()=>void open()],["Save project",()=>void save()],["Your projects",goHome],["Version history",()=>{choosePanel("tools");setToolTab("versions");}]].map(([label,fn])=><button key={String(label)} onClick={()=>{setFileMenu(false);(fn as ()=>void)();}}>{String(label)}</button>)}
+          <div className="file-settings-wrap" onMouseEnter={()=>setViewMenu(true)}><button className="file-settings-trigger" aria-expanded={viewMenu} onClick={()=>setViewMenu(!viewMenu)} onKeyDown={e=>{if(e.key==='ArrowRight'){e.preventDefault();setViewMenu(true);}}}>Settings <ChevronRight size={15}/></button>{viewMenu&&<div className="file-menu view-settings-menu">
+            {([['rulers','Show rulers and guides','⇧R'],['margins','Show margins',''],['snapping','Snap to elements',''],['locked','Lock guides','']] as const).map(([key,label,shortcut])=><button key={key} role="menuitemcheckbox" aria-checked={Boolean(viewSettings[key])} onClick={()=>setViewSettings(v=>({...v,[key]:!v[key]}))}><span className="menu-check">{viewSettings[key]&&<Check size={15}/>}</span>{label}<kbd>{shortcut}</kbd></button>)}
+            <button onClick={()=>{setGuidesDialog(true);setFileMenu(false);}}>Add guides</button><button disabled={!state.pageMetadata?.guides?.x.length&&!state.pageMetadata?.guides?.y.length} onClick={()=>engine.current?.setPageMetadata({guides:{x:[],y:[]}})}>Clear guides</button>
+          </div>}</div><button onClick={()=>{setFileMenu(false);setModal('settings');}}>Visro settings…</button>
+        </div>}</div>
         <button className="quiet-button top-menu" onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>Resize <ChevronDown size={13}/></button>
-        <IconButton title="Undo (⌘Z)" disabled={!state.canUndo} onClick={()=>void engine.current?.undo()}><Undo2 size={18}/></IconButton>
-        <IconButton title="Redo (⌘⇧Z)" disabled={!state.canRedo} onClick={()=>void engine.current?.redo()}><Redo2 size={18}/></IconButton>
+        <IconButton title="Undo (⌘Z)" disabled={mode==='design'&&!state.canUndo} onClick={()=>historyEdit()}><Undo2 size={18}/></IconButton>
+        <IconButton title="Redo (⌘⇧Z)" disabled={mode==='design'&&!state.canRedo} onClick={()=>historyEdit(true)}><Redo2 size={18}/></IconButton>
         <div className="document-title">
           <input
             aria-label="Design name"
@@ -1334,6 +1356,7 @@ export default function App() {
 
           >
             <canvas ref={canvasRef} />
+            {mode==='design'&&<CanvasGuides getEditor={getEditor} ready={ready} pageId={state.activePageId} rulers={Boolean(viewSettings.rulers)} margins={Boolean(viewSettings.margins)} locked={Boolean(viewSettings.locked)} guides={state.pageMetadata?.guides} onChange={guides=>engine.current?.setPageMetadata({guides})}/>}
             {selected&&bounds&&mode==='design'&&<div className="selection-actions" style={{left:Math.max(8,Math.min(bounds.left+bounds.width/2-85,(viewportRef.current?.clientWidth||800)-180)),top:Math.max(8,Math.min(bounds.top+bounds.height+14,(viewportRef.current?.clientHeight||600)-50))}}><IconButton title="Comment" onClick={()=>setCommentsOpen(true)}><MessageCircle size={19}/></IconButton><IconButton title={selected.locked?'Unlock':'Lock position and appearance'} onClick={()=>engine.current?.setLayerLocked(selected.id,!selected.locked)}>{selected.locked?<Lock size={19}/>:<Unlock size={19}/>}</IconButton><IconButton title="Duplicate (⌘D)" onClick={()=>void engine.current?.duplicate()}><Copy size={19}/></IconButton><IconButton title="Delete" onClick={()=>engine.current?.remove()}><Trash2 size={19}/></IconButton><IconButton title="More" onClick={()=>{const r=viewportRef.current!.getBoundingClientRect();setContextMenu({x:r.left+bounds.left+bounds.width/2,y:r.top+bounds.top+bounds.height+60});}}><MoreHorizontal size={20}/></IconButton></div>}
 
             {mode==="document"&&<DocumentEditor key={`doc-${activeId.current}`} id={activeId.current} name={name} getEditor={()=>engine.current} initial={engine.current?.getProjectContent() ?? contentRef.current} onNotify={notify}/>}
@@ -1467,6 +1490,7 @@ export default function App() {
         }}
       />
       {contextMenu&&<ElementMenu x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
+      {guidesDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setGuidesDialog(false);}}><section className="modal element-dialog" role="dialog" aria-modal="true" aria-label="Add guides"><button className="modal-close icon-button" aria-label="Close guides" onClick={()=>setGuidesDialog(false)}><X size={20}/></button><h2>Add guides</h2><form onSubmit={e=>{e.preventDefault();const {columns,rows,gap,margin}=guideGrid;const positions=(count:number,size:number)=>{if(!count)return[];const available=size-2*margin-(count-1)*gap;if(available<=0)throw new Error('The margin and gap must fit inside the page.');const cell=available/count;return [...new Set(Array.from({length:count+1},(_,i)=>i===count?size-margin:margin+i*(cell+gap)).flatMap((v,i)=>i>0&&i<count&&gap?[v-gap,v]:[v]))];};try{engine.current?.setPageMetadata({guides:{x:positions(columns,state.width),y:positions(rows,state.height)}});setViewSettings(v=>({...v,rulers:true,snapping:true}));setGuidesDialog(false);}catch(error){notify((error as Error).message);}}}><NumberField label="Columns" value={guideGrid.columns} min={0} max={24} step={1} onChange={columns=>setGuideGrid(v=>({...v,columns:Math.round(columns)}))}/><NumberField label="Rows" value={guideGrid.rows} min={0} max={24} step={1} onChange={rows=>setGuideGrid(v=>({...v,rows:Math.round(rows)}))}/><NumberField label="Gap (px)" value={guideGrid.gap} min={0} max={state.width/2} onChange={gap=>setGuideGrid(v=>({...v,gap}))}/><NumberField label="Margin (px)" value={guideGrid.margin} min={0} max={Math.min(state.width,state.height)/2} onChange={margin=>setGuideGrid(v=>({...v,margin}))}/><button className="full-button coral" type="submit">Add guides</button></form></section></div>}
       {elementDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setElementDialog(null);}}><section className="modal element-dialog"><button className="modal-close icon-button" aria-label="Close" onClick={()=>setElementDialog(null)}><X size={20}/></button><h2>{elementDialog.kind==='link'?'Link':elementDialog.kind==='alt'?'Alternative text':'Create component'}</h2><form onSubmit={e=>{e.preventDefault();void work("Saving element",async()=>{const d=elementDialog;if(d.kind==='component'){const objects=await engine.current!.exportSelectedObjects();await storeAsset({id:crypto.randomUUID(),kind:'component',name:d.value.trim()||'Component',data:JSON.stringify(objects),updated:Date.now()});notify('Component saved. Find it in Components.');}else engine.current?.setElementMetadata(d.kind==='link'?{link:d.value.trim()}:{altText:d.value});setElementDialog(null);});}}><label className="field-label">{elementDialog.kind==='link'?'Enter a link':elementDialog.kind==='alt'?'Describe this element':'Name'}<input autoFocus aria-label={elementDialog.kind==='link'?'Element link':elementDialog.kind==='alt'?'Alternative text':'Component name'} value={elementDialog.value} onChange={e=>setElementDialog({...elementDialog,value:e.target.value})}/></label><button className="full-button coral" type="submit">Save</button></form></section></div>}
       {cropSource&&<ImageCropEditor source={cropSource} onCancel={()=>setCropSource(null)} onDone={async rect=>{engine.current?.cropSelectedImage(rect);setCropSource(null);notify("Image cropped.");}}/>}
       {maskSources&&<ImageMaskEditor original={maskSources.original} current={maskSources.current} onCancel={()=>setMaskSources(null)} onDone={async data=>{await work("Applying mask",async()=>{await engine.current?.applyImageMask(data);setMaskSources(null);notify("Image mask updated.");});}}/>}

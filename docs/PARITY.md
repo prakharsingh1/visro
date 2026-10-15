@@ -1,6 +1,6 @@
 # Canva reference and Visro workflow map
 
-Reviewed 14 October 2026; installed Canva observations were made on 13 October. The requested scope is **local projects with Gemini only**. Visro implements a broad local creative workspace with familiar Canva controls. This map records implemented behavior and remaining limits; it does not claim complete 1:1 parity with Canva's entire product or backend.
+Reviewed 16 October 2026; installed Canva observations were made on 13 October. The requested scope is **local projects with Gemini only**. Visro implements a broad local creative workspace with familiar Canva controls. This map records implemented behavior and remaining limits; it does not claim complete 1:1 parity with Canva's entire product or backend.
 
 ## Reference used
 
@@ -24,18 +24,19 @@ Canva's [Visual Suite](https://www.canva.com/visual-suite/) describes the broade
 | Templates and common formats | Implemented; 46 layouts rendered | Original artwork across 15 categories; no copied Canva library. |
 | Text, shapes, photos, SVGs and drawing | Implemented | Supported editable local object types. |
 | Typography and text effects | Implemented | Font drawer, formatting, spacing and listed effects; no entire Canva effect catalog. |
-| Drag, transform, groups, keyboard nudges and undo | Implemented; real browser interaction checked | Pointer commits and fractional-coordinate undo verified; final native retest covers the latest build. |
+| Drag, transform, groups, keyboard nudges and undo | Implemented; real browser interaction checked | Pointer commits, Option-drag duplication and fractional-coordinate undo verified; exact packaged evidence is in VALIDATION.md. |
 | Copy/paste, duplicate, copy style and context menus | Implemented; real UI copy/paste persisted | In-app object handling and native clipboard integration; exact packaged evidence is recorded in VALIDATION.md. |
 | Position, layers, snapping and distribution | Implemented | Left Position drawer, ordering, page alignment, geometry, visibility and locks. |
+| Rulers and guides | Implemented; browser pointer/reopen checked | File Settings / Shift+R, guide grids, locks, snapping, page persistence and view-only safe margins. |
 | Graphics, emoji, components and QR | Implemented | Local collections and generated elements; no paid stock marketplace. |
 | Gradients and image frames | Implemented | Linear gradients and circle/rounded/arch/diamond masks. |
 | Crop, flip, replace and photo adjustments | Implemented; crop pointer/engine tests passed | Interactive crop preserves frame proportions; supported cumulative filters. |
 | Photo background remover | Implemented; earlier packaged photo verified | Bundled local IS-Net model and real transparent PNG output. |
-| Background erase/restore | Implemented; actual alpha brush checked | Original-source pixel recovery, preview and PNG application; latest packaged acceptance pending. |
+| Background erase/restore | Implemented; actual alpha brush checked | Original-source pixel recovery, preview and PNG application; latest packaged acceptance passed. |
 | Video background remover/layer reconstruction | Not included | Still-image segmentation and mask refinement only. |
 | Pages, notes, timer and presentation | Implemented | Real thumbnails, grid, page timing, basic animations/playback; no live audience or recording service. |
-| Rich documents | Implemented; browser edit/save/reopen checked | HTML export and text-to-design; no complete DOCX import/pagination engine. |
-| Sheets | Implemented; formulas/undo/save/reopen checked | Limited formulas, CSV and paste; no complete Excel-compatible engine. |
+| Rich documents | Implemented; browser edit/save/reopen checked | Find/Replace, native Undo/Redo, HTML export and text-to-design; no complete DOCX import/pagination engine. |
+| Sheets | Implemented; formulas/undo/save/reopen checked | Limited formulas, row/column structure, record-preserving sort, Find/Replace, CSV and paste; no complete Excel-compatible engine. |
 | Charts and tables | Implemented; undo and editable objects checked | Editable groups; no linked external datasets. |
 | Whiteboard | Partial | Large canvas, drawings, shapes and sticky notes; no infinite multiplayer board. |
 | Media timeline and local rendering | Implemented | Imported clips/design scenes, trim/order/timing/audio and basic fades; no advanced keyframe/caption system. |
@@ -47,7 +48,7 @@ Canva's [Visual Suite](https://www.canva.com/visual-suite/) describes the broade
 | Gemini speech | Implemented; live verification pending | Voice selection, PCM-to-WAV decoding, playback and local audio insertion. |
 | Gemini/Veo video | Implemented; live verification pending | Text/image input, aspect/duration, operation polling, cancellation and local video insertion; project/model access required. |
 | PNG/JPEG/SVG/PDF/PPTX and imports | Implemented | Format-specific fidelity; PDF import is rendered artwork for annotation. |
-| Portable project sharing | Implemented; pack/unpack unit checks passed | Embedded reused assets stored once; latest native reopen acceptance pending. |
+| Portable project sharing | Implemented; pack/unpack unit checks passed | Embedded reused assets stored once; latest native reopen acceptance passed. |
 | Website | Partial | Local static HTML export; no hosting/domain/publishing service. |
 | Apps | Implemented local tools | Magic Media/Write, QR, charts, tables, bulk tools and components; no remote Apps marketplace. |
 

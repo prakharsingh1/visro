@@ -8,6 +8,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
+const { rasterPointForFill, gestureDeltaBounds } = require('./native-geometry.cjs');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -61,6 +62,19 @@ async function waitForRenderer(cdp, predicate, message, timeoutMs = 15000) {
   throw new Error(message);
 }
 
+async function waitForPaint(cdp, expression, message, timeoutMs = 15000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    // A drawer opening changes canvas dimensions through ResizeObserver. Read
+    // after layout and paint, and validate that exact snapshot instead of
+    // validating one frame and asserting on a separately read, cleared frame.
+    const pixels = await cdp.evaluate(`(async()=>{await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame);return ${expression};})()`);
+    if (pixels?.ink > 100 && pixels?.pink > 100) return pixels;
+    await delay(50);
+  }
+  throw new Error(message);
+}
+
 async function openHomeDesign(cdp, name) {
   await waitForRenderer(cdp, "document.readyState === 'complete' && Boolean(window.visro) && !document.querySelector('.canvas-loading')", 'The native workspace did not finish loading.');
   if (await cdp.evaluate("Boolean(document.querySelector('.home-shell'))")) {
@@ -100,23 +114,6 @@ async function runNativeEditingRegression(renderer, main) {
     await waitForRenderer(renderer, `document.querySelector('#visro-smoke-native-text').value===${JSON.stringify(text)}`, 'Native CmdY Redo must restore focused text input.');
     return { focusedTextUndo: true, focusedTextRedo: true, canvaRedoAlternate: true };
   } finally { await renderer.evaluate("document.querySelector('#visro-smoke-native-text')?.remove()"); }
-}
-
-function rasterPointForFill(pixels, width, height, rect, fill) {
-  const color = /^#([0-9a-f]{6})$/i.exec(fill)?.[1];
-  if (!color || width < 1 || height < 1 || pixels.length !== width * height * 4 || !(rect.width > 0 && rect.height > 0)) throw new Error('Invalid painted geometry.');
-  const red = parseInt(color.slice(0, 2), 16), green = parseInt(color.slice(2, 4), 16), blue = parseInt(color.slice(4, 6), 16);
-  const matches = (offset) => pixels[offset + 3] > 240 && Math.abs(pixels[offset] - red) <= 2 && Math.abs(pixels[offset + 1] - green) <= 2 && Math.abs(pixels[offset + 2] - blue) <= 2;
-  let count = 0, sumX = 0, sumY = 0;
-  for (let offset = 0; offset < pixels.length; offset += 4) if (matches(offset)) { const index = offset / 4; sumX += index % width; sumY += Math.floor(index / width); count++; }
-  if (count < 20) throw new Error('The fixture element is not visibly painted.');
-  const centerX = sumX / count, centerY = sumY / count;
-  let nearest = Infinity, selectedX = 0, selectedY = 0;
-  for (let offset = 0; offset < pixels.length; offset += 4) if (matches(offset)) {
-    const index = offset / 4, x = index % width, y = Math.floor(index / width), distance = (x - centerX) ** 2 + (y - centerY) ** 2;
-    if (distance < nearest) { nearest = distance; selectedX = x; selectedY = y; }
-  }
-  return { x: rect.left + (selectedX + 0.5) * rect.width / width, y: rect.top + (selectedY + 0.5) * rect.height / height, visiblePixels: count };
 }
 
 async function runClipboardRegression(renderer, main) {
@@ -208,10 +205,8 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
     for(let i=0;i<pixels.length;i+=4){if(!pixels[i+3])continue;const r=pixels[i],g=pixels[i+1],b=pixels[i+2];if(r<100&&g<100&&b<100)ink++;if(r>200&&g>140&&g<220&&b>150&&b<240)pink++;if(Math.abs(r-250)+Math.abs(g-245)+Math.abs(b-236)>40)nonBackground++;}
     return {width:canvas.width,height:canvas.height,ink,pink,nonBackground};
   })()`;
-  await waitForRenderer(cdp, `(()=>{const pixels=${canvasPixels};return pixels.ink>100&&pixels.pink>100;})()`, 'The saved project did not visibly render its text and circle.');
-  const initialPixels = await cdp.evaluate(canvasPixels);
-  assert.ok(initialPixels.ink > 100 && initialPixels.pink > 100, `The restored saved project must visibly render its text and circle: ${JSON.stringify(initialPixels)}.`);
-  await cdp.evaluate("window.__visroSmokeHeartbeat={ticks:0,maxGap:0,last:performance.now(),moves:0};window.__visroSmokeTimer=setInterval(()=>{const s=window.__visroSmokeHeartbeat,now=performance.now();s.maxGap=Math.max(s.maxGap,now-s.last);s.last=now;s.ticks++;},50);document.addEventListener('mousemove',()=>window.__visroSmokeHeartbeat.moves++);");
+  const initialPixels = await waitForPaint(cdp, canvasPixels, 'The saved project did not visibly render its text and circle.');
+  await cdp.evaluate("window.__visroSmokeHeartbeat={ticks:0,maxGap:0,last:performance.now(),moves:0,longTasks:[],slowGaps:[]};window.__visroSmokeObserver=new PerformanceObserver(entries=>{for(const item of entries.getEntries())window.__visroSmokeHeartbeat.longTasks.push({start:item.startTime,duration:item.duration});});window.__visroSmokeObserver.observe({type:'longtask',buffered:false});window.__visroSmokeTimer=setInterval(()=>{const s=window.__visroSmokeHeartbeat,now=performance.now(),gap=now-s.last;if(gap>150)s.slowGaps.push({start:s.last,duration:gap,visibility:document.visibilityState});s.maxGap=Math.max(s.maxGap,gap);s.last=now;s.ticks++;},50);document.addEventListener('mousemove',()=>window.__visroSmokeHeartbeat.moves++);");
   const selection = "({x:Number(document.querySelector('.inspector input[aria-label=\"Position X\"],.inspector input[aria-label=\"X\"]')?.value),y:Number(document.querySelector('.inspector input[aria-label=\"Position Y\"],.inspector input[aria-label=\"Y\"]')?.value),label:document.querySelector('.selected-label')?.textContent?.trim()||''})";
   // Use actual painted pixels rather than guessing Fabric's viewport transform.
   // CSS overlays, retina density and the opened Position panel can all change
@@ -225,26 +220,39 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   await waitForRenderer(cdp, "Boolean(document.querySelector('.inspector input[aria-label=\"Position X\"],.inspector input[aria-label=\"X\"]'))", 'Pointer selection did not update the native position inspector.');
   const firstSelection = await cdp.evaluate(selection);
   assert.ok(Math.abs(firstSelection.x - target.left) < 1 && Math.abs(firstSelection.y - target.top) < 1, 'The real pointer must select the reproduction circle.');
-  let changedGestures = 0, maxGestureMs = 0;
-  for (let index = 0; index < 50; index++) {
-    const before = await cdp.evaluate(selection);
-    const start = await paintedPoint(target.fill);
-    const sign = index % 2 ? -1 : 1;
-    const dx = index === 49 ? 35 : 25 * sign, dy = index === 49 ? 9 : 17 * sign;
-    const started = Date.now();
-    await cdp.command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: start.x, y: start.y, button: 'none', buttons: 0 });
-    await cdp.command('Input.dispatchMouseEvent', { type: 'mousePressed', x: start.x, y: start.y, button: 'left', buttons: 1, clickCount: 1 });
-    for (let step = 1; step <= 6; step++) {
-      await cdp.command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: start.x + dx * step / 6, y: start.y + dy * step / 6, button: 'left', buttons: 1 });
-      await delay(8);
+  let changedGestures = 0, maxGestureMs = 0, maxSceneRoundingError = 0, thumbnailIdleWindows = 0;
+  const trace = [];
+  cdp.gestureTrace = trace;
+  try {
+    for (let index = 0; index < 50; index++) {
+      const before = await cdp.evaluate(selection);
+      const start = await paintedPoint(target.fill);
+      const zoomPercent = await cdp.evaluate("Number(document.querySelector('input[aria-label=\"Canvas zoom\"]')?.value)");
+      const sign = index % 2 ? -1 : 1;
+      const dx = index === 49 ? 35 : 25 * sign, dy = index === 49 ? 9 : 17 * sign;
+      const started = Date.now();
+      await cdp.command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: start.x, y: start.y, button: 'none', buttons: 0 });
+      await cdp.command('Input.dispatchMouseEvent', { type: 'mousePressed', x: start.x, y: start.y, button: 'left', buttons: 1, clickCount: 1 });
+      for (let step = 1; step <= 6; step++) {
+        await cdp.command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: start.x + dx * step / 6, y: start.y + dy * step / 6, button: 'left', buttons: 1 });
+        await delay(8);
+      }
+      await cdp.command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: start.x + dx, y: start.y + dy, button: 'left', buttons: 0, clickCount: 1 });
+      await delay(20);
+      const after = await cdp.evaluate(selection);
+      const movement = { x: after.x - before.x, y: after.y - before.y };
+      const xBounds = gestureDeltaBounds(dx, zoomPercent), yBounds = gestureDeltaBounds(dy, zoomPercent);
+      trace.push({ gesture: index + 1, before, after, start, dx, dy, zoomPercent, movement, elapsedMs: Date.now() - started });
+      assert.ok(movement.x >= xBounds.min && movement.x <= xBounds.max && movement.y >= yBounds.min && movement.y <= yBounds.max,
+        `Native pointer gesture ${index + 1} moved outside its expected scene coordinates: ${JSON.stringify(trace.at(-1))}.`);
+      maxSceneRoundingError = Math.max(maxSceneRoundingError, Math.abs(movement.x - dx / (zoomPercent / 100)), Math.abs(movement.y - dy / (zoomPercent / 100)));
+      changedGestures++;
+      maxGestureMs = Math.max(maxGestureMs, Date.now() - started);
+      // Give the actual idle thumbnail and autosave work a chance to run between
+      // gestures. Continuous dragging alone can accidentally cancel every timer.
+      if ((index + 1) % 5 === 0 && index < 49) { await delay(1400); thumbnailIdleWindows++; }
     }
-    await cdp.command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: start.x + dx, y: start.y + dy, button: 'left', buttons: 0, clickCount: 1 });
-    await delay(20);
-    const after = await cdp.evaluate(selection);
-    assert.ok(Math.abs(after.x - before.x) + Math.abs(after.y - before.y) > 1, `Native pointer gesture ${index + 1} must change the element position.`);
-    changedGestures++;
-    maxGestureMs = Math.max(maxGestureMs, Date.now() - started);
-  }
+  } catch (error) { error.smokeGestureTrace = trace; throw error; }
   const finalSelection = await cdp.evaluate(selection);
   // The position inspector rounds its display to whole design pixels while
   // Fabric persists subpixel pointer coordinates with four decimal places.
@@ -253,28 +261,58 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   const persistedObject = persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).find((object) => object.id === target.id);
   const heartbeat = await cdp.evaluate("({...window.__visroSmokeHeartbeat})");
   assert.ok(heartbeat.ticks > 10 && heartbeat.moves >= 300, 'Real pointer moves and the renderer heartbeat must continue through all gestures.');
-  assert.ok(heartbeat.maxGap < 1500, 'The native renderer must remain responsive during repeated movement.');
-  assert.ok(maxGestureMs < 2000, 'A native movement gesture must not stall the renderer.');
+  assert.ok(heartbeat.maxGap < 1500, `The native renderer must remain responsive during repeated movement: ${JSON.stringify({ heartbeat, maxGestureMs })}.`);
+  assert.ok(maxGestureMs < 2000, `A native movement gesture must not stall the renderer: ${maxGestureMs} ms.`);
   await cdp.command('Page.reload');
   await openHomeDesign(cdp, project.name);
   await cdp.evaluate("Array.from(document.querySelectorAll('.toolbar-button')).find(button=>button.textContent.trim()==='Position')?.click()");
-  await waitForRenderer(cdp, `(()=>{const pixels=${canvasPixels};return pixels.ink>100&&pixels.pink>100;})()`, 'The autosaved project did not visibly render after reload.');
-  const restoredPixels = await cdp.evaluate(canvasPixels);
-  assert.ok(restoredPixels.ink > 100 && restoredPixels.pink > 100, 'Autosave restore must still visibly render the design.');
+  const restoredPixels = await waitForPaint(cdp, canvasPixels, 'The autosaved project did not visibly render after reload.');
   await click(await paintedPoint(target.fill));
   const restoredSelection = await cdp.evaluate(selection);
   assert.ok(Math.abs(restoredSelection.x - persistedObject.left) < .51 && Math.abs(restoredSelection.y - persistedObject.top) < .51, 'Cold reload must restore the actual moved element position.');
+  const pressArrow = async (key, shift = false) => {
+    const codes = { ArrowRight: 39, ArrowDown: 40, ArrowLeft: 37, ArrowUp: 38 };
+    await cdp.command('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key, windowsVirtualKeyCode: codes[key], modifiers: shift ? 8 : 0 });
+    await cdp.command('Input.dispatchKeyEvent', { type: 'keyUp', key, code: key, windowsVirtualKeyCode: codes[key], modifiers: shift ? 8 : 0 });
+  };
+  await pressArrow('ArrowRight');
+  await waitForRenderer(cdp, `Number(document.querySelector('.inspector input[aria-label="Position X"],.inspector input[aria-label="X"]')?.value)===${restoredSelection.x + 1}`, 'Arrow Right must move the selected object by one design pixel.');
+  await pressArrow('ArrowDown', true);
+  await waitForRenderer(cdp, `Number(document.querySelector('.inspector input[aria-label="Position Y"],.inspector input[aria-label="Y"]')?.value)===${restoredSelection.y + 10}`, 'Shift Arrow Down must move the selected object by ten design pixels.');
+  const keyboardNudgedSelection = await cdp.evaluate(selection);
+  await pressArrow('ArrowLeft');
+  await pressArrow('ArrowUp', true);
+  await waitForRenderer(cdp, `(()=>{const selection=${selection};return selection.x===${restoredSelection.x}&&selection.y===${restoredSelection.y};})()`, 'Opposite arrow keys must restore the exact selected position.');
   const alternate = page.canvas.objects.find((object) => object.type === 'Circle' && object.fill === '#F26B3A');
   await click(await paintedPoint(alternate.fill));
   const alternateSelection = await cdp.evaluate(selection);
   assert.ok(Math.abs(alternateSelection.x - restoredSelection.x) > 1, 'Pointer selection must continue updating after autosave and reload.');
+  const hoverPoint = await paintedPoint(target.fill);
+  await cdp.command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: hoverPoint.x, y: hoverPoint.y, button: 'none', buttons: 0 });
+  const hoverInk = `(()=>{const canvas=document.querySelector('.lower-canvas'),pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;let purple=0;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>240&&Math.abs(pixels[i]-139)<8&&Math.abs(pixels[i+1]-61)<8&&Math.abs(pixels[i+2]-255)<8)purple++;return purple;})()`;
+  await waitForRenderer(cdp, `${hoverInk}>50`, 'Hovering an unselected object must visibly highlight its layer.');
+  const hoverSelection = await cdp.evaluate(selection);
+  assert.equal(hoverSelection.x, alternateSelection.x, 'Hover targeting must preserve the selected object until a click.');
+  await cdp.command('Input.dispatchMouseEvent', { type: 'mousePressed', x: hoverPoint.x, y: hoverPoint.y, button: 'right', buttons: 2, clickCount: 1 });
+  await cdp.command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: hoverPoint.x, y: hoverPoint.y, button: 'right', buttons: 0, clickCount: 1 });
+  await waitForRenderer(cdp, "Boolean(document.querySelector('[role=\"menu\"][aria-label=\"Element options\"]'))", 'Right-clicking the hovered object must open element options.');
+  const contextMenu = await cdp.evaluate("(()=>{const menu=document.querySelector('[role=\"menu\"][aria-label=\"Element options\"]'),r=menu.getBoundingClientRect();return {labels:Array.from(menu.querySelectorAll('button[role=\"menuitem\"] > span:first-of-type')).map(span=>span.textContent),insideViewport:r.left>=0&&r.top>=0&&r.right<=innerWidth&&r.bottom<=innerHeight};})()");
+  for (const label of ['Copy', 'Copy style', 'Paste', 'Duplicate', 'Delete', 'Layer', 'Align to page', 'Create component', 'Comment', 'Lock', 'Link', 'Show element timing', 'Alternative text']) assert.ok(contextMenu.labels.includes(label), `Right-click options must include ${label}.`);
+  assert.equal(contextMenu.insideViewport, true, 'The entire right-click menu must remain visible.');
+  const menuSelected = await cdp.evaluate(selection);
+  assert.equal(menuSelected.x, restoredSelection.x, 'Right click must target the pointed element.');
+  await pressArrow('ArrowDown');
+  assert.equal((await cdp.evaluate(selection)).y, menuSelected.y, 'Menu arrow navigation must not move the selected object.');
+  await cdp.command('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await cdp.command('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Escape', code: 'Escape', windowsVirtualKeyCode: 27 });
+  await waitForRenderer(cdp, "!document.querySelector('[role=\"menu\"][aria-label=\"Element options\"]')", 'Escape must close element options.');
   if (screenshotPath) {
     const screenshot = await cdp.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     const file = path.resolve(screenshotPath).replace(/\.png$/i, '-gestures.png');
     await fs.mkdir(path.dirname(file), { recursive: true });
     await fs.writeFile(file, Buffer.from(screenshot.data, 'base64'));
   }
-  return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, heartbeat, firstSelection, finalSelection, restoredSelection, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
+  return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, firstSelection, finalSelection, restoredSelection, keyboardNudgedSelection, arrowNudge: 1, shiftArrowNudge: 10, hoverHighlight: true, contextMenu, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
 }
 
 async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
@@ -413,6 +451,9 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
       progress('preserving and testing native clipboard');
       if (mainInspectorURL) mainCDP = await connectCDP(mainInspectorURL);
       if (mainCDP) {
+        result.appVersion = await mainCDP.evaluate("process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron').app.getVersion()");
+        const expectedVersion = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version;
+        assert.equal(result.appVersion, expectedVersion, 'Native acceptance must run the current build rather than an older cached application.');
         result.asyncEncryptionAPI = await mainCDP.evaluate("(()=>{const {safeStorage}=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron');return ['isAsyncEncryptionAvailable','encryptStringAsync','decryptStringAsync'].every(name=>typeof safeStorage[name]==='function');})()");
         assert.equal(result.asyncEncryptionAPI, true, 'The shipped Electron binary must expose non-blocking secure-storage methods.');
       }
@@ -507,7 +548,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
         const file = path.resolve(screenshotPath).replace(/\.png$/i, '-failure.png');
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(file, Buffer.from(screenshot.data, 'base64'));
-        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
+        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},gestureTrace:${JSON.stringify(error.smokeGestureTrace || cdp.gestureTrace || [])},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
         await fs.writeFile(file.replace(/\.png$/i, '.json'), `${JSON.stringify(state, null, 2)}\n`);
       } catch { /* Preserve the actual assertion if the renderer is stalled. */ }
     }

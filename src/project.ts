@@ -146,7 +146,14 @@ export function validateProject(value: unknown): VisroProject {
       if (Array.isArray(object.objects)) sanitizeLayers(object.objects, depth + 1);
     }
   };
-  result.pages.forEach((page) => sanitizeLayers(page.canvas.objects as unknown[]));
+  result.pages.forEach((page) => {
+    sanitizeLayers(page.canvas.objects as unknown[]);
+    if(page.metadata && Object.hasOwn(page.metadata,'guides')) {
+      const guides:Record<string,unknown>=isRecord(page.metadata.guides)?page.metadata.guides:{};
+      const sanitize=(values:unknown,max:number)=>Array.isArray(values)?values.filter((n):n is number=>typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=max).slice(0,100):[];
+      page.metadata.guides={x:sanitize(guides.x,result.width),y:sanitize(guides.y,result.height)};
+    }
+  });
   if (!isRecord(result.brand)) result.brand = { colors: [], fonts: [] };
   result.brand.colors = Array.isArray(result.brand.colors)
     ? result.brand.colors

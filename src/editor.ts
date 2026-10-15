@@ -66,6 +66,16 @@ type StudioObject = FabricObject & {
   visroOriginalSrc?: string;
   visroMetadata?: ElementMetadata;
 };
+type OptionDrag = {
+  target: FabricObject;
+  originals: StudioObject[];
+  originalIds: Map<StudioObject, string | undefined>;
+  copies?: StudioObject[];
+  moved: boolean;
+  ended: boolean;
+  failed: boolean;
+  finish: () => void;
+};
 const CUSTOM_PROPS = ["id", "visroName", "visroLocked", "visroTextEffect", "visroGradient", "visroFrame", "visroTextBaseFill", "visroOriginalSrc", "visroMetadata"];
 const SELECTION_COLOR = '#8B3DFF';
 const INTERACTION_STYLE = {
@@ -150,6 +160,7 @@ export class StudioEditor {
   private clipboard: StudioObject[] = [];
   private pasteOffset = 0;
   private snapping = false;
+  private alignmentGuides: { x: number[]; y: number[] } = { x: [], y: [] };
   private snapGuides: { x?: number; y?: number } = {};
   private hoverTarget?: FabricObject;
   private panMode = false;
@@ -158,6 +169,7 @@ export class StudioEditor {
   private nudgeFrame?: number;
   private pendingNudgeKey = '';
   private styleClipboard?: Record<string, unknown>;
+  private optionDrag?: OptionDrag;
 
   constructor(element: HTMLCanvasElement, options: EditorOptions = {}) {
     this.options = options;
@@ -183,14 +195,30 @@ export class StudioEditor {
     this.canvas.on("selection:created", () => this.selectionChanged());
     this.canvas.on("selection:updated", () => this.selectionChanged());
     this.canvas.on("selection:cleared", () => this.selectionChanged());
-    this.canvas.on("object:modified", () => { this.snapGuides = {}; this.hoverTarget = undefined; this.commit(); });
+    this.canvas.on("object:modified", ({ target }) => {
+      this.snapGuides = {}; this.hoverTarget = undefined;
+      if (this.optionDrag?.moved && this.optionDrag.target === target) return;
+      this.commit();
+    });
+    this.canvas.on('before:transform', ({ e, transform }) => {
+      if (e.altKey && transform.action === 'drag') this.beginOptionDrag(transform.target);
+    });
     this.canvas.on('object:moving', ({ target }) => {
       this.hoverTarget = undefined;
+      const drag = this.optionDrag;
+      if (drag && target === drag.target && !drag.moved) {
+        drag.moved = true;
+        if (!drag.failed) for (const object of drag.originalIds.keys()) object.id = newId();
+        this.insertOptionDragCopies(drag);
+      }
       if (!this.snapping || !target) return;
+      // Fabric emits object:moving from inside its drag handler, before it
+      // refreshes aCoords. Read the new position, not the previous pointer step.
+      target.setCoords();
       const threshold = 7 / this.canvas.getZoom();
       const bounds = target.getBoundingRect();
-      const positions = [0, this.width / 2, this.width];
-      const vertical = [0, this.height / 2, this.height];
+      const positions = [0, this.width / 2, this.width, ...this.alignmentGuides.x];
+      const vertical = [0, this.height / 2, this.height, ...this.alignmentGuides.y];
       const active = new Set(this.canvas.getActiveObjects());
       for (const object of this.canvas.getObjects()) {
         if (object === target || active.has(object) || !object.visible) continue;
@@ -242,6 +270,7 @@ export class StudioEditor {
     });
     this.canvas.on('mouse:up', () => {
       this.snapGuides = {}; this.panPoint = undefined;
+      if (this.optionDrag) { this.optionDrag.ended = true; this.finishOptionDrag(this.optionDrag); }
       if (this.panMode) this.canvas.setCursor('grab');
       this.canvas.requestRenderAll();
     });
@@ -395,6 +424,13 @@ export class StudioEditor {
   }
 
   setSnapping(enabled: boolean): void { this.snapping = enabled; this.snapGuides = {}; this.canvas.requestRenderAll(); }
+
+  setAlignmentGuides(guides: { x: number[]; y: number[] }): void {
+    const coordinates = (values: number[], maximum: number): number[] => Array.isArray(values) ? [...new Set(values.filter(value => Number.isFinite(value) && value >= 0 && value <= maximum))].slice(0, 100) : [];
+    this.alignmentGuides = { x: coordinates(guides.x, this.width), y: coordinates(guides.y, this.height) };
+    this.snapGuides = {};
+    this.canvas.requestRenderAll();
+  }
 
   getState(): EditorState {
     const selectedIds = new Set(
@@ -1196,6 +1232,62 @@ export class StudioEditor {
     this.commit();
   }
 
+  private beginOptionDrag(target: FabricObject): void {
+    if (this.optionDrag || this.destroyed || this.restoring || this.suppressEvents || this.panMode || this.canvas.isDrawingMode || this.isTextEditing()) return;
+    const originals = (target instanceof ActiveSelection ? target.getObjects() : [target]) as StudioObject[];
+    if (originals.some(object => object.visroLocked)) return;
+    const originalIds = new Map<StudioObject, string | undefined>();
+    const remember = (object: StudioObject): void => {
+      originalIds.set(object, object.id);
+      if (object instanceof Group) object.getObjects().forEach(child => remember(child as StudioObject));
+    };
+    originals.forEach(remember);
+    const transforms = originals.map(object => object.calcTransformMatrix());
+    const needsSceneTransform = originals.map(object => Boolean(object.group));
+    let finish!: () => void;
+    const settled = new Promise<void>(resolve => { finish = resolve; });
+    const drag: OptionDrag = { target, originals, originalIds, moved: false, ended: false, failed: false, finish };
+    this.optionDrag = drag;
+    // Image decoding can finish after pointer release. Undo, page changes and
+    // exports must wait for the complete gesture, rather than a half-copy.
+    this.asyncQueue = Promise.all([this.asyncQueue, settled]).then(() => undefined);
+    void Promise.all(originals.map(object => object.clone(CUSTOM_PROPS))).then(copies => {
+      if (this.destroyed) { copies.forEach(copy => copy.dispose()); drag.finish(); return; }
+      drag.copies = copies as StudioObject[];
+      copies.forEach((copy, index) => {
+        copy.set(INTERACTION_STYLE);
+        if (needsSceneTransform[index]) util.applyTransformToObject(copy, transforms[index]);
+        copy.setCoords();
+      });
+      this.insertOptionDragCopies(drag);
+      this.finishOptionDrag(drag);
+    }).catch(() => {
+      // Keep a normal move if the source image cannot be decoded again.
+      drag.failed = true;
+      for (const [object, id] of drag.originalIds) object.id = id;
+      this.finishOptionDrag(drag);
+    });
+  }
+
+  private insertOptionDragCopies(drag: OptionDrag): void {
+    if (!drag.moved || !drag.copies || this.destroyed) return;
+    drag.copies.forEach((copy, index) => {
+      if (this.canvas.contains(copy)) return;
+      // The untouched copy keeps the source IDs and stacking position. Fabric
+      // continues moving the live objects, with fresh IDs, without waiting.
+      this.canvas.insertAt(Math.max(0, this.canvas.getObjects().indexOf(drag.originals[index])), copy);
+    });
+    this.canvas.requestRenderAll();
+  }
+
+  private finishOptionDrag(drag: OptionDrag): void {
+    if (!drag.ended || (!drag.copies && !drag.failed)) return;
+    if (this.optionDrag === drag) this.optionDrag = undefined;
+    if (!drag.moved) drag.copies?.forEach(copy => copy.dispose());
+    else this.commit();
+    drag.finish();
+  }
+
   group(): void {
     const objects = this.canvas.getActiveObjects();
     if (
@@ -1485,41 +1577,41 @@ export class StudioEditor {
         "This export exceeds 64 megapixels. Choose a smaller scale.",
       );
     const dimensions = { width: this.canvas.width, height: this.canvas.height };
-    const viewport = [...this.canvas.viewportTransform] as [
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-    ];
+    const viewport = this.canvas.viewportTransform;
     const background = this.canvas.backgroundColor;
     this.exporting = true;
     try {
-      this.canvas.setDimensions({ width: this.width, height: this.height });
-      this.canvas.setViewportTransform([1, 0, 0, 1, 0, 0]);
       if (options.transparent && format !== "jpeg")
         this.canvas.backgroundColor = "";
-      this.canvas.renderAll();
-      return format === "svg"
-        ? this.canvas.toSVG({
+      if (format === 'svg') {
+        // SVG background gradients use the canvas dimensions and viewport.
+        // Set only the export geometry; never resize the live DOM canvas.
+        this.canvas.width = this.width; this.canvas.height = this.height;
+        this.canvas.viewportTransform = [1, 0, 0, 1, 0, 0];
+        return this.canvas.toSVG({
             suppressPreamble: false,
             width: String(this.width),
             height: String(this.height),
             viewBox: { x: 0, y: 0, width: this.width, height: this.height },
-          })
-        : this.canvas.toDataURL({
+          });
+      }
+      const zoom = this.canvas.getZoom();
+      // Fabric paints this crop onto a separate canvas. A thumbnail must not
+      // touch DOM dimensions, flex layout or Fabric's cached pointer offset.
+      return this.canvas.toDataURL({
             format,
-            multiplier: scale,
+            left: viewport[4], top: viewport[5],
+            width: this.width * zoom, height: this.height * zoom,
+            multiplier: scale / zoom,
             quality: bounded(options.quality ?? 0.95, 0.1, 1),
             enableRetinaScaling: false,
           });
     } finally {
       this.canvas.backgroundColor = background;
-      this.canvas.setDimensions(dimensions);
-      this.canvas.setViewportTransform(viewport);
+      this.canvas.width = dimensions.width; this.canvas.height = dimensions.height;
+      this.canvas.viewportTransform = viewport;
+      this.canvas.calcViewportBoundaries();
       this.exporting = false;
-      this.canvas.requestRenderAll();
     }
   }
 
@@ -1734,7 +1826,13 @@ export class StudioEditor {
     });
     }
     const active = this.canvas.getActiveObject() as StudioObject | undefined;
-    if (active instanceof ActiveSelection) (active as StudioObject).visroLocked = locked;
+    if (active instanceof ActiveSelection) {
+      const anyLocked = active.getObjects().some(object => (object as StudioObject).visroLocked);
+      (active as StudioObject).visroLocked = active.getObjects().every(object => (object as StudioObject).visroLocked);
+      // Fabric transforms an ActiveSelection as one object. Child locks do not
+      // constrain that parent transform, so keep a locked child from drifting.
+      active.set({ lockMovementX: anyLocked, lockMovementY: anyLocked, lockScalingX: anyLocked, lockScalingY: anyLocked, lockRotation: anyLocked, hasControls: !anyLocked });
+    }
     this.commit();
   }
 
@@ -1780,6 +1878,7 @@ export class StudioEditor {
   destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    this.optionDrag?.finish(); this.optionDrag = undefined;
     if (this.nudgeFrame !== undefined) util.cancelAnimFrame(this.nudgeFrame);
     this.nudgeFrame = undefined; this.pendingNudgeKey = '';
     this.lifecycle.abort();
