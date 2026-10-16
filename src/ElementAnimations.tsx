@@ -1,0 +1,7 @@
+import type {CSSProperties} from 'react';
+import './elements-browser.css';
+const ANIMATIONS=['fade','rise','pan','zoom','breathe','wipe'] as const;
+export function ElementAnimations({query='',animation='none',duration=5,onChange,onPreview}:{query?:string;animation?:string;duration?:number;onChange:(patch:{animation?:string;duration?:number})=>void;onPreview:()=>void}){
+ const matches=ANIMATIONS.filter(value=>value.includes(query.trim().toLowerCase()));
+ return <section aria-label="Animations library"><div className="element-section-heading"><h3>Page animations</h3></div><div className="element-animation-grid">{matches.map(name=><button key={name} aria-label={`Apply ${name} page animation`} aria-pressed={animation===name} onClick={()=>onChange({animation:name})}><span className="element-animation-art" style={{'--demo-animation':`element-demo-${name}`} as CSSProperties}><span>V</span></span><span>{name[0].toUpperCase()+name.slice(1)}</span></button>)}</div>{!matches.length&&<p className="small-hint">No matching animations.</p>}<label className="field-label">Page duration (seconds)<input aria-label="Animation page duration" type="number" min=".5" max="120" step=".5" value={duration} onChange={event=>{const value=Number(event.target.value);if(Number.isFinite(value)&&value>=.5)onChange({duration:Math.min(120,value)});}}/></label><button className="full-button" onClick={onPreview}>Preview page</button><button className="full-button" disabled={animation==='none'} onClick={()=>onChange({animation:'none'})}>Remove animation</button></section>;
+}

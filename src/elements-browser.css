@@ -1,0 +1,50 @@
+.elements-home .element-section-heading{margin:0 0 24px}
+.studio-app .asset-panel.elements-panel>.panel-heading,.studio-app .asset-panel.text-panel>.panel-heading{display:none}
+.studio-app .asset-panel.elements-panel>.search-box,.studio-app .asset-panel.text-panel>.search-box{height:56px;min-height:56px;margin:0 0 8px;padding:12px 16px;border-radius:16px;background:var(--reference-chrome-surface);border-color:var(--border-strong)}
+.studio-app .asset-panel.elements-panel>.search-box input,.studio-app .asset-panel.text-panel>.search-box input{font:400 14px/20px var(--ui-font-family)}
+.studio-app .asset-panel.elements-panel>.search-box:focus-within,.studio-app .asset-panel.text-panel>.search-box:focus-within{border-color:var(--accent)}
+.studio-app .workspace{position:relative}
+.panel-collapse-control{position:absolute;z-index:25;left:420px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:24px;height:40px;padding:0;border:1px solid var(--border-strong);border-radius:16px;background:var(--reference-chrome-surface);color:var(--text);box-shadow:0 2px 5px #0003}
+.panel-collapse-control:hover{background:var(--surface-hover)}
+.panel-collapse-control:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.elements-home .element-section-heading h3{font:600 14px/20px var(--ui-font-family);margin:0}
+.elements-home .element-section-heading button{font:600 12px/20px var(--ui-font-family)}
+.studio-app .elements-browse-categories{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:22px 8px;margin:0 0 28px}
+.studio-app .elements-browse-categories>button{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:6px;min-width:0;padding:0;color:var(--text);font:400 12px/20px var(--ui-font-family);border-radius:12px;background:transparent}
+.studio-app .elements-browse-categories>button>.element-category-art{display:block;flex:none;width:80px;height:80px;max-width:100%;transition:transform .14s ease}
+.studio-app .elements-browse-categories>button>span{display:block;width:auto;height:auto;background:none;border-radius:0;font:inherit}
+.studio-app .elements-browse-categories>button:hover{background:transparent}
+.studio-app .elements-browse-categories>button:hover>.element-category-art{transform:translateY(-2px)}
+.studio-app .elements-browse-categories>button:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+.element-recent-section{margin:4px 0 24px}
+.elements-home .element-recent-section .element-section-heading{margin-bottom:12px}
+.element-recent-wrap{position:relative}
+.element-recent-row{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;scroll-snap-type:x proximity}
+.element-recent-row::-webkit-scrollbar{display:none}
+.element-recent-row>button{display:grid;place-items:center;flex:0 0 80px;height:80px;padding:4px;border-radius:8px;scroll-snap-align:start;color:var(--text);background:transparent}
+.element-recent-row>button:hover{background:var(--surface-hover)}
+.element-recent-row>button>span{display:grid;place-items:center;width:100%;height:100%;min-height:0}
+.element-recent-row svg{display:block;max-width:100%;max-height:100%;width:100%;height:100%;pointer-events:none}
+.element-recent-row .text-combination-preview{background:#292d35;border-radius:6px}
+.element-recent-next{position:absolute;right:-4px;top:0;height:80px;width:30px;display:grid;place-items:center;border-radius:0;background:linear-gradient(90deg,transparent,var(--surface));color:var(--text)}
+.element-recent-wrap.expanded .element-recent-row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));overflow:visible}
+.element-recent-wrap.expanded .element-recent-row>button{width:100%}
+.mockup-library-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px 8px}
+.mockup-library-grid>button{display:flex;flex-direction:column;gap:8px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface-subtle);color:var(--text);font:400 12px/16px var(--ui-font-family)}
+.mockup-library-grid>button>span:first-child{display:grid;place-items:center;aspect-ratio:1;width:100%;min-height:0}
+.mockup-library-grid svg{width:100%;height:100%;max-height:140px;pointer-events:none}
+.mockup-library-grid>button:hover{border-color:var(--accent);background:var(--surface-hover)}
+.mockup-library-grid>button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.element-animation-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0 20px}
+.element-animation-grid>button{display:flex;flex-direction:column;align-items:center;gap:8px;padding:8px 8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--surface-subtle);color:var(--text);font:400 12px/18px var(--ui-font-family)}
+.element-animation-grid>button[aria-pressed=true]{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.element-animation-art{position:relative;display:grid;place-items:center;width:100%;height:86px;overflow:hidden;border-radius:5px;background:linear-gradient(135deg,#dbf1f0,#e6ddfb)}
+.element-animation-art>span{display:grid;place-items:center;width:48px;height:48px;border-radius:12px;background:#8b3dff;color:#fff;font:600 19px/1 var(--ui-font-family)}
+.element-animation-grid>button:hover .element-animation-art>span,.element-animation-grid>button:focus-visible .element-animation-art>span{animation-duration:1.5s;animation-iteration-count:infinite;animation-name:var(--demo-animation)}
+@keyframes element-demo-fade{0%,100%{opacity:.15}50%{opacity:1}}
+@keyframes element-demo-rise{0%{opacity:0;transform:translateY(45px)}60%,100%{opacity:1;transform:translateY(0)}}
+@keyframes element-demo-pan{0%{opacity:0;transform:translateX(-55px)}60%,100%{opacity:1;transform:translateX(0)}}
+@keyframes element-demo-zoom{0%{opacity:0;transform:scale(.2)}60%,100%{opacity:1;transform:scale(1)}}
+@keyframes element-demo-breathe{0%,100%{transform:scale(.85)}50%{transform:scale(1.12)}}
+@keyframes element-demo-wipe{0%{clip-path:inset(0 100% 0 0)}65%,100%{clip-path:inset(0)}}
+@media(prefers-reduced-motion:reduce){.studio-app .elements-browse-categories>button>.element-category-art{transition:none}.element-animation-grid>button .element-animation-art>span{animation:none!important}}

@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/google/fonts",
   "commit": "66928797f271fed5ee428544e7229685e2d90127",
-  "checked": "2026-10-13",
+  "checked": "2026-10-16",
   "conversion": {
     "fonttools": "4.60.1",
     "brotli": "1.1.0",
@@ -27,7 +27,9 @@
           "sourceSha256": "0f7b311b2f3279e4eef9b2f968bcdbab6e28f4daeb1f049f4f278a902bcd82f7",
           "sha256": "6e712eafc11f23dc2b0651c0849c1a331aa81a3a4499ba61ef5091e5c123c796",
           "bytes": 215968,
-          "glyphs": 2747
+          "glyphs": 2747,
+          "unicodeCodepoints": 1312,
+          "unicodeCmapSha256": "0a3c87813826bab50ad82ceb7508778a4e51c1b87e19957be6604aa802d45492"
         }
       ]
     },
@@ -48,7 +50,9 @@
           "sourceSha256": "983676516167748b74de6f4771fb384c664fd913acb8b471122ecacf5da5ea6c",
           "sha256": "3d615551d27f028fac5bbb9918b7228883832adb1481c46704043a1e6f54e7b6",
           "bytes": 50936,
-          "glyphs": 1060
+          "glyphs": 1060,
+          "unicodeCodepoints": 471,
+          "unicodeCmapSha256": "4f720fe94a6476644582c680ee61014a6295601e63134ef839d7ca15c53fc398"
         },
         {
           "file": "poppins-regular.woff2",
@@ -57,7 +61,9 @@
           "sourceSha256": "7e65201e9b79159e2300267cc885e16c8dcef2424cdfa09a29bfb0980a94a7ba",
           "sha256": "a7025c9f49be42d5e89bd67b557428df37820c5058b3babc5572cc42f2e57c04",
           "bytes": 51540,
-          "glyphs": 1060
+          "glyphs": 1060,
+          "unicodeCodepoints": 471,
+          "unicodeCmapSha256": "4f720fe94a6476644582c680ee61014a6295601e63134ef839d7ca15c53fc398"
         }
       ]
     },
@@ -78,7 +84,9 @@
           "sourceSha256": "36643644f318a812aab2d2ed3bb98f8cf0872527f835fe9398d95fe6b9adb878",
           "sha256": "8dbf3d44655c72437f2a9acc46579058dc7d3f82b2231cfdd82d0d6d61145674",
           "bytes": 280576,
-          "glyphs": 1150
+          "glyphs": 1150,
+          "unicodeCodepoints": 1010,
+          "unicodeCmapSha256": "251e7fcb1e0a472e3fc14930a4f855053ddf9f147b3cafa394fc1b6b9b3210e2"
         }
       ]
     },
@@ -99,7 +107,9 @@
           "sourceSha256": "8a0aace75d33794eece4b28187bfc1df0bbd2888b5d8a56e01788c8d65d16be1",
           "sha256": "898fe2248312995b4b089601fa76a0da61b47de58b95bb88291230f2a3db764d",
           "bytes": 211256,
-          "glyphs": 3023
+          "glyphs": 3023,
+          "unicodeCodepoints": 2164,
+          "unicodeCmapSha256": "f3f715fe3fa34a5823069c37587cab3b5beb692aa59ad012812677bd464f70c3"
         },
         {
           "file": "lato-regular.woff2",
@@ -108,7 +118,9 @@
           "sourceSha256": "d636e4683231f931eda222d588e944d082bfd3bdba02f928bee461c0f185b251",
           "sha256": "d414a00ed3e47a8cc7462bd43975f0214a05c10b70b5f22686430beb6057ae2c",
           "bytes": 212004,
-          "glyphs": 3023
+          "glyphs": 3023,
+          "unicodeCodepoints": 2164,
+          "unicodeCmapSha256": "f3f715fe3fa34a5823069c37587cab3b5beb692aa59ad012812677bd464f70c3"
         }
       ]
     },
@@ -129,7 +141,9 @@
           "sourceSha256": "d7598e12c5dbef095ff8272cfc55da0250bd07fbdecbac8a530b9b277872a134",
           "sha256": "66e3a7dafb09acdf7af615078ae7f281a048d18e37816dd093c4722a37b8c884",
           "bytes": 222128,
-          "glyphs": 1326
+          "glyphs": 1326,
+          "unicodeCodepoints": 927,
+          "unicodeCmapSha256": "9d392340613f6ce64a46169e5039b7148a4d373262f80463f41b636b628a2e67"
         }
       ]
     },
@@ -150,7 +164,9 @@
           "sourceSha256": "a4ba3a92350ebb031da0cb47630ac49eb265082ca1bc0450442f4a83ab947cab",
           "sha256": "e261fbadf359b1387d3685b865818c2b7f650517e13016d77d21e1eb7ab7fae4",
           "bytes": 57412,
-          "glyphs": 1373
+          "glyphs": 1373,
+          "unicodeCodepoints": 978,
+          "unicodeCmapSha256": "efad913dd570e018e8b96e1a2a6aa16513ed4d5e62413b355e56d963f1b01812"
         }
       ]
     },
@@ -171,7 +187,9 @@
           "sourceSha256": "08e4623805102d819f58601e46e345648846075e363b2ceb23313c2d1c83ec73",
           "sha256": "975022976f660a12a8e2f5c274affffe5f0cb3b6fe124fca5ab70d03bf72fdce",
           "bytes": 21548,
-          "glyphs": 508
+          "glyphs": 508,
+          "unicodeCodepoints": 461,
+          "unicodeCmapSha256": "0731e2fb6f127bfdb36ef7ab5a893d196ac889542278752f57f27b5aa6077151"
         }
       ]
     },
@@ -192,7 +210,9 @@
           "sourceSha256": "c40f2293766a503bc70cce9e512ef844a4ccb7cbcde792fe2ea31d191917d8d6",
           "sha256": "4297e9ec39f1b8157623d048fb99eab03c90e482669599e8fc662ee178994c49",
           "bytes": 106440,
-          "glyphs": 1103
+          "glyphs": 1103,
+          "unicodeCodepoints": 659,
+          "unicodeCmapSha256": "e3fe336b54c6c095832485b340ebb6db554aa16cfcb3fb4d096eaacc4e4e1457"
         }
       ]
     },
@@ -213,7 +233,9 @@
           "sourceSha256": "05a95421961341c5b2556285e8415df9db27dab4f4abe22b446b3c6a8b916c5d",
           "sha256": "1ce91cc87fd7602c7d4d1a925af15aaefbb85acd379dbee9b34a82e653669320",
           "bytes": 64008,
-          "glyphs": 861
+          "glyphs": 861,
+          "unicodeCodepoints": 789,
+          "unicodeCmapSha256": "0a47434a73c44d014e6359ecb0cecd09473ffd35c83461c45f868711efeb6e18"
         }
       ]
     },
@@ -234,7 +256,9 @@
           "sourceSha256": "dd9a89a019b4849f66ab75455fe7bdf931311042cbb0f0f97acc061539703180",
           "sha256": "c1a36cce93e75bb56a9502e384249d8dd6a20189053d1628b12274bcb8437ae1",
           "bytes": 31184,
-          "glyphs": 426
+          "glyphs": 426,
+          "unicodeCodepoints": 423,
+          "unicodeCmapSha256": "a8bbc6bb175eca0b4ceaccd767c6164ef6ffbf25f50a25dc95b0a1d6fdaae5e4"
         }
       ]
     },
@@ -255,7 +279,9 @@
           "sourceSha256": "2dbb6290b39ab7c48a40b18f74ca59ef48a69a015c3ea0542703f0c6ce51d617",
           "sha256": "b19c8e4d26d1ade4e769ea64b7913bc16af86f015be4c303eee19da046223597",
           "bytes": 41104,
-          "glyphs": 635
+          "glyphs": 635,
+          "unicodeCodepoints": 561,
+          "unicodeCmapSha256": "a8341ca3e9e0de5d753e962d04ac39d945b98b5834e90a3d43c98695e1537bc0"
         }
       ]
     },
@@ -276,7 +302,9 @@
           "sourceSha256": "8cd08d97e89c24d0aa92edd2f0f4c8ee6195eee9b7c9f154865a58b02f0c1c0d",
           "sha256": "40c3837c53c103a38fbce7faaa590b76edd61a8ede14672eb1e2f7eab0e0c6a4",
           "bytes": 88820,
-          "glyphs": 486
+          "glyphs": 486,
+          "unicodeCodepoints": 403,
+          "unicodeCmapSha256": "563750ed4cf1049e42c3438aa13f1b2eef9a39ee61d645640f2497e94f9c8da6"
         }
       ]
     },
@@ -297,7 +325,9 @@
           "sourceSha256": "bb55a5ca5c2042335b3991af27c4d0705d0ef41cac6164ac737fd8f2a1e85207",
           "sha256": "fd0bff4bcc6e73295ec4f03d6ebcaecabff6292de6e04b31154e2d6fddab6b80",
           "bytes": 100924,
-          "glyphs": 1103
+          "glyphs": 1103,
+          "unicodeCodepoints": 938,
+          "unicodeCmapSha256": "35fa8b217bddcb27c9349abbb87aaaac3ac2eb1a0c693df8cb5c4570c72dce9b"
         }
       ]
     },
@@ -318,7 +348,9 @@
           "sourceSha256": "8bbcc3eb8275c388f4bcd998832f8a4b943eadbaf6a595205312774b5951aefb",
           "sha256": "6aa19662aaefe65d006e3755377c7e0f2f56d6ead0a5165f4d8be4d185ae4eb1",
           "bytes": 129484,
-          "glyphs": 1071
+          "glyphs": 1071,
+          "unicodeCodepoints": 936,
+          "unicodeCmapSha256": "5d8100921f0d976725bf872537afcf595c07e690fbe14d57c0bb0c8dea3d5d59"
         }
       ]
     },
@@ -339,7 +371,9 @@
           "sourceSha256": "5b38c246e255a12f5712d640d56bcced0472466fc68983d2d0410ec0457c2817",
           "sha256": "6bbc262410618b85e3d3154309cad8346a9e3c3085a61d04b3710a4cf2831f4d",
           "bytes": 72104,
-          "glyphs": 883
+          "glyphs": 883,
+          "unicodeCodepoints": 850,
+          "unicodeCmapSha256": "fa105a9aaa3baec16e13ea80225ae62f748f7e6b4038b28de324cac923321d1c"
         }
       ]
     },
@@ -360,7 +394,9 @@
           "sourceSha256": "29160a80ff49ddcab2c97711247e08b1fab27a484a329ce8b813d820dc559031",
           "sha256": "13b4cddc57045d40b411008e61588c8f81aa0bd72fe884624831a0ff9c4d159a",
           "bytes": 350460,
-          "glyphs": 2933
+          "glyphs": 2933,
+          "unicodeCodepoints": 2849,
+          "unicodeCmapSha256": "9971d3ba2ed045626c181cb196dfe19d510c63599e4a9fb0fd17cdc3a0a5f4e3"
         }
       ]
     },
@@ -381,7 +417,9 @@
           "sourceSha256": "b20b7d9626dd956b2c5e558692ad328b1f19e3275e2782db4fa07670d83f35e0",
           "sha256": "1c7136dcfe2ba0c22bd2e4ab48467813cb6dd7b5728a73920dd9eb6452b8a558",
           "bytes": 209428,
-          "glyphs": 3241
+          "glyphs": 3241,
+          "unicodeCodepoints": 974,
+          "unicodeCmapSha256": "ded2168247df824f370dc7080ebd71757e4d13989cca2806dfc734375c7b1518"
         }
       ]
     },
@@ -402,7 +440,9 @@
           "sourceSha256": "39c9b64223561f56aaff6062a6f04063c4fc86809ad6768722c06614d977e1cc",
           "sha256": "ea843f5402c11a24ea4c07cf03d55d76cedd8c6bac1184795a4cfe80bc4f8ed3",
           "bytes": 52816,
-          "glyphs": 812
+          "glyphs": 812,
+          "unicodeCodepoints": 694,
+          "unicodeCmapSha256": "b93fedf95cfd295a01c942b395d0a69c60e792706a5b6e58aba6bea9076ff2d5"
         }
       ]
     },
@@ -423,7 +463,9 @@
           "sourceSha256": "3ae11c49db0455a3cc33e37d380f20fdb8c7f8b41dc07625c177e3d87a9d6ae6",
           "sha256": "30b83738add8c9edd9e3450b98036a9a8fb5668d0cbd4eb0ce5fe6761197f21f",
           "bytes": 53892,
-          "glyphs": 742
+          "glyphs": 742,
+          "unicodeCodepoints": 678,
+          "unicodeCmapSha256": "9b6f8ef51f59a5013b112361c9deb5d8ddafd1874eacc1fd60ad8c07b77fb649"
         }
       ]
     },
@@ -444,7 +486,9 @@
           "sourceSha256": "5b6c0d5334a7bf77dea52b975c5a0c408878c0f7115ed5b6fb151f634b7bf701",
           "sha256": "4b6238e16e5f3f98571954de8d994de79d6cbfaca26f562bba52af44595ff060",
           "bytes": 105108,
-          "glyphs": 1533
+          "glyphs": 1533,
+          "unicodeCodepoints": 805,
+          "unicodeCmapSha256": "b79dca2c77ddef1c757742ee8618a8b7e1b4182318c81d082661a60940cb250d"
         }
       ]
     },
@@ -465,7 +509,606 @@
           "sourceSha256": "21808625578fe8d8cd10cb684be546dca077b27cd03a53a2f1ec11dc743c924c",
           "sha256": "7641e43dcbe5ba3217a3f12080621a041978249b8a6dacaf3d7ff10a7517f8e9",
           "bytes": 59856,
-          "glyphs": 643
+          "glyphs": 643,
+          "unicodeCodepoints": 559,
+          "unicodeCmapSha256": "fcd718752a6f49bf443078163a019307d5cf36468f721fbd12fc99e2a1d93a1d"
+        }
+      ]
+    },
+    {
+      "name": "Knewave",
+      "slug": "knewave",
+      "license": {
+        "source": "ofl/knewave/OFL.txt",
+        "file": "knewave-OFL.txt",
+        "sha256": "14b3fbd06078a869cf2ba96e6dacb852d373703c86ca7ad54a4cdd6e20fbab19",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "knewave.woff2",
+          "weight": "400",
+          "source": "ofl/knewave/Knewave-Regular.ttf",
+          "sourceSha256": "ed3bac761d755b89ab3082c844d4a623d63c7d6eef85d22ba1fb6c680e6a4436",
+          "sha256": "494bc0c502154c93e01fdf2e2caf3b1ed839259b57cbdafe7da1a4d5ecc56b39",
+          "bytes": 18836,
+          "glyphs": 210,
+          "unicodeCodepoints": 208,
+          "unicodeCmapSha256": "724a0fa464489f48d30c34c76ef8b5a3e91420ca8a2f9af720e9871b875c9c7a"
+        }
+      ]
+    },
+    {
+      "name": "Kaushan Script",
+      "slug": "kaushanscript",
+      "license": {
+        "source": "ofl/kaushanscript/OFL.txt",
+        "file": "kaushanscript-OFL.txt",
+        "sha256": "3336bf5d4e7eedba48ecb831f37bf676e901c39f2e6a422cceadd9d2ffa55be8",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "kaushanscript.woff2",
+          "weight": "400",
+          "source": "ofl/kaushanscript/KaushanScript-Regular.ttf",
+          "sourceSha256": "6d8d379d9bba98178bee476d68114c8f83812c18005ecccf679e70f60e03d8f6",
+          "sha256": "69d4ee97edd5081e1565072880059af1d7c9c7040b5b12e2a6425abf1a8d1503",
+          "bytes": 58024,
+          "glyphs": 414,
+          "unicodeCodepoints": 397,
+          "unicodeCmapSha256": "1de23ea41b5b92fac4752c905d4f49394446c02485c202777cfe76e49dabc6a8"
+        }
+      ]
+    },
+    {
+      "name": "Sedgwick Ave Display",
+      "slug": "sedgwickavedisplay",
+      "license": {
+        "source": "ofl/sedgwickavedisplay/OFL.txt",
+        "file": "sedgwickavedisplay-OFL.txt",
+        "sha256": "f323edc1e5a6d8fa16120aa15367cdfb15468474cc621f9bda1a2f73c5d08d73",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "sedgwickavedisplay.woff2",
+          "weight": "400",
+          "source": "ofl/sedgwickavedisplay/SedgwickAveDisplay-Regular.ttf",
+          "sourceSha256": "3b9c295a146bafb93c8a12c1dde38a2fe47512777daf1458825e291752469a38",
+          "sha256": "a36eeb419b76bfdab6be86cbea66a6a4051a831d9058afc0d86c33937352081e",
+          "bytes": 55228,
+          "glyphs": 622,
+          "unicodeCodepoints": 591,
+          "unicodeCmapSha256": "4ba7fdbef490ebd230d40154754a6ab952b66119e5b2bfb25b52bcf52969d339"
+        }
+      ]
+    },
+    {
+      "name": "Patrick Hand",
+      "slug": "patrickhand",
+      "license": {
+        "source": "ofl/patrickhand/OFL.txt",
+        "file": "patrickhand-OFL.txt",
+        "sha256": "377f4f9c19e935228552478eb68cc2ed82910988a60ba60e2ac73b09f32d02d1",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "patrickhand.woff2",
+          "weight": "400",
+          "source": "ofl/patrickhand/PatrickHand-Regular.ttf",
+          "sourceSha256": "0f173b3e6cb6d1af25babf7f0057c5ac4ee11f9992b0469bb817e967ef4ad0fc",
+          "sha256": "72478fc17a112546ef7ed775b89c48b7dc528a83662235ed78017d4e0e9560db",
+          "bytes": 62648,
+          "glyphs": 728,
+          "unicodeCodepoints": 515,
+          "unicodeCmapSha256": "5ce65943925e43d762ff5fd621c2c426ea236efa3b15405a619041d3f84cfd92"
+        }
+      ]
+    },
+    {
+      "name": "Caveat",
+      "slug": "caveat",
+      "license": {
+        "source": "ofl/caveat/OFL.txt",
+        "file": "caveat-OFL.txt",
+        "sha256": "1f9d81d094273d82f3898a1ee8b598a717d050ecbf5ff7bede105b704880157b",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "caveat.woff2",
+          "weight": "400 700",
+          "source": "ofl/caveat/Caveat[wght].ttf",
+          "sourceSha256": "0bdb6b660482d31531b3945849fba5916b3ef8695da7024a9e6b9ee3c4157988",
+          "sha256": "c7d6a0ad1cbe120518b64ca8c5dac3c064bdfdb3cdc62f472c571f4a769ace9f",
+          "bytes": 173468,
+          "glyphs": 1034,
+          "unicodeCodepoints": 753,
+          "unicodeCmapSha256": "3b9cee1ea4ca75e8f4734f72f2f926e6e63871f8e046b09556a810f141786bb7"
+        }
+      ]
+    },
+    {
+      "name": "Shadows Into Light",
+      "slug": "shadowsintolight",
+      "license": {
+        "source": "ofl/shadowsintolight/OFL.txt",
+        "file": "shadowsintolight-OFL.txt",
+        "sha256": "0e441ae9f18ad0c294cc5b6ae3974c2db1614cab220598578b1b58c4cc334485",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "shadowsintolight.woff2",
+          "weight": "400",
+          "source": "ofl/shadowsintolight/ShadowsIntoLight.ttf",
+          "sourceSha256": "1347863151acdc00fa281daaba1a3543dbce5870b55f9cf7479a15bb84007681",
+          "sha256": "5a64565eb96a8595d96b6bc709d713203b1d5251c3d7f5fd6635fe71939f582e",
+          "bytes": 23424,
+          "glyphs": 352,
+          "unicodeCodepoints": 349,
+          "unicodeCmapSha256": "597ed8b5d2c23108373546eae22f1cb9ab4d694d42fe6adcc65aec10818f95d4"
+        }
+      ]
+    },
+    {
+      "name": "Amatic SC",
+      "slug": "amaticsc",
+      "license": {
+        "source": "ofl/amaticsc/OFL.txt",
+        "file": "amaticsc-OFL.txt",
+        "sha256": "301f77908df2b00141b4dcea50cc1a586c3afcee78843bd811088e8263623f9d",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "amaticsc.woff2",
+          "weight": "400",
+          "source": "ofl/amaticsc/AmaticSC-Regular.ttf",
+          "sourceSha256": "513a76f96d39a5366bd27c258674aaea35ee51c42b8f3060387f74649ee8c8aa",
+          "sha256": "48167f95873f2a411bd544a09c1866a21494a3e9d8b94cd0098dc91a7fe82f1e",
+          "bytes": 66744,
+          "glyphs": 850,
+          "unicodeCodepoints": 797,
+          "unicodeCmapSha256": "d3eb6cc9261a15c3c724d3a814db0df392c21d49182e09cd75a57240af5e94f1"
+        },
+        {
+          "file": "amaticsc-bold.woff2",
+          "weight": "700",
+          "source": "ofl/amaticsc/AmaticSC-Bold.ttf",
+          "sourceSha256": "d367beadee66efbb657d24d3d8f30f3b60633e9d5c8ded7385541cf775cabb4d",
+          "sha256": "2f3fdfc15688dc85cd221e0a021ab7f1b67ff7202c9f448c30c7cdcb112ef758",
+          "bytes": 67960,
+          "glyphs": 850,
+          "unicodeCodepoints": 797,
+          "unicodeCmapSha256": "d3eb6cc9261a15c3c724d3a814db0df392c21d49182e09cd75a57240af5e94f1"
+        }
+      ]
+    },
+    {
+      "name": "Shantell Sans",
+      "slug": "shantellsans",
+      "license": {
+        "source": "ofl/shantellsans/OFL.txt",
+        "file": "shantellsans-OFL.txt",
+        "sha256": "ebfce7d104d597c385b71e9fbf8f0e2034e73320f857086105dc265b82c05caa",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "shantellsans.woff2",
+          "weight": "300 800",
+          "source": "ofl/shantellsans/ShantellSans[BNCE,INFM,SPAC,wght].ttf",
+          "sourceSha256": "d98a7913853f78d71aa0b86daf66b5eddb5a3266c07bfd51ef70632b88c41084",
+          "sha256": "5a329093027478d500b57e6f9fd888b82d9f9dcf13dba098a88a47850ecbace9",
+          "bytes": 442804,
+          "glyphs": 1728,
+          "unicodeCodepoints": 837,
+          "unicodeCmapSha256": "ac96d9ccd10af1ca9a93f7d52e87c0fe5deaaa56145f093198d1a9eaac6127cd"
+        }
+      ]
+    },
+    {
+      "name": "Allura",
+      "slug": "allura",
+      "license": {
+        "source": "ofl/allura/OFL.txt",
+        "file": "allura-OFL.txt",
+        "sha256": "c8cb4c94a558b6cb82ac5dc981a73a0b8aee35a5c52c8a7832fc0280c289ad49",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "allura.woff2",
+          "weight": "400",
+          "source": "ofl/allura/Allura-Regular.ttf",
+          "sourceSha256": "9c142b2e515832c0dfc4ff8b8ea18f40314943bf937b72e2b23c4661bac14cc6",
+          "sha256": "2b39b5d5a9f0a75f83cb2c4419aa24ef6ec9e5a9364025be8e7257830dba6c90",
+          "bytes": 87104,
+          "glyphs": 1087,
+          "unicodeCodepoints": 587,
+          "unicodeCmapSha256": "801f6b6e2b67a1c7610ef6f4dccbffe4fc9c2b41811055ec6744211bec782ede"
+        }
+      ]
+    },
+    {
+      "name": "Kalam",
+      "slug": "kalam",
+      "license": {
+        "source": "ofl/kalam/OFL.txt",
+        "file": "kalam-OFL.txt",
+        "sha256": "f62ef357d3a1c3d27edd35a6e1ba350e8a8d13499797964eeadefbf0b3b15d1f",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "kalam.woff2",
+          "weight": "400",
+          "source": "ofl/kalam/Kalam-Regular.ttf",
+          "sourceSha256": "57cecb63d4608019371954274ae1d8c397764debd5b19d4a33c1efa4dc923c0b",
+          "sha256": "c9bbbfa207952e153182f72c9a484418ec717effad2413d559c3678eb130faca",
+          "bytes": 137432,
+          "glyphs": 1027,
+          "unicodeCodepoints": 1026,
+          "unicodeCmapSha256": "965884676c29248c5be2f62701041e4519523989d155e32d770e5f97f007099e"
+        },
+        {
+          "file": "kalam-bold.woff2",
+          "weight": "700",
+          "source": "ofl/kalam/Kalam-Bold.ttf",
+          "sourceSha256": "2f6576601db015d4f6c08678120277fc8510b98c06e932ce7a6a9cbff4cbdded",
+          "sha256": "0ae832b1f1b7bf883d4905cb36fdc6fafc94c806676fe3f8248ef205152d030a",
+          "bytes": 136288,
+          "glyphs": 1027,
+          "unicodeCodepoints": 1026,
+          "unicodeCmapSha256": "965884676c29248c5be2f62701041e4519523989d155e32d770e5f97f007099e"
+        }
+      ]
+    },
+    {
+      "name": "Great Vibes",
+      "slug": "greatvibes",
+      "license": {
+        "source": "ofl/greatvibes/OFL.txt",
+        "file": "greatvibes-OFL.txt",
+        "sha256": "61093a21f5e63dedf54222b3c09997e54c0fe43e3851d21386e02ddcbc246d49",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "greatvibes.woff2",
+          "weight": "400",
+          "source": "ofl/greatvibes/GreatVibes-Regular.ttf",
+          "sourceSha256": "8d509802186f1b51572531ecf313e8098f9a5bfdfaca93f0c9b34467f9982d15",
+          "sha256": "729a4f2fbe477c1c35150e9502e40b3fdeecca3f531a268e98a49aed9ef5ada1",
+          "bytes": 162112,
+          "glyphs": 2025,
+          "unicodeCodepoints": 1081,
+          "unicodeCmapSha256": "cf828c2101fde8a023fa2bb399f6af4273d3fdcd6e3e978e1bb38df6394a7477"
+        }
+      ]
+    },
+    {
+      "name": "Cinzel",
+      "slug": "cinzel",
+      "license": {
+        "source": "ofl/cinzel/OFL.txt",
+        "file": "cinzel-OFL.txt",
+        "sha256": "f2b3029aba64c378bf0963b62945eee15e564fe4330b934c8f2eb058282b5e83",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "cinzel.woff2",
+          "weight": "400 900",
+          "source": "ofl/cinzel/Cinzel[wght].ttf",
+          "sourceSha256": "f4d83d34d1f6c741193e4acf4b3dff9531e5a67b6aa65228d00a7db72a4e0f34",
+          "sha256": "2ab8b19811f4842ad4c9d168f934ef046355e81a3a6f36e15fe7a4abe38239d3",
+          "bytes": 47852,
+          "glyphs": 548,
+          "unicodeCodepoints": 367,
+          "unicodeCmapSha256": "a31edba3febb2df84700351eb9f4c67f0f226f8d99b0cd0723c3fc364bd063b4"
+        }
+      ]
+    },
+    {
+      "name": "Abril Fatface",
+      "slug": "abrilfatface",
+      "license": {
+        "source": "ofl/abrilfatface/OFL.txt",
+        "file": "abrilfatface-OFL.txt",
+        "sha256": "aba8997e16b1e3888c6e855ba883c70d96bd4375bff8cb9c7ce0f097200f74b8",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "abrilfatface.woff2",
+          "weight": "400",
+          "source": "ofl/abrilfatface/AbrilFatface-Regular.ttf",
+          "sourceSha256": "5971d4a3758a922a9fedc7f6fb825a96341a2e718c45a4b2c9a6b417c8c4dbe9",
+          "sha256": "9b99bcfba7437c121903e508f18d606687215d5eed0b9f5acf314e0f517b4e57",
+          "bytes": 20736,
+          "glyphs": 425,
+          "unicodeCodepoints": 394,
+          "unicodeCmapSha256": "05c26a0547ae03abcd045e32768e861996fe06fa2cfa3e325f756190f1f2b8f0"
+        }
+      ]
+    },
+    {
+      "name": "DM Serif Display",
+      "slug": "dmserifdisplay",
+      "license": {
+        "source": "ofl/dmserifdisplay/OFL.txt",
+        "file": "dmserifdisplay-OFL.txt",
+        "sha256": "a3e5cdd67d4571dd0a24fcc968de0efde7ae97ef752daf0906e4767619dd7231",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "dmserifdisplay.woff2",
+          "weight": "400",
+          "source": "ofl/dmserifdisplay/DMSerifDisplay-Regular.ttf",
+          "sourceSha256": "8cc3643535edf039aa5d95440a8542735e9197e4f4b8d9303e980fefbf5ab616",
+          "sha256": "7e6679d41e35437090560e0367e6546f10b71c5792fa168b177e302cf009b66c",
+          "bytes": 32024,
+          "glyphs": 355,
+          "unicodeCodepoints": 333,
+          "unicodeCmapSha256": "774dc698ebb97fc166f12d0df34f82d1e9d0424bfa209a4102b9255396168955"
+        }
+      ]
+    },
+    {
+      "name": "Fraunces",
+      "slug": "fraunces",
+      "license": {
+        "source": "ofl/fraunces/OFL.txt",
+        "file": "fraunces-OFL.txt",
+        "sha256": "bdf4c22802eaf804f998195871c6b8938aac2ac14b2d78a8bd66a6f1eced833b",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "fraunces.woff2",
+          "weight": "100 900",
+          "source": "ofl/fraunces/Fraunces[SOFT,WONK,opsz,wght].ttf",
+          "sourceSha256": "177ff6c0f14e5550a3c624247cd1189611d4eb65d000b14944c63d967958abbb",
+          "sha256": "7dc0dd18aeeae3204d5cc26679b5f41d8be1e622bd3bd39fef574346c99508e8",
+          "bytes": 195012,
+          "glyphs": 698,
+          "unicodeCodepoints": 624,
+          "unicodeCmapSha256": "048f5b2295f8fc1b7603f22a88199b6dcce2277d9a36314bda386b608788f4f7"
+        }
+      ]
+    },
+    {
+      "name": "Alfa Slab One",
+      "slug": "alfaslabone",
+      "license": {
+        "source": "ofl/alfaslabone/OFL.txt",
+        "file": "alfaslabone-OFL.txt",
+        "sha256": "e315abc82a78710c7242e2f2e6529651fd631d4d50e6ad98ea194f9b54c3d701",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "alfaslabone.woff2",
+          "weight": "400",
+          "source": "ofl/alfaslabone/AlfaSlabOne-Regular.ttf",
+          "sourceSha256": "28664afa698a3393bd5a29eec750230a0645c5301d62200e5f2d3a027fb2299d",
+          "sha256": "fbffa274d30400921076b92d714db3358cdb3fdb98c30058b4904e7b853e7b19",
+          "bytes": 34660,
+          "glyphs": 734,
+          "unicodeCodepoints": 671,
+          "unicodeCmapSha256": "b0ce0f297e9914afe849e7c60099b1c12bceb95135b585a5f86c9a9c0f3dcac8"
+        }
+      ]
+    },
+    {
+      "name": "Bungee",
+      "slug": "bungee",
+      "license": {
+        "source": "ofl/bungee/OFL.txt",
+        "file": "bungee-OFL.txt",
+        "sha256": "d5787a50dde5be6c6daecab9ed459939b1bc37cff0d0e00257eaf1ec2cf4c16c",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "bungee.woff2",
+          "weight": "400",
+          "source": "ofl/bungee/Bungee-Regular.ttf",
+          "sourceSha256": "c4f5361ce120af3e6b9156d0bf379fa19cda2ea0cd18ac01fd99596c6bf66e3f",
+          "sha256": "740729ae08f6521be80fc8a652e242c95221a1dfc878d4b8058525c75653f093",
+          "bytes": 40552,
+          "glyphs": 1063,
+          "unicodeCodepoints": 1082,
+          "unicodeCmapSha256": "6867807557a1388a673ae786dd7f1d2bcca761027b5a1e356725553a3869fc87"
+        }
+      ]
+    },
+    {
+      "name": "Black Ops One",
+      "slug": "blackopsone",
+      "license": {
+        "source": "ofl/blackopsone/OFL.txt",
+        "file": "blackopsone-OFL.txt",
+        "sha256": "f67ca4a200424868ee8fcd5464d7b35ac1cbf7723f6bfdbd19a8524689fab9a8",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "blackopsone.woff2",
+          "weight": "400",
+          "source": "ofl/blackopsone/BlackOpsOne-Regular.ttf",
+          "sourceSha256": "282a825b5f294377387e3969f765408157dbea8da0f5d0aae68c6bc704b145b3",
+          "sha256": "2bbfb6c2807fa0eee6fe663d7f225efdad6c906b81e3d1b4ee03b47de14df908",
+          "bytes": 56020,
+          "glyphs": 760,
+          "unicodeCodepoints": 693,
+          "unicodeCmapSha256": "56610b66d6a5129220f625a55256eb9adf6c034f52e00e1f45d35b24138deb44"
+        }
+      ]
+    },
+    {
+      "name": "Rubik Dirt",
+      "slug": "rubikdirt",
+      "license": {
+        "source": "ofl/rubikdirt/OFL.txt",
+        "file": "rubikdirt-OFL.txt",
+        "sha256": "f9e2d4498ea80d38bac7b8841d68af68c132fa67e1552e7c05717e6987de1d74",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "rubikdirt.woff2",
+          "weight": "400",
+          "source": "ofl/rubikdirt/RubikDirt-Regular.ttf",
+          "sourceSha256": "9de3d928e434a47ec85d759012c8a0ebfeab0860076eea4e3989a47c5e213123",
+          "sha256": "c61d6351a379151694fe89974fb53d4fd421bbe0a5fd875d0099d2a6008ea989",
+          "bytes": 691508,
+          "glyphs": 774,
+          "unicodeCodepoints": 689,
+          "unicodeCmapSha256": "2813f75b9ce7335075b65cd4c4b7bb96ec5942ee63d24d994bcd24383b4f8106"
+        }
+      ]
+    },
+    {
+      "name": "Rubik Glitch",
+      "slug": "rubikglitch",
+      "license": {
+        "source": "ofl/rubikglitch/OFL.txt",
+        "file": "rubikglitch-OFL.txt",
+        "sha256": "f9e2d4498ea80d38bac7b8841d68af68c132fa67e1552e7c05717e6987de1d74",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "rubikglitch.woff2",
+          "weight": "400",
+          "source": "ofl/rubikglitch/RubikGlitch-Regular.ttf",
+          "sourceSha256": "260245012483d56956269100ebece747aa95b4b67e5a9411a81a36e91f55e653",
+          "sha256": "d13be35c693087d2158daba3c1df0d5178ef47d9198bcac8d6eff3801da776ba",
+          "bytes": 159160,
+          "glyphs": 774,
+          "unicodeCodepoints": 689,
+          "unicodeCmapSha256": "2813f75b9ce7335075b65cd4c4b7bb96ec5942ee63d24d994bcd24383b4f8106"
+        }
+      ]
+    },
+    {
+      "name": "Monoton",
+      "slug": "monoton",
+      "license": {
+        "source": "ofl/monoton/OFL.txt",
+        "file": "monoton-OFL.txt",
+        "sha256": "585c6d2da8bcd8ffa651e0016f2e992a6891b625143a46a1dacf00699a817d9a",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "monoton.woff2",
+          "weight": "400",
+          "source": "ofl/monoton/Monoton-Regular.ttf",
+          "sourceSha256": "951c4cea65ffede784a7c9672feec5d329a7e1e12216c42d53ecf36c90d04dea",
+          "sha256": "35099adefc055d18f2c5cf3f6b951c835ab19aa579e024d8831e2d0c4bd7b1fc",
+          "bytes": 20152,
+          "glyphs": 373,
+          "unicodeCodepoints": 371,
+          "unicodeCmapSha256": "e7289163ce753637149f6e8f4762b48262304881ce69c2cf4015af1fe203ed51"
+        }
+      ]
+    },
+    {
+      "name": "Press Start 2P",
+      "slug": "pressstart2p",
+      "license": {
+        "source": "ofl/pressstart2p/OFL.txt",
+        "file": "pressstart2p-OFL.txt",
+        "sha256": "705960c3281a5765ecc0b59bd4ed7ca59eed165748076bc2fc3e8fdbfeb944b0",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "pressstartp.woff2",
+          "weight": "400",
+          "source": "ofl/pressstart2p/PressStart2P-Regular.ttf",
+          "sourceSha256": "034c77f1f05ec89421e4a63f0e3a4ca1ecf852cc6d2bf611f126f275728e017d",
+          "sha256": "066b8d189f82e00017442427e2f784401dc4a06117e0e07eea90d488f86b680e",
+          "bytes": 29692,
+          "glyphs": 658,
+          "unicodeCodepoints": 656,
+          "unicodeCmapSha256": "5b836dd64b2a3a5cc9f9ebb97b928bef550e143c21ba18e99cf442b1282fd346"
+        }
+      ]
+    },
+    {
+      "name": "Space Mono",
+      "slug": "spacemono",
+      "license": {
+        "source": "ofl/spacemono/OFL.txt",
+        "file": "spacemono-OFL.txt",
+        "sha256": "8e4ee42b2553e1e01504e61cb0d46d148cd8c9e5eacaa3622a7df2d4f2955b9f",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "spacemono.woff2",
+          "weight": "400",
+          "source": "ofl/spacemono/SpaceMono-Regular.ttf",
+          "sourceSha256": "95837e182baeeada83368f7748db28357f0a1b75c6b84ff7065b5edf933c8e18",
+          "sha256": "a3281287939a152ec1485709aff1a77515b4f0d657a24fcda3a5a439aa39adb2",
+          "bytes": 34932,
+          "glyphs": 765,
+          "unicodeCodepoints": 624,
+          "unicodeCmapSha256": "6f7cb60d1eb15f58082c4a3a39a17b1f1851af046497e8bc9c05d802d4703fdb"
+        }
+      ]
+    },
+    {
+      "name": "Comfortaa",
+      "slug": "comfortaa",
+      "license": {
+        "source": "ofl/comfortaa/OFL.txt",
+        "file": "comfortaa-OFL.txt",
+        "sha256": "bc85bae0b512b799bbfb2b916e4d0a34cfd963d09778cd783e248b479e67760a",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "comfortaa.woff2",
+          "weight": "300 700",
+          "source": "ofl/comfortaa/Comfortaa[wght].ttf",
+          "sourceSha256": "0fc3f45dc48b614db9c39181502544b37217ecbf8bee2fb35886992bc96c5bd3",
+          "sha256": "c87a13f22edaf4c6de52e4c00f94c9cb0497739be765956f7fcfaf3903ea6b6d",
+          "bytes": 79988,
+          "glyphs": 874,
+          "unicodeCodepoints": 850,
+          "unicodeCmapSha256": "11fa4d80f1a7e9bbedd2693ffb6dbf168109766ceed451d6cf0af10f6102bf07"
+        }
+      ]
+    },
+    {
+      "name": "Shrikhand",
+      "slug": "shrikhand",
+      "license": {
+        "source": "ofl/shrikhand/OFL.txt",
+        "file": "shrikhand-OFL.txt",
+        "sha256": "325e890b8b26fe0a683c3ba24c506d902bdd7034d9c47bd7fa2bb72b5433b9c9",
+        "spdx": "OFL-1.1"
+      },
+      "faces": [
+        {
+          "file": "shrikhand.woff2",
+          "weight": "400",
+          "source": "ofl/shrikhand/Shrikhand-Regular.ttf",
+          "sourceSha256": "8ba32f6d6a96fb8dbc92fc1acfbc4d2123d5348063d89b2c3dd784e7afcb81af",
+          "sha256": "19cb614d505b5e37fe31bde8ea2e0e7f1d9ea518916e1bea37f6cbf63e79a654",
+          "bytes": 60680,
+          "glyphs": 841,
+          "unicodeCodepoints": 421,
+          "unicodeCmapSha256": "583aa81c7aba3ae5dfd5d7659fa106cbca595cca119171894fd97abb849d1975"
         }
       ]
     }

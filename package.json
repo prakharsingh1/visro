@@ -1,6 +1,6 @@
 {
   "name": "visro",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "private": true,
   "description": "A local-first creative studio for macOS with your own Gemini key.",
   "author": "Prakhar Singh",
@@ -55,6 +55,7 @@
       "electron/**/*",
       "!electron/native-smoke.cjs",
       "!electron/native-v07-controls.cjs",
+      "!electron/native-v08-library.cjs",
       "package.json",
       "LICENSE",
       "THIRD_PARTY_NOTICES.md",

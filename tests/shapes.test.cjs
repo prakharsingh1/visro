@@ -4,10 +4,35 @@ const shapes=import('../src/shapes.ts');
 
 test('shape library covers distinct editable shape families and retains every existing shape ID',async()=>{
  const {SHAPE_LIBRARY,SHAPE_CATEGORIES,getShapeDefinition}=await shapes;
- assert.ok(SHAPE_LIBRARY.length>=50);assert.equal(new Set(SHAPE_LIBRARY.map(shape=>shape.id)).size,SHAPE_LIBRARY.length);
+ assert.equal(SHAPE_LIBRARY.length,144);assert.equal(new Set(SHAPE_LIBRARY.map(shape=>shape.id)).size,SHAPE_LIBRARY.length);
  assert.deepEqual([...new Set(SHAPE_LIBRARY.map(shape=>shape.category))],SHAPE_CATEGORIES);
- for(const id of ['rect','circle','triangle','line','star','ellipse','diamond','pentagon','hexagon','arrow','heart','blob'])assert.ok(getShapeDefinition(id),`${id} must remain compatible.`);
+ for(const id of ['rect','circle','triangle','line','star','ellipse','diamond','pentagon','hexagon','arrow','heart','blob','squircle','quarter-ring','star7','four-way-arrow','burst-callout','blob-kidney','flow-document','flow-database'])assert.ok(getShapeDefinition(id),`${id} must remain compatible.`);
  assert.equal(getShapeDefinition('unknown'),undefined);
+});
+
+test('shape search supports familiar names, all query words, and family filtering',async()=>{
+ const {searchShapes}=await shapes;
+ assert.equal(searchShapes().length,144);
+ for(const [query,id]of[['square','rect'],['disc','circle'],['rounded triangle','rounded-triangle'],['storage','flow-database'],['start end','flow-terminator'],['half circle','semicircle']])assert.ok(searchShapes(query).some(shape=>shape.id===id),`${query} finds ${id}`);
+ assert.equal(searchShapes('','Organic').length,14);
+ assert.equal(searchShapes('','Flowchart').length,18);
+ assert.deepEqual(searchShapes('cloud','Polygons'),[]);
+ assert.deepEqual(searchShapes('unexpected-nonexistent'),[]);
+});
+
+test('expanded shapes retain real transparent holes and every silhouette paints without raster dependencies',async()=>{
+ const {SHAPE_LIBRARY,getShapeGeometry}=await shapes,{StaticCanvas,Path,Polygon,Line,Point}=await import('fabric/node');
+ const canvas=new StaticCanvas(undefined,{width:240,height:240,enableRetinaScaling:false,renderOnAddRemove:false});
+ try{
+  for(const definition of SHAPE_LIBRARY){
+   canvas.clear();const shape=getShapeGeometry(definition.id),options={fill:shape.filled?'#7044bb':null,stroke:shape.filled?undefined:'#7044bb',strokeWidth:shape.strokeWidth,strokeLineCap:shape.lineCap||'round',strokeDashArray:shape.dash?[...shape.dash]:undefined,objectCaching:false};
+   const object=shape.kind==='polygon'?new Polygon(shape.points,options):shape.kind==='line'?new Line(shape.points,options):new Path(shape.path,options);
+   object.setPositionByOrigin(new Point(120,120),'center','center');canvas.add(object);canvas.renderAll();
+   const data=canvas.getContext().getImageData(0,0,240,240).data;let painted=0;for(let i=3;i<data.length;i+=4)if(data[i])painted++;
+   assert.ok(painted>25,`${definition.id} visibly paints its native geometry`);
+   if(['rectangle-frame','flow-summing'].includes(definition.id))assert.equal(data[(120*240+120)*4+3],0,`${definition.id} center is a real compound-path cutout`);
+  }
+ }finally{await canvas.dispose();}
 });
 
 test('all native shape geometries parse as Fabric vectors and retain finite editable/exportable bounds after roundtrip',async()=>{

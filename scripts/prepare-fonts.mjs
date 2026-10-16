@@ -18,7 +18,7 @@ async function validFile(file, expected) {
   try { const bytes = await readFile(file); return sha256(bytes) === expected; } catch { return false; }
 }
 async function officialBytes(source, expected) {
-  if (!/^ofl\/[a-z]+\/[A-Za-z0-9,[\]_.-]+\.(?:ttf|txt)$/.test(source)) throw new Error('Invalid font source path.');
+  if (!/^ofl\/[a-z0-9]+\/[A-Za-z0-9,[\]_.-]+\.(?:ttf|txt)$/.test(source)) throw new Error('Invalid font source path.');
   const cache = join(sourceCache, source.replaceAll('/', '-'));
   if (await validFile(cache, expected)) return readFile(cache);
   let last;

@@ -8,14 +8,14 @@ const catalog=Promise.all([import('../src/templates.ts'),import('../src/template
 
 const existingIds=['next-idea','summer-drop','wildflower-story','studio-cover','night-market','olive-note','brand-orbit','small-habits','coffee-menu','new-chapter','morning-ritual','creative-workshop','book-club-note','olive-object','open-studio-day','weekly-reset','product-release','year-in-small-moments','future-by-design','conversation-agenda','quarterly-snapshot','people-behind-work','roadmap-next-four','case-study-change','thanks-conversation','clay-and-company','jazz-after-dark','walk-a-little-further','learn-build-repeat','bakery-first-light','stories-in-the-square','garden-lunch-menu','evening-drinks-menu','architect-business-card','creative-business-card','cv-clear-path','cv-editorial-profile','birthday-good-company','wedding-garden-vows','gallery-new-perspectives','dinner-at-our-table','five-small-actions','budget-with-intention','field-notes-newsletter','creative-guide-thumbnail','certificate-quiet-achievement'];
 
-test('530 original templates preserve existing project template identities',async()=>{
+test('650 original templates preserve existing project template identities',async()=>{
   const [{TEMPLATES,getTemplate},{ORIGINAL_TEMPLATE_LIBRARY:originals,TEMPLATE_PROVENANCE}]=await catalog;
-  assert.equal(TEMPLATES.length,530);
+  assert.equal(TEMPLATES.length,650);
   assert.equal(originals.length,454);
   assert.deepEqual(TEMPLATES.slice(0,46).map(t=>t.id),existingIds);
   assert.deepEqual(TEMPLATES.slice(0,500).map(t=>t.id),[...existingIds,...originals.map(t=>t.id)]);
-  assert.equal(new Set(TEMPLATES.map(t=>t.id)).size,530);
-  assert.equal(new Set(TEMPLATES.map(t=>t.name)).size,530);
+  assert.equal(new Set(TEMPLATES.map(t=>t.id)).size,650);
+  assert.equal(new Set(TEMPLATES.map(t=>t.name)).size,650);
   for(const t of TEMPLATES)assert.equal(getTemplate(t.id),t);
   assert.equal(getTemplate('does-not-exist'),undefined);
   assert.equal(TEMPLATE_PROVENANCE.requiresNetwork,false);

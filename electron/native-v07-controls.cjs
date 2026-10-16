@@ -2,6 +2,7 @@
 const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const path=require('node:path');
+const{ensureNativeForeground,waitForNativePaint}=require('./native-v08-library.cjs');
 const MARKERS=[['none','No Marker'],['arrow','Arrow'],['circle-outline','Outline Circle'],['square-outline','Outline Square'],['diamond-outline','Outline Diamond'],['bar','Bar'],['triangle','Triangle'],['circle','Circle'],['square','Square'],['diamond','Diamond']];
 const ROUTES=[['straight','Straight'],['elbow','Elbowed'],['curved','Curved']];
 const PRESETS=['Drop','Glow','Echo','Glitch','Radioactive','Retro','Midnight','Malibu','Chroma','Digital','Aura','VHS','Sunset','Metallic','Laser'];
@@ -29,14 +30,21 @@ function assertNativeVector(object){
 /** Runs in the real renderer. Nearest alignment can put a tile's center beneath
  * the sticky Remove footer; center it, let layout settle and require the actual
  * delivered hit target before dispatching Chromium pointer input. */
-async function prepareNativeEffectClick(label){
- const element=Array.from(document.querySelectorAll('.shape-effect-tile')).find(button=>button.getAttribute('aria-label')===label);
- if(!element)throw new Error('The native effect click target is missing: '+label);
- element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
- await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
- const rect=element.getBoundingClientRect(),point={x:rect.left+rect.width/2,y:rect.top+rect.height/2},hit=document.elementFromPoint(point.x,point.y);
- if(!rect.width||!rect.height||!hit||!(hit===element||element.contains(hit)))throw new Error('The native effect tile does not receive the pointer: '+label);
- return{label,point,rect:{left:rect.left,top:rect.top,width:rect.width,height:rect.height},scrollTop:element.closest('.asset-panel')?.scrollTop??null};
+async function prepareNativeEffectClick(label,waitForPaint=waitForNativePaint){
+ const state={label,stage:'locating',started:performance.now(),frames:0,visibility:document.visibilityState??'unknown',focused:document.hasFocus?.()??null};
+ globalThis.__visroV07EffectPrep=state;
+ const sample=()=>{state.elapsedMs=performance.now()-state.started;state.visibility=document.visibilityState??'unknown';state.focused=document.hasFocus?.()??null;};
+ try{
+  const element=Array.from(document.querySelectorAll('.shape-effect-tile')).find(button=>button.getAttribute('aria-label')===label);
+  if(!element)throw new Error('The native effect click target is missing: '+label);
+  state.stage='scrolling';element.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'});
+  state.stage='waiting-frames';const frames=await waitForPaint(label,frame=>{state.frames=frame.frames;sample();});state.frames=frames.frames;
+  const rect=element.getBoundingClientRect(),point={x:rect.left+rect.width/2,y:rect.top+rect.height/2},hit=document.elementFromPoint(point.x,point.y);
+  state.stage='hit-testing';sample();state.hit=hit?.tagName??null;
+  if(!rect.width||!rect.height||!hit||!(hit===element||element.contains(hit)))throw new Error('The native effect tile does not receive the pointer: '+label);
+  state.stage='ready';sample();
+  return{label,point,rect:{left:rect.left,top:rect.top,width:rect.width,height:rect.height},scrollTop:element.closest('.asset-panel')?.scrollTop??null,frames:{count:state.frames,elapsedMs:state.elapsedMs,visibility:state.visibility,focused:state.focused}};
+ }catch(error){sample();if(/frame wait stalled/.test(error.message))state.stage='frame-timeout';state.failure=error.message;throw error;}
 }
 async function runNativeV07Controls(renderer,main,profile,screenshotPath,onProgress,helpers){
  assert.ok(main,'Version0.7 native controls require the isolated main-process inspector.');
@@ -54,7 +62,12 @@ async function runNativeV07Controls(renderer,main,profile,screenshotPath,onProgr
  const scenePoint=(point)=>renderer.evaluate(`(()=>{const page=document.querySelector('.continuous-page.active'),r=page.getBoundingClientRect();return{x:r.left+${point.x}*r.width/Number(page.dataset.pageWidth),y:r.top+${point.y}*r.height/Number(page.dataset.pageHeight),zoom:r.width/Number(page.dataset.pageWidth)};})()`);
  const pointClick=async point=>{await renderer.command('Input.dispatchMouseEvent',{type:'mousePressed',x:point.x,y:point.y,button:'left',buttons:1,clickCount:1});await renderer.command('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x,y:point.y,button:'left',buttons:0,clickCount:1});};
  const capture=async suffix=>{if(!screenshotPath)return;const shot=await renderer.command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});await fs.writeFile(path.resolve(screenshotPath).replace(/\.png$/i,`-${suffix}.png`),Buffer.from(shot.data,'base64'));};
- const clickEffect=async name=>{const snapshot=await renderer.evaluate(`(${prepareNativeEffectClick.toString()})(${JSON.stringify('Apply '+name+' effect')})`);renderer.v07Trace.push({effectPointer:snapshot});for(const type of ['mousePressed','mouseReleased'])await renderer.command('Input.dispatchMouseEvent',{type,...snapshot.point,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1});};
+ const clickEffect=async name=>{
+  const label='Apply '+name+' effect';await ensureNativeForeground(renderer,main,waitForRenderer,label,renderer.v07Trace);
+  try{const snapshot=await renderer.evaluate(`(${prepareNativeEffectClick.toString()})(${JSON.stringify(label)},${waitForNativePaint.toString()})`);renderer.v07Trace.push({effectPointer:snapshot});for(const type of ['mousePressed','mouseReleased'])await renderer.command('Input.dispatchMouseEvent',{type,...snapshot.point,button:'left',buttons:type==='mousePressed'?1:0,clickCount:1});}
+  catch(error){const diagnostic=await renderer.evaluate('globalThis.__visroV07EffectPrep??null');renderer.v07Trace.push({effectPrepFailure:diagnostic});throw error;}
+  finally{await renderer.evaluate('delete globalThis.__visroV07EffectPrep');}
+ };
  const reload=async name=>{const origin=await renderer.evaluate('performance.timeOrigin');await renderer.command('Page.reload');await waitForRenderer(renderer,`performance.timeOrigin!==${origin}&&document.readyState==='complete'&&Boolean(document.querySelector('#root')?.textContent?.trim())&&!document.querySelector('.canvas-loading')`,'A fresh document must replace the previous advanced control fixture.');await openHomeDesign(renderer,name);await waitForRenderer(renderer,"Boolean(document.querySelector('.continuous-page.active'))&&!document.querySelector('.busy-toast,.canvas-loading,.home-shell')",'The advanced saved design must finish reopening.');};
  const selectSavedCenter=async shape=>{let center;if(shape.visroLine){const points=lineSceneEndpoints(shape);center={x:(points.start.x+points.end.x)/2,y:(points.start.y+points.end.y)/2};}else center={x:540,y:540};await pointClick(await scenePoint(center));await waitForRenderer(renderer,"document.querySelector('.canvas-footer').textContent.includes('Element selected')",'The actual reopened native vector must select.');};
  const mode=async name=>{await nativeClick(renderer,"document.querySelector('.editing-mode-trigger')");await nativeClick(renderer,`document.querySelector('[role="menuitemradio"][data-mode=${JSON.stringify(name)}]')`);await waitForRenderer(renderer,`document.querySelector('.editing-mode-trigger').textContent.trim()===${JSON.stringify(name[0].toUpperCase()+name.slice(1))}`,'The native viewing mode must change.');};
@@ -99,6 +112,6 @@ async function runNativeV07Controls(renderer,main,profile,screenshotPath,onProgr
   await history(false);await waitObject("object.visroShapeEffect?.preset==='midnight'&&object.visroShapeEffect.intensity===64",'Undo must restore the complete native effect.');await history(true);await waitObject('!object.visroShapeEffect','Redo must remove the effect again.');
   await reload('Native shape effects acceptance');const reopened=await object();assert.equal(reopened.id,shapeId);assert.equal(Boolean(reopened.visroShapeEffect),false);assert.ok(reopened.fill?.colorStops?.length>=2&&reopened.stroke?.colorStops?.length>=2);await selectSavedCenter(reopened);await capture('shape-effects');report.shapeEffects={presets,gradientFillAndStroke:true,nativeSvgGradientAndFilter:true,png:effectPNG,removeRetainsBasePaint:true,removeUndoRedo:true,reopened:true,readonly:effectReadonly};return report;
  }catch(error){renderer.v07Trace.push({failure:error.message});await capture('v07-controls-failure');throw error;}
- finally{await renderer.evaluate('delete window.__visroV07StaleHandlers');await renderer.evaluate(`(()=>{const tabs=JSON.parse(localStorage.getItem('visro-workspace-tabs')||'[]'),index=tabs.findIndex(tab=>tab.id===${JSON.stringify(originalId)});document.querySelectorAll('.desktop-tab[role="tab"]')[index]?.click();})()`);await waitForRenderer(renderer,`localStorage.getItem('visro-active-design')===${JSON.stringify(originalId)}&&!document.querySelector('.home-shell,.busy-toast,.canvas-loading')`,'Advanced controls must restore the original isolated design.');}
+ finally{await renderer.evaluate('delete window.__visroV07StaleHandlers;delete globalThis.__visroV07EffectPrep');await renderer.evaluate(`(()=>{const tabs=JSON.parse(localStorage.getItem('visro-workspace-tabs')||'[]'),index=tabs.findIndex(tab=>tab.id===${JSON.stringify(originalId)});document.querySelectorAll('.desktop-tab[role="tab"]')[index]?.click();})()`);await waitForRenderer(renderer,`localStorage.getItem('visro-active-design')===${JSON.stringify(originalId)}&&!document.querySelector('.home-shell,.busy-toast,.canvas-loading')`,'Advanced controls must restore the original isolated design.');}
 }
 module.exports={runNativeV07Controls,lineSceneEndpoints,deliveredPointerToScene,assertNativeVector,prepareNativeEffectClick};

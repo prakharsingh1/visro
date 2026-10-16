@@ -14,5 +14,11 @@
 .element-shape-tile:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px;}
 .element-library-back{align-self:flex-start;display:flex;align-items:center;gap:5px;padding:0;border:0;background:none;color:var(--text);font-size:13px;}
 .shape-library.compact{gap:12px;}
+.shape-library-categories{display:flex;gap:8px;overflow-x:auto;scrollbar-width:thin;padding:1px 1px 7px;margin-bottom:-9px;}
+.shape-library-categories button{flex:none;white-space:nowrap;height:32px;padding:0 11px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:12px;}
+.shape-library-categories button[aria-pressed="true"]{border-color:var(--accent);background:var(--accent-soft);color:var(--accent-text);}
+.shape-library-categories button:focus-visible,.shape-library-pagination button:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px;}
+.shape-library-pagination{display:flex;align-items:center;justify-content:center;gap:14px;font-size:12px;color:var(--muted);}
+.shape-library-pagination button{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border:1px solid var(--border);border-radius:7px;background:var(--surface);}
 .elements-filter-tabs{overflow-x:auto;scrollbar-width:none;white-space:nowrap;}
 .elements-filter-tabs button{flex:none;}

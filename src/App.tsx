@@ -89,6 +89,12 @@ import {PositionPanel} from "./PositionPanel";
 import {StrokeStyle,CornerRounding} from './StrokeStyle';
 import {LineEditing} from './LineEditing';
 import {ShapeEffects} from './ShapeEffects';
+import {TextLibrary} from './TextLibrary';
+import {ElementsHome} from './ElementsHome';
+import {type ElementCategory} from './ElementCategoryIcon';
+import {MockupLibrary} from './MockupLibrary';
+import {ElementAnimations} from './ElementAnimations';
+import {rememberElement,type RecentElementKind} from './element-recents';
 import {ImageControls} from "./ImageControls";
 import {ElementMenu,type ElementAction} from "./ElementMenu";
 import {CanvasGuides} from "./CanvasGuides";
@@ -276,7 +282,8 @@ export default function App() {
     [mode, setMode] = useState<"design"|"document"|"sheet"|"video">("design"),
     [customFonts, setCustomFonts] = useState<string[]>([]),
     [fileMenu, setFileMenu] = useState(false), [presentAuto, setPresentAuto] = useState(false);
-  const [elementsTab,setElementsTab]=useState<'all'|'shapes'|'graphics'|'photos'|'frames'|'grids'>('all'),[publicImagePreviewOpen,setPublicImagePreviewOpen]=useState(false);
+  const [recentElementsRevision,setRecentElementsRevision]=useState(0);
+  const [elementsTab,setElementsTab]=useState<'all'|'shapes'|'graphics'|'photos'|'frames'|'grids'|'animations'|'forms'|'mockups'|'3d'>('all'),[publicImagePreviewOpen,setPublicImagePreviewOpen]=useState(false);
   const photoSources=useRef(new Map<string,NonNullable<import('./editor-types').ElementMetadata['source']>>());
   const [maskSources,setMaskSources]=useState<{original:string;current:string}|null>(null);
   const [quickActionsOpen,setQuickActionsOpen]=useState(false);
@@ -1056,6 +1063,9 @@ export default function App() {
   const nav = [
     {id:'templates' as const,label:'Templates',Icon:TemplatesIcon},{id:'elements' as const,label:'Elements',Icon:ElementsIcon},{id:'text' as const,label:'Text',Icon:TextIcon},{id:'brand' as const,label:'Brand',Icon:BrandIcon},{id:'uploads' as const,label:'Uploads',Icon:UploadsIcon},{id:'draw' as const,label:'Tools',Icon:ToolsIcon},{id:'projects' as const,label:'Projects',Icon:ProjectsIcon},{id:'apps' as const,label:'Apps',Icon:AppsIcon},{id:'components' as const,label:'Components',Icon:ComponentsIcon},{id:'audio' as const,label:'Audio',Icon:AudioIcon},{id:'background' as const,label:'Background',Icon:BackgroundIcon},{id:'charts' as const,label:'Charts',Icon:ChartsIcon},
   ];
+  const rememberRecent=(kind:RecentElementKind,id:string)=>{rememberElement(kind,id);setRecentElementsRevision(value=>value+1);};
+  const browseElementCategory=(kind:ElementCategory)=>{setSearch('');if(kind==='videos')choosePanel('video');else if(kind==='audio')choosePanel('audio');else if(kind==='charts')choosePanel('charts');else if(kind==='sheets')choosePanel('sheets');else if(kind==='tables'){choosePanel('tools');setToolTab('tables');}else setElementsTab(kind);};
+  const insertRecentElement=(kind:RecentElementKind,id:string)=>{void work('Adding element',async()=>{const studio=engine.current;if(!studio)return;if(kind==='shape')studio.addShape(id as Parameters<StudioEditor['addShape']>[0]);else if(kind==='graphic')studio.addGraphic(id);else if(kind==='frame')await studio.insertFrame(id);else if(kind==='mockup')await studio.insertMockup(id);else studio.addTextCombination(id);rememberRecent(kind,id);});};
   const bounds=selected?engine.current?.getSelectionBounds():null;
   const selectionActionsPosition=bounds?{left:Math.max(8,Math.min(bounds.left+bounds.width/2-82,(viewportRef.current?.clientWidth||800)-172)),top:Math.max(8,Math.min(bounds.top>=118?bounds.top-62:bounds.top+bounds.height+64,(viewportRef.current?.clientHeight||600)-44))}:null;
   const activeColour=colourTarget==='effect'?selected?.shapeEffect?.color||'#000000':colourTarget==='effect2'?selected?.shapeEffect?.color2||'#00ffff':colourTarget==='stroke'?selected?.stroke||'#000000':selected?.vectorColors?.length?(graphicColorTarget&&selected.vectorColors.includes(graphicColorTarget)?graphicColorTarget:selected.vectorColors[0]):selected?.strokeOnly?selected.stroke:selected?.fill||state.background;
@@ -1083,7 +1093,7 @@ export default function App() {
   return (
     <div className={`studio-app ${desktop?"native-desktop":""} ${inspectorOpen?"inspector-open position-open":panelOpen?"panel-open":""} ${commentsOpen?"comments-open":""} ${notesOpen?"notes-open":""} ${home?"home-open":""}`}>
       {home && <Home dark={dark} onTheme={toggleTheme} onSettings={()=>setModal("settings")} refresh={homeRefresh} onOpen={openDesign} onCreate={createFormat} onTemplate={useTemplate} onImport={()=>projectRef.current?.click()} onNavigate={p=>{setHome(false);choosePanel(p);}}/>}
-      <div className="desktop-tabs"><button className="desktop-home-tab" aria-label="Home" title="Home (⇧⌘H)" onClick={goHome}><StudioIcon name="home" size={22}/></button><div className="desktop-tab-list" role="tablist" aria-label="Open designs">{workspaceTabs.map(tab=><div key={tab.id} className={`desktop-tab-shell ${!home&&tab.id===activeId.current?'active':''}`}><button className="desktop-tab" role="tab" aria-selected={!home&&tab.id===activeId.current} onClick={()=>openWorkspaceTab(tab.id)}><StudioIcon name="presentation" size={19}/><span>{tab.name} — Visro</span></button><button className="desktop-tab-close" aria-label={`Close ${tab.name} tab`} onClick={()=>closeWorkspaceTab(tab.id)}><X size={14}/></button></div>)}</div><button className="desktop-new-tab" aria-label="New design" title="New design (⌘T)" onClick={()=>void newDesign()}><Plus size={22}/></button></div>
+      <div className="desktop-tabs"><button className="desktop-home-tab" aria-label="Home" title="Home (⇧⌘H)" onClick={goHome}><StudioIcon name="home" size={22}/></button><span className="desktop-tab-divider" aria-hidden="true"/><div className="desktop-tab-list" role="tablist" aria-label="Open designs">{workspaceTabs.map(tab=><div key={tab.id} className={`desktop-tab-shell ${!home&&tab.id===activeId.current?'active':''}`}><button className="desktop-tab" role="tab" aria-selected={!home&&tab.id===activeId.current} onClick={()=>openWorkspaceTab(tab.id)}><StudioIcon name="presentation" size={19}/><span>{tab.name} — Visro</span></button><button className="desktop-tab-close" aria-label={`Close ${tab.name} tab`} onClick={()=>closeWorkspaceTab(tab.id)}><X size={14}/></button></div>)}</div><button className="desktop-new-tab" aria-label="New design" title="New design (⌘T)" onClick={()=>void newDesign()}><Plus size={22}/></button></div>
       <header className="topbar">
         <div ref={fileMenuRef} className="top-menu-wrap"><button className="quiet-button top-menu" aria-expanded={fileMenu} onClick={()=>setFileMenu(!fileMenu)}>File <ChevronDown size={13}/></button>{fileMenu&&<div className="file-menu">{[["New design",()=>void newDesign()],["Open project",()=>void open()],["Save project",()=>void save()],["Your projects",goHome],["Version history",()=>{choosePanel("tools");setToolTab("versions");}]].map(([label,fn])=><button key={String(label)} onClick={()=>{setFileMenu(false);(fn as ()=>void)();}}>{String(label)}</button>)}
           <div className="file-settings-wrap" onMouseEnter={()=>setViewMenu(true)}><button className="file-settings-trigger" aria-expanded={viewMenu} onClick={()=>setViewMenu(true)} onKeyDown={e=>{if(e.key==='ArrowRight'){e.preventDefault();setViewMenu(true);}}}>Settings <ChevronRight size={15}/></button>{viewMenu&&<div className="file-menu view-settings-menu">
@@ -1144,7 +1154,7 @@ export default function App() {
             </IconButton>
           </div>
         </nav>
-        <aside inert={editingMode!=='editing'} className={`asset-panel ${panel==='elements'?'elements-panel':''} ${!panelOpen||inspectorOpen?"hidden":""}`} onPointerDownCapture={event=>{if(['font','color'].includes(panel)&&engine.current?.isTextEditing()&&(event.target as HTMLElement).closest('button'))event.preventDefault();}}>
+        <aside inert={editingMode!=='editing'} className={`asset-panel ${panel==='elements'?'elements-panel':panel==='text'?'text-panel':''} ${!panelOpen||inspectorOpen?"hidden":""}`} onPointerDownCapture={event=>{if(['font','color'].includes(panel)&&engine.current?.isTextEditing()&&(event.target as HTMLElement).closest('button'))event.preventDefault();}}>
           <div className="panel-heading">
             <div>
 
@@ -1166,15 +1176,15 @@ export default function App() {
             </div>
             <button className="icon-button" aria-label="Close side panel" onClick={()=>setPanelOpen(false)}><X size={20}/></button>
           </div>
-          {(panel === "templates" || panel === "elements") && (
+          {(panel === "templates" || panel === "elements" || panel === "text") && (
             <label className="search-box">
               <Search size={16} />
               <input
-                aria-label={panel==='templates'?'Search templates':elementsTab==='photos'?'Search photos':'Search elements'}
+                aria-label={panel==='templates'?'Search templates':panel==='text'?'Search fonts and combinations':elementsTab==='photos'?'Search photos':'Search elements'}
                 placeholder={
                   panel === "templates"
                     ? "Search templates"
-                    : elementsTab==='photos'?"Search photos":"Search elements"
+                    : panel==='text'?"Search fonts and combinations":elementsTab==='photos'?"Search photos":"Search elements"
                 }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1214,106 +1224,27 @@ export default function App() {
               </button>
             </>
           )}
-          {panel === "elements" && (
-            <>
-              {elementsTab!=='all'&&<button className="element-library-back" onClick={()=>{setElementsTab('all');setSearch('');}}><ChevronLeft size={18}/>Elements</button>}
-              {search.trim()&&<div className="elements-filter-tabs" role="tablist" aria-label="Element categories">{(['all','shapes','graphics','photos','frames','grids'] as const).map(tab=><button key={tab} role="tab" aria-selected={elementsTab===tab} tabIndex={elementsTab===tab?0:-1} onClick={()=>setElementsTab(tab)}>{tab[0].toUpperCase()+tab.slice(1)}</button>)}</div>}
-              {elementsTab==='photos'?<PublicImageLibrary query={search} onQueryChange={setSearch} showSearch={false} onInsert={importPublicImage} onNotify={notify} onPreviewChange={setPublicImagePreviewOpen}/>:elementsTab==='graphics'?<GraphicsLibrary query={search} onQueryChange={setSearch} onInsert={graphic=>engine.current?.addGraphic(graphic.id)} onNotify={notify}/>:elementsTab==='shapes'?<ShapeLibrary query={search} onInsert={type=>engine.current?.addShape(type)}/>:elementsTab==='frames'||elementsTab==='grids'?<FrameLibrary kind={elementsTab==='grids'?'grid':'frame'} query={search} onQueryChange={setSearch} onInsert={item=>engine.current!.insertFrame(item.id)} onNotify={notify}/>:<>
-                {!search.trim()&&<><div className="element-section-heading"><h3>Browse categories</h3></div><div className="elements-browse-categories">{[
-                  {name:'Shapes',icon:'elements',run:()=>setElementsTab('shapes')},{name:'Graphics',icon:'components',run:()=>setElementsTab('graphics')},{name:'Photos',icon:'image',run:()=>setElementsTab('photos')},
-                  {name:'Videos',icon:'video',run:()=>choosePanel('video')},{name:'Audio',icon:'audio',run:()=>choosePanel('audio')},{name:'Charts',icon:'charts',run:()=>choosePanel('charts')},
-                  {name:'Sheets',icon:'sheet',run:()=>choosePanel('sheets')},{name:'Tables',icon:'sheet',run:()=>{choosePanel('tools');setToolTab('tables');}},{name:'Frames',icon:'frames',run:()=>setElementsTab('frames')},
-                  {name:'Grids',icon:'grid',run:()=>setElementsTab('grids')},
-                ].map(item=><button key={item.name} onClick={item.run}><span><StudioIcon name={item.icon as Parameters<typeof StudioIcon>[0]["name"]} size={28}/></span>{item.name}</button>)}</div></>}
-                <div className="element-section-heading"><h3>Shapes</h3><button onClick={()=>setElementsTab('shapes')}>See all</button></div><ShapeLibrary query={search} compact onInsert={type=>engine.current?.addShape(type)}/>
-                <GraphicsLibrary query={search} onQueryChange={setSearch} compact onBrowse={()=>setElementsTab('graphics')} onInsert={graphic=>engine.current?.addGraphic(graphic.id)} onNotify={notify}/>
-                <FrameLibrary kind="frame" query={search} compact onBrowse={()=>setElementsTab('frames')} onInsert={item=>engine.current!.insertFrame(item.id)} onNotify={notify}/>
-                <FrameLibrary kind="grid" query={search} compact onBrowse={()=>setElementsTab('grids')} onInsert={item=>engine.current!.insertFrame(item.id)} onNotify={notify}/>
-              </>}
-
-            </>
-          )}
+          {panel === "elements" && <>
+            {elementsTab!=='all'&&<button className="element-library-back" onClick={()=>{setElementsTab('all');setSearch('');}}><ChevronLeft size={18}/>Elements</button>}
+            {search.trim()&&<div className="elements-filter-tabs" role="tablist" aria-label="Element categories">{(['all','shapes','graphics','photos','frames','grids','animations','forms','mockups','3d'] as const).map(tab=><button key={tab} role="tab" aria-selected={elementsTab===tab} tabIndex={elementsTab===tab?0:-1} onKeyDown={event=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;event.preventDefault();const buttons=Array.from(event.currentTarget.parentElement!.querySelectorAll<HTMLButtonElement>('[role="tab"]')),index=buttons.indexOf(event.currentTarget),next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowRight'?1:-1)+buttons.length)%buttons.length;buttons[next].click();buttons[next].focus();buttons[next].scrollIntoView({block:'nearest',inline:'nearest'});}} onClick={()=>setElementsTab(tab)}>{tab==='3d'?'3D':tab[0].toUpperCase()+tab.slice(1)}</button>)}</div>}
+            {elementsTab==='photos'?<PublicImageLibrary query={search} onQueryChange={setSearch} showSearch={false} onInsert={importPublicImage} onNotify={notify} onPreviewChange={setPublicImagePreviewOpen}/>
+            :elementsTab==='graphics'||elementsTab==='3d'?<GraphicsLibrary key={elementsTab} query={elementsTab==='3d'?`3d ${search}`:search} onQueryChange={setSearch} onInsert={graphic=>{engine.current?.addGraphic(graphic.id);rememberRecent('graphic',graphic.id);}} onNotify={notify}/>
+            :elementsTab==='shapes'?<ShapeLibrary query={search} onInsert={type=>{engine.current?.addShape(type);rememberRecent('shape',type);}}/>
+            :elementsTab==='frames'||elementsTab==='grids'?<FrameLibrary key={elementsTab} kind={elementsTab==='grids'?'grid':'frame'} query={search} onQueryChange={setSearch} onInsert={async item=>{await engine.current!.insertFrame(item.id);rememberRecent('frame',item.id);}} onNotify={notify}/>
+            :elementsTab==='mockups'?<MockupLibrary query={search} onInsert={async id=>{await engine.current?.insertMockup(id);rememberRecent('mockup',id);}} onNotify={notify}/>
+            :elementsTab==='forms'?<TemplateBrowser fixedCategory="Form" query={search} compact onUse={useTemplate}/>
+            :elementsTab==='animations'?<ElementAnimations query={search} animation={state.pageMetadata?.animation} duration={state.pageMetadata?.duration} onChange={patch=>engine.current?.setPageMetadata(patch)} onPreview={()=>void showPresent()}/>
+            :<>
+              {!search.trim()&&<ElementsHome refreshKey={recentElementsRevision} onBrowse={browseElementCategory} onInsert={insertRecentElement}/>}
+              <div className="element-section-heading"><h3>Shapes</h3><button onClick={()=>setElementsTab('shapes')}>See all</button></div><ShapeLibrary query={search} compact onInsert={type=>{engine.current?.addShape(type);rememberRecent('shape',type);}}/>
+              <GraphicsLibrary query={search} onQueryChange={setSearch} compact onBrowse={()=>setElementsTab('graphics')} onInsert={graphic=>{engine.current?.addGraphic(graphic.id);rememberRecent('graphic',graphic.id);}} onNotify={notify}/>
+              <FrameLibrary kind="frame" query={search} compact onBrowse={()=>setElementsTab('frames')} onInsert={async item=>{await engine.current!.insertFrame(item.id);rememberRecent('frame',item.id);}} onNotify={notify}/>
+              <FrameLibrary kind="grid" query={search} compact onBrowse={()=>setElementsTab('grids')} onInsert={async item=>{await engine.current!.insertFrame(item.id);rememberRecent('frame',item.id);}} onNotify={notify}/>
+            </>}
+          </>}
           {panel==='shape-edit'&&<ShapeLibrary onInsert={type=>void work('Changing shape',async()=>{await engine.current?.replaceShape(type);})}/>}
           {panel==='shape-effects'&&(selected?.canShapeEffect?<ShapeEffects effect={selected.shapeEffect} disabled={editingMode!=='editing'||selected.locked} onChange={patch=>{void engine.current?.setShapeEffect(patch).catch(error=>notify(error instanceof Error?error.message:'The shape effect could not be changed.'));}}/>:<p className="small-hint">Select a shape to edit its effects.</p>)}
-          {panel === "text" && (
-            <>
-              <button
-                className="full-button dark"
-                onClick={() => engine.current?.addText("body")}
-              >
-                <Plus size={17} />
-                Add a text box
-              </button>
-              <div className="section-label">Default text styles</div>
-              <button
-                className="text-preset heading"
-                draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"text",role:"heading"}))}
-                onClick={() => engine.current?.addText("heading")}
-              >
-                Add a heading
-                <Plus size={18} />
-              </button>
-              <button
-                className="text-preset subheading"
-                draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"text",role:"subheading"}))}
-                onClick={() => engine.current?.addText("subheading")}
-              >
-                Add a subheading
-                <Plus size={17} />
-              </button>
-              <button
-                className="text-preset body"
-                onClick={() => engine.current?.addText("body")}
-              >
-                Add a little bit of body text
-                <Plus size={16} />
-              </button>
-              <div className="section-label">Font pairings</div>
-              <button
-                className="type-pair"
-                onClick={() => {
-                  engine.current?.addText("heading");
-                  update({
-                    fontFamily: "Georgia",
-                    text: "Beautifully simple.",
-                  });
-                }}
-              >
-                <span className="serif">
-                  Beautifully
-                  <br />
-                  simple.
-                </span>
-                <span>GEORGIA + ARIAL</span>
-                <ArrowUpRight size={17} />
-              </button>
-              <button
-                className="type-pair mono"
-                onClick={() => {
-                  engine.current?.addText("heading");
-                  update({
-                    fontFamily: "Courier New",
-                    text: "IDEAS\nIN MOTION.",
-                  });
-                }}
-              >
-                <span>
-                  IDEAS
-                  <br />
-                  IN MOTION.
-                </span>
-                <span>COURIER NEW</span>
-                <ArrowUpRight size={17} />
-              </button>
-              <div className="help-card">
-                <Type size={18} />
-                <p>
-                  Double-click text on the canvas to write. Press T to add a new
-                  heading.
-                </p>
-              </div>
-            </>
-          )}
+          {panel === "text" && <TextLibrary query={search} onQueryChange={setSearch} onInsert={id=>{engine.current?.addTextCombination(id);rememberRecent('text-combination',id);}} onAddText={role=>engine.current?.addText(role)} onNotify={notify}/>}
           {panel === "uploads" && (
             <>
               <button
@@ -1461,6 +1392,7 @@ export default function App() {
           {panel === "tools" && <ToolsPanel tab={toolTab} setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/>}
           {["video","documents","sheets"].includes(panel) && <div className="feature-panel"><h3>{panel==="video"?"Video studio":panel==="documents"?"Document editor":"Spreadsheet editor"}</h3><p className="small-hint">Create and edit in the workspace.</p><button className="full-button" onClick={()=>setMode("design")}>Return to design canvas</button><button className="full-button coral" onClick={()=>setMode(panel==="documents"?"document":panel==="sheets"?"sheet":"video")}>Open {panel}</button><button className="full-button" onClick={()=>{choosePanel("ai");setAiKind("copy");}}>Write with Visro AI</button></div>}
         </aside>
+        {panelOpen&&!inspectorOpen&&<button className="panel-collapse-control" aria-label="Collapse side panel" title="Collapse side panel" onClick={()=>setPanelOpen(false)}><ChevronLeft size={18}/></button>}
         <main className="canvas-workspace">
           {(selected||mode!=='design')&&<div className="canvas-toolbar context-toolbar" onPointerDownCapture={event=>{if(engine.current?.isTextEditing()&&(event.target as HTMLElement).closest('button'))event.preventDefault();}}>
             <div className="toolbar-left">
@@ -1508,6 +1440,7 @@ export default function App() {
             ref={viewportRef}
             onPointerDown={e=>{if((e.target as HTMLElement).closest('canvas')){interactionRef.current=true;viewportRef.current?.classList.add('interacting');const canvas=engine.current?.canvas.upperCanvasEl;if(canvas&&!engine.current?.isTextEditing()){canvas.tabIndex=0;canvas.focus({preventScroll:true});}}}}
             onPointerUp={()=>{interactionRef.current=false;viewportRef.current?.classList.remove('interacting');}}
+            onDoubleClick={event=>{if(!(event.target instanceof HTMLCanvasElement)||mode!=='design'||editingMode!=='editing'||!ready||drawing||switchingProject.current)return;const studio=engine.current,selection=studio?.getSelected();if(selection?.type==='image'&&!selection.locked){const source=studio?.getImageCropSource();if(source)setCropSource(source);}}}
             onContextMenuCapture={e=>{e.preventDefault();if(mode!=='design'||editingMode!=='editing')return;const studio=engine.current;if(!studio)return;const r=viewportRef.current!.getBoundingClientRect(),page=(e.target as HTMLElement).closest<HTMLElement>('[data-page-id]'),pageId=page?.dataset.pageId,pageBox=page?.getBoundingClientRect(),zoom=studio.canvas.getZoom(),scene=pageBox?{x:(e.clientX-pageBox.left)/zoom,y:(e.clientY-pageBox.top)/zoom}:null,generation=projectGeneration.current,point={x:e.clientX-r.left,y:e.clientY-r.top},menu={x:e.clientX,y:e.clientY};void(async()=>{if(pageId&&pageId!==studio.getState().activePageId){if(pageNavigator.current)await pageNavigator.current(pageId);else await studio.setPage(pageId);await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}if(generation!==projectGeneration.current||engine.current!==studio)return;const v=studio.canvas.viewportTransform,location=scene?{x:scene.x*v[0]+v[4],y:scene.y*v[3]+v[5]}:point;const cur=studio.selectAt({...location,includeLocked:true});if(cur)setContextMenu(menu);})().catch(error=>notify(error instanceof Error?error.message:'The element menu could not be opened.'));}}
             onDragOver={(e) => e.preventDefault()}
             onDrop={e=>{e.preventDefault();const studio=engine.current;if(editingMode!=='editing'||!studio||!ready||switchingProject.current)return;setReplaceTarget(null);replaceImageRef.current=null;
@@ -1518,10 +1451,10 @@ export default function App() {
                 if(pageId!==studio.getState().activePageId){if(pageNavigator.current)await pageNavigator.current(pageId);else await studio.setPage(pageId);}
                 if(origin!==activeId.current||generation!==projectGeneration.current||switchingProject.current||engine.current!==studio)return;
                 const targetFrameId=studio.frameAt(center)||undefined;
-                if(payload.frame){const data=JSON.parse(payload.frame);if(typeof data.id!=='string')throw new Error('Choose a frame from Elements.');await studio.insertFrame(data.id,{center,pageId});return;}
-                if(payload.graphic){const data=JSON.parse(payload.graphic);if(typeof data.id!=='string')throw new Error('Choose a graphic from Elements.');studio.addGraphic(data.id,{center,pageId});return;}
+                if(payload.frame){const data=JSON.parse(payload.frame);if(typeof data.id!=='string')throw new Error('Choose a frame from Elements.');await studio.insertFrame(data.id,{center,pageId});rememberRecent('frame',data.id);return;}
+                if(payload.graphic){const data=JSON.parse(payload.graphic);if(typeof data.id!=='string')throw new Error('Choose a graphic from Elements.');studio.addGraphic(data.id,{center,pageId});rememberRecent('graphic',data.id);return;}
                 if(payload.publicPhoto){const photo=JSON.parse(payload.publicPhoto);if(typeof photo.id!=='string')throw new Error('Choose a photo from the image library.');await importPublicImage(photo,{targetFrameId},center);return;}
-                if(payload.asset){const asset=JSON.parse(payload.asset);if(asset.kind==='image'&&typeof asset.src==='string')await studio.addImage(asset.src,'Image',{center,pageId,targetFrameId,source:photoSources.current.get(asset.src)});else if(asset.kind==='shape')studio.addShape(asset.type,{center,pageId});else if(asset.kind==='text')studio.addText(asset.role||'body',{center,pageId});return;}
+                if(payload.asset){const asset=JSON.parse(payload.asset);if(asset.kind==='image'&&typeof asset.src==='string')await studio.addImage(asset.src,'Image',{center,pageId,targetFrameId,source:photoSources.current.get(asset.src)});else if(asset.kind==='shape'){studio.addShape(asset.type,{center,pageId});rememberRecent('shape',asset.type);}else if(asset.kind==='text')studio.addText(asset.role||'body',{center,pageId});else if(asset.kind==='text-combination'){studio.addTextCombination(asset.id,{center,pageId});rememberRecent('text-combination',asset.id);}else if(asset.kind==='mockup'){await studio.insertMockup(asset.id,{center,pageId});rememberRecent('mockup',asset.id);}return;}
                 if(payload.files.length)await uploadFiles(payload.files,{center,pageId,targetFrameId});
               });
             }}

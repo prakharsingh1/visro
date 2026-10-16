@@ -1,4 +1,6 @@
 import {convertShapeToFrameObject} from './shape-frame';
+import {createNativeMockup,getMockup} from './mockups';
+import {getTextCombination} from './text-combinations';
 import {formatTextSelection} from './text-formatting';
 import {convertCatalogLineObject,getLineStyle,installLineControls,isEditableLine,swapLineObjectEnds,syncLineAppearance,syncLineSubtree,updateLineObject} from './line-editing';
 import type {LineGeometry,LineStyle} from './line-geometry';
@@ -85,6 +87,7 @@ type StudioObject = FabricObject & {
   visroGraphicId?: string;
   visroEmptyFrame?: boolean;
   visroGridId?: string;
+  visroMockupId?: string;
   visroShapeType?: ShapeType;
   visroShapeEffect?:ShapeEffect;
   visroShapeEffectBase?:ShapeEffectObject['visroShapeEffectBase'];
@@ -101,7 +104,7 @@ type OptionDrag = {
   failed: boolean;
   finish: () => void;
 };
-const CUSTOM_PROPS = ["id", "visroName", "visroLocked", "visroTextEffect", "visroGradient", "visroFrame", "visroTextBaseFill", "visroOriginalSrc", "visroMetadata", "visroGraphicId", "visroEmptyFrame", "visroGridId", "visroShapeType", "visroLine",...SHAPE_EFFECT_CUSTOM_PROPS];
+const CUSTOM_PROPS = ["id", "visroName", "visroLocked", "visroTextEffect", "visroGradient", "visroFrame", "visroTextBaseFill", "visroOriginalSrc", "visroMetadata", "visroGraphicId", "visroEmptyFrame", "visroGridId", "visroMockupId", "visroShapeType", "visroLine",...SHAPE_EFFECT_CUSTOM_PROPS];
 const SELECTION_COLOR = '#8B3DFF';
 const INTERACTION_STYLE = {
   cornerColor: '#ffffff', cornerStrokeColor: SELECTION_COLOR,
@@ -389,6 +392,18 @@ export class StudioEditor {
   insertFrame(id:string,placement?:ElementPlacement):Promise<void> {
     const captured={...placement,pageId:placement?.pageId??this.document.activePageId};
     return this.runQueued(()=>this.insertFrameInternal(id,captured));
+  }
+  insertMockup(id:string,placement?:ElementPlacement):Promise<void> {
+    const origin=this.document,pageId=placement?.pageId??this.document.activePageId,definition=getMockup(id),center=placement?.center?{...placement.center}:undefined;
+    return this.runQueued(async()=>{
+      const guard=()=>{this.assertOriginPage(pageId);placement?.signal?.throwIfAborted();if(origin!==this.document||!this.documentMutationAllowed())throw new Error('This design is no longer editable.');};guard();
+      if(!definition)throw new Error('Choose a mockup from Elements.');
+      const group=await createNativeMockup(id,{signal:placement?.signal?AbortSignal.any([placement.signal,this.lifecycle.signal]):this.lifecycle.signal});
+      try{guard();}catch(error){group.dispose();throw error;}
+      const object=label(group,definition.name),scale=Math.max(.0001,Math.floor(Math.min(this.width*.72/group.width,this.height*.72/group.height,2)*10000)/10000);
+      object.set({scaleX:scale,scaleY:scale});object.setPositionByOrigin(new Point(center?.x??this.width/2,center?.y??this.height/2),'center','center');
+      this.addAndSelect(object);
+    });
   }
   convertSelectedShapeToFrame():Promise<void> {
     const previous=this.canvas.getActiveObject() as StudioObject|undefined,pageId=this.document.activePageId,origin=this.document;
@@ -781,6 +796,22 @@ export class StudioEditor {
     this.addAndSelect(object);
   }
 
+  /** A font combination stays one native group, with separately editable text. */
+  addTextCombination(id:string,placement?:{center?:{x:number;y:number};pageId?:string}):void {
+    if(this.destroyed||this.restoring||!this.documentMutationAllowed())return;
+    if(placement?.pageId&&placement.pageId!==this.document.activePageId)throw new Error('The page changed. Choose the font combination again.');
+    if(placement?.center&&(!Number.isFinite(placement.center.x)||!Number.isFinite(placement.center.y)))throw new Error('Choose a position on the page.');
+    const combination=getTextCombination(id);if(!combination)throw new Error('Choose a font combination from the Text library.');
+    const objects=combination.parts.map((part,index)=>{
+      const object=part.kind==='text'?new Textbox(part.text,{originX:'left',originY:'top',left:part.x,top:part.y,width:part.width,fontFamily:part.fontFamily,fontSize:part.fontSize,fontWeight:part.fontWeight??400,fill:part.fill,textAlign:part.align??'center',lineHeight:part.lineHeight??1.06,charSpacing:part.spacing??0,angle:part.angle??0,stroke:part.stroke??null,strokeWidth:part.strokeWidth??0}):part.kind==='rect'?new Rect({originX:'left',originY:'top',left:part.x,top:part.y,width:part.width,height:part.height,fill:part.fill,rx:part.rx??0,ry:part.rx??0,angle:part.angle??0,strokeWidth:0}):new Path(part.path,{fill:part.fill==='none'?null:part.fill,stroke:part.stroke??null,strokeWidth:part.strokeWidth??0,strokeLineCap:'round',strokeLineJoin:'round'});
+      return label(object,part.kind==='text'?part.text:`${combination.name} decoration ${index+1}`);
+    });
+    const group=label(new Group(objects,{subTargetCheck:true,interactive:true}),combination.name);
+    const scale=Math.floor(Math.min(this.width*.65/Math.max(1,group.width),this.height*.5/Math.max(1,group.height),1.5)*10000)/10000;group.set({scaleX:scale,scaleY:scale});
+    const center=placement?.center??{x:this.width/2,y:this.height/2};group.setPositionByOrigin(new Point(center.x,center.y),'center','center');
+    this.addAndSelect(group);
+  }
+
   addShape(type: ShapeType = "rect", placement?: {center?:{x:number;y:number};pageId?:string}): void {
     if (this.destroyed || this.restoring) return;
     if (placement?.pageId && placement.pageId !== this.document.activePageId) throw new Error('The page changed. Choose the shape again.');
@@ -794,9 +825,9 @@ export class StudioEditor {
     else if (type === 'triangle') object = new Triangle({...common,width,height});
     else if (type === 'rect') object = new Rect({...common,width,height});
     else {
-      const style = {...common,fill:definition.filled?'#F26B3A':'transparent',stroke:definition.filled?undefined:'#292620',strokeWidth:definition.strokeWidth,strokeDashArray:definition.dash?[...definition.dash]:undefined,strokeLineCap:definition.lineCap??'round' as const,strokeLineJoin:'round' as const,scaleX:width/100,scaleY:height/100};
+      const style = {...common,fill:definition.filled?'#F26B3A':'transparent',stroke:definition.filled?null:'#292620',strokeWidth:definition.strokeWidth,strokeDashArray:definition.dash?[...definition.dash]:null,strokeLineCap:definition.lineCap??'round' as const,strokeLineJoin:'round' as const,scaleX:width/100,scaleY:height/100};
       if (definition.kind === 'polygon') object = new Polygon(definition.points,style);
-      else if (definition.kind === 'line') object = new Line([0,0,width,0],{...style,scaleX:1,scaleY:1,strokeDashArray:definition.dash?[...definition.dash]:undefined});
+      else if (definition.kind === 'line') object = new Line([0,0,width,0],{...style,scaleX:1,scaleY:1,strokeDashArray:definition.dash?[...definition.dash]:null});
       else object = new Path(definition.path,style);
     }
     const center=placement?.center??{x:this.width/2,y:this.height/2};
@@ -1970,7 +2001,11 @@ export class StudioEditor {
     const viewport=[...this.canvas.viewportTransform] as [number,number,number,number,number,number],width=this.width,height=this.height,pageId=this.document.activePageId,selected=this.canvas.getActiveObjects().map(object=>(object as StudioObject).id).filter((id):id is string=>!!id);
     await this.restore(this.snapshots[index]);this.historyIndex=index;
     if(this.width===width&&this.height===height&&this.document.activePageId===pageId)this.canvas.setViewportTransform(viewport);else this.fit();
-    const surviving=selected.map(id=>this.findObject(id)).filter((object):object is StudioObject=>!!object&&object.visible);
+    const candidates=selected.map(id=>this.findObject(id)).filter((object):object is StudioObject=>!!object&&object.visible);
+    // Undoing Ungroup puts formerly selected children back inside their group.
+    // A native ActiveSelection would pull them out again and change the restored
+    // geometry. Select their containing canvas objects when restoring a multi-selection.
+    const surviving=candidates.length>1?[...new Set(candidates.map(candidate=>{let object=candidate;while(object.group instanceof Group&&!(object.group instanceof ActiveSelection))object=object.group as StudioObject;return object;}))]:candidates;
     if(surviving.length)this.canvas.setActiveObject(surviving.length===1?surviving[0]:new ActiveSelection(surviving,{canvas:this.canvas}));
     this.dirty=!projectsEqual(this.snapshots[index],this.lastSaved);this.revision+=1;this.lastHistoryKey='';this.canvas.requestRenderAll();this.emit();
   }
@@ -2325,7 +2360,7 @@ export class StudioEditor {
       fill: element.fill ?? "#292620",
       opacity: element.opacity ?? 1,
       angle: element.rotation ?? 0,
-      stroke: element.stroke,
+      stroke: element.stroke ?? null,
       strokeWidth: element.strokeWidth ?? 0,
     };
     const width = Math.max(1, element.width ?? 200);

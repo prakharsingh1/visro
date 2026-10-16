@@ -14,3 +14,4 @@ build/media-tools/
 # Reproducible font conversion caches
 build/font-tools-env/
 build/font-sources/
+build/template-audit-fonts/

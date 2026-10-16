@@ -290,7 +290,7 @@ function boot() {
       width: 1512, height: 980, minWidth: 1100, minHeight: 720,
       title: 'Visro', backgroundColor: '#FAF8F4',
       titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
-      trafficLightPosition: { x: 20, y: 21 },
+      trafficLightPosition: { x: 12, y: 12 },
       show: false,
       webPreferences: { preload: path.join(__dirname, 'preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, webSecurity: true, allowRunningInsecureContent: false, spellcheck: true },
     });

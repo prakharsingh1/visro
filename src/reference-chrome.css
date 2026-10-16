@@ -19,7 +19,14 @@
   font-weight:600;
   line-height:20px;
   letter-spacing:0;
+  padding-left:4px;
+  padding-right:8px;
 }
+.studio-app .desktop-tabs { padding-top:0; padding-bottom:0; }
+.studio-app .desktop-tab-shell { width:min(196px,24vw); }
+.native-desktop .desktop-tabs { padding-left:87px; }
+.studio-app .desktop-home-tab,.studio-app .desktop-new-tab { flex:none; align-self:center; transform:translateY(3px); }
+.desktop-tab-divider { flex:none; width:1px; height:16px; margin:3px 5px 0; background:#ffffff35; }
 .studio-app .topbar { padding-left:12px; gap:8px; }
 .studio-app .topbar .top-menu,
 .studio-app .topbar .quiet-button {

@@ -17,7 +17,7 @@ const near=(actual,expected,label)=>assert.ok(Math.abs(actual-expected)<.00001,`
 function finiteBounds(object,label){const bounds=object.getBoundingRect();for(const value of Object.values(bounds))assert.ok(Number.isFinite(value),`${label} finite bounds`);assert.ok(bounds.width>0&&bounds.height>0,`${label} visible bounds`);return bounds;}
 function flattened(object){return object.type.toLowerCase()==='group'?object.getObjects().flatMap(flattened):[object];}
 
-test('all 56 shape insertions remain finite native vectors centered at the pointer and match thumbnail proportions',async()=>{
+test('all 144 shape insertions remain finite native vectors centered at the pointer and match thumbnail proportions',async()=>{
  const studio=editor({width:1000,height:800}),ids=new Set(),center={x:730.5,y:412.25};
  try{
   for(const definition of SHAPE_LIBRARY){
@@ -45,11 +45,23 @@ test('all 56 shape insertions remain finite native vectors centered at the point
     if(native.height>0&&geometry.filled){const expected=native.width/native.height*geometry.aspectRatio;near(object.width*object.scaleX/(object.height*object.scaleY),expected,`${definition.id} visible thumbnail ratio`);}
    }else assert.ok(bounds.height<12,`${definition.id} is a flat line, not a filled rectangle`);
   }
-  assert.equal(studio.canvas.getObjects().length,56);assert.equal(studio.serialize().pages[0].canvas.objects.length,56);
-  await studio.undo();assert.equal(studio.canvas.getObjects().length,55,'one Undo removes only the most recent shape');
-  await studio.redo();assert.equal(studio.canvas.getObjects().length,56);
+  assert.equal(studio.canvas.getObjects().length,SHAPE_LIBRARY.length);assert.equal(studio.serialize().pages[0].canvas.objects.length,SHAPE_LIBRARY.length);
+  await studio.undo();assert.equal(studio.canvas.getObjects().length,SHAPE_LIBRARY.length-1,'one Undo removes only the most recent shape');
+  await studio.redo();assert.equal(studio.canvas.getObjects().length,SHAPE_LIBRARY.length);
   const before=studio.serialize(),revision=studio.getState().revision;
   assert.throws(()=>studio.addShape('star',{center,pageId:'departed-page'}),/page changed/);assert.deepEqual(studio.serialize(),before);assert.equal(studio.getState().revision,revision);
+ }finally{studio.destroy();}
+});
+
+test('new path shapes retain exact JSON through one Undo, one Redo and project reopen',async()=>{
+ const studio=editor({width:1080,height:1080}),snapshot=()=>JSON.parse(JSON.stringify(studio.serialize()));
+ try{
+  const before=snapshot();studio.addShape('blob-kidney',{center:{x:250.25,y:333.375},pageId:studio.getState().activePageId});
+  const object=studio.canvas.getActiveObject(),added=snapshot();assert.ok(object instanceof fabric.Path);assert.equal(object.visroShapeType,'blob-kidney');
+  assert.equal(added.pages[0].canvas.objects[0].stroke,null);assert.equal(added.pages[0].canvas.objects[0].strokeDashArray,null);
+  await studio.undo();assert.deepEqual(snapshot(),before,'one Undo restores the complete original project');
+  await studio.redo();assert.deepEqual(snapshot(),added,'one Redo restores the same ID, native geometry, paint defaults and placement');
+  await studio.loadProject(added);assert.deepEqual(snapshot(),added,'reopening does not introduce null stroke defaults');
  }finally{studio.destroy();}
 });
 
