@@ -74,6 +74,15 @@ export function sanitizeElementMetadata(value: unknown): ElementMetadata {
   }
   if (typeof value.altText === 'string') result.altText = value.altText.slice(0, 2000);
   if (typeof value.duration === 'number' && Number.isFinite(value.duration)) result.duration = Math.max(0.1, Math.min(3600, value.duration));
+  if(isRecord(value.source)){
+    const source=value.source;
+    const fields=['id','title','artist','license','licenseUrl','sourceUrl'] as const;
+    if(fields.every(key=>typeof source[key]==='string')&&['CC0','Public domain'].includes(source.license as string)){
+      try{const page=new URL(source.sourceUrl as string),license=new URL(source.licenseUrl as string);
+        if(page.protocol==='https:'&&page.hostname==='commons.wikimedia.org'&&license.protocol==='https:'&&['creativecommons.org','commons.wikimedia.org'].includes(license.hostname))result.source=Object.fromEntries(fields.map(key=>[key,(source[key] as string).slice(0,key==='artist'?500:2048)])) as ElementMetadata['source'];
+      }catch{/* Ignore untrusted imported provenance links. */}
+    }
+  }
   return result;
 }
 

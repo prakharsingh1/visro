@@ -31,6 +31,30 @@ function pointerDrag(editor, point, dx, dy, { altKey = false, metaKey = false, c
   environment.document.dispatchEvent(event('mouseup', pointer.x + dx * editor.state.zoom, pointer.y + dy * editor.state.zoom, 0));
 }
 
+test('set photo as background removes its frame, fills the page and restores the whole action with one Undo', async () => {
+  const editor = studio({width:400,height:200});
+  try {
+    const source=environment.document.createElement('canvas');source.width=600;source.height=400;
+    const context=source.getContext('2d');context.fillStyle='#bb2244';context.fillRect(0,0,600,400);
+    editor.addShape('circle'); const foregroundId=editor.selected.id;
+    await editor.addImage(source.toDataURL());editor.addFrame('circle');
+    editor.updateSelected({left:90.25,top:50.75,angle:27,width:140,height:90});
+    const original=editor.serialize(),id=editor.selected.id,revision=editor.state.revision;
+    editor.setSelectedImageAsBackground();
+    const photo=editor.canvas.getActiveObject();
+    assert.equal(editor.state.revision,revision+1);assert.equal(editor.canvas.getObjects()[0].id,id);
+    assert.equal(editor.canvas.getObjects()[1].id,foregroundId);
+    assert.equal(photo.clipPath,undefined);assert.equal(photo.visroFrame,undefined);
+    assert.equal(photo.angle,0);assert.equal(photo.left,0);assert.equal(photo.top,0);
+    assert.equal(photo.getScaledWidth(),400);assert.equal(photo.getScaledHeight(),200);
+    assert.equal(photo.cropX,0);assert.equal(photo.cropY,50);
+    await editor.undo();assert.deepEqual(editor.serialize(),original);
+    await editor.redo();assert.equal(editor.canvas.getObjects()[0].id,id);
+    editor.setLayerLocked(id,true);const locked=editor.serialize();editor.setSelectedImageAsBackground();
+    assert.deepEqual(editor.serialize(),locked);
+  } finally {editor.destroy();}
+});
+
 test('Command-click cycles overlapping visible layers and immediately drags the picked layer without moving the cover', async () => {
   const editor = studio({ width: 500, height: 500 });
   try {
@@ -846,4 +870,40 @@ test('distributing a multiple selection creates equal gaps while clipboard keeps
     editor.selectAll(); await editor.copy(); await editor.paste(); editor.deselect();
     const all = editor.canvas.getObjects(); assert.equal(all.length, 6); assert.equal(new Set(all.map(object => object.id)).size, 6);
   } finally { editor.destroy(); }
+});
+
+test('photo drops place one editable image at the scene point with provenance and one Undo', async()=>{
+  const editor=studio();
+  try{
+    await editor.insertDesign({name:'Photo placement',width:800,height:600,background:'#ffffff',elements:[]});
+    const source=environment.document.createElement('canvas');source.width=300;source.height=100;source.getContext('2d').fillRect(0,0,300,100);
+    const pageId=editor.getState().activePageId;
+    const provenance={id:'commons:123',title:'File:Test.jpg',artist:'Photographer',license:'CC0',licenseUrl:'https://creativecommons.org/publicdomain/zero/1.0/',sourceUrl:'https://commons.wikimedia.org/wiki/File:Test.jpg'};
+    await editor.addImage(source.toDataURL(),'Public-domain photo',{center:{x:260.5,y:140.25},pageId,source:provenance});
+    const object=editor.canvas.getActiveObject();
+    assert.equal(object.left+object.getScaledWidth()/2,260.5);assert.equal(object.top+object.getScaledHeight()/2,140.25);
+    assert.deepEqual(editor.serialize().pages[0].canvas.objects[0].visroMetadata.source,provenance);
+    await editor.undo();assert.equal(editor.canvas.getObjects().length,0);
+    await editor.redo();assert.equal(editor.canvas.getObjects().length,1);
+    await assert.rejects(editor.addImage(source.toDataURL(),'Late photo',{pageId:'another-page'}),/page changed/);
+    assert.equal(editor.canvas.getObjects().length,1);
+    const cancellation=new AbortController();cancellation.abort();await assert.rejects(editor.addImage(source.toDataURL(),'Cancelled photo',{pageId,signal:cancellation.signal}),{name:'AbortError'});
+    assert.equal(editor.canvas.getObjects().length,1);
+  }finally{await editor.destroy();}
+});
+
+test('photo-template cover slots crop without stretching and retain the full original photo',async()=>{
+  const editor=studio();
+  try{
+    const source=environment.document.createElement('canvas');source.width=300;source.height=100;
+    const ctx=source.getContext('2d');for(const [index,color]of ['#ff0000','#00ff00','#0000ff'].entries()){ctx.fillStyle=color;ctx.fillRect(index*100,0,100,100);}
+    await editor.insertDesign({name:'Cover photo',width:200,height:200,background:'#ffffff',elements:[{type:'image',src:source.toDataURL(),imageFit:'cover',x:20,y:30,width:100,height:100}]});
+    const photo=editor.canvas.getObjects()[0];assert.equal(photo.cropX,100);assert.equal(photo.cropY,0);assert.equal(photo.width,100);assert.equal(photo.height,100);assert.equal(photo.scaleX,photo.scaleY);
+    const png=await editor.exportImage({format:'png',scale:1});
+    const {FabricImage}=await import('fabric');const rendered=await FabricImage.fromURL(png);
+    const output=environment.document.createElement('canvas');output.width=200;output.height=200;output.getContext('2d').drawImage(rendered.getElement(),0,0);
+    assert.deepEqual([...output.getContext('2d').getImageData(70,80,1,1).data],[0,255,0,255]);
+    assert.equal(photo.getElement().width,300,'Cropping must keep the complete source for later edits.');
+    const reopened=studio();try{await reopened.loadProject(editor.serialize());const restored=reopened.canvas.getObjects()[0];assert.equal(restored.cropX,100);assert.equal(restored.getElement().width,300);}finally{await reopened.destroy();}
+  }finally{await editor.destroy();}
 });

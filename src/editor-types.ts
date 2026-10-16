@@ -1,8 +1,9 @@
-export type ShapeType = "rect" | "circle" | "triangle" | "line" | "star" | "ellipse" | "diamond" | "pentagon" | "hexagon" | "arrow" | "heart" | "blob";
+export type {ShapeId} from './shapes';
+export type ShapeType = import('./shapes').ShapeId;
 export type TextEffect = 'none' | 'shadow' | 'outline' | 'neon' | 'lift' | 'hollow' | 'splice';
 export type FrameShape = 'circle' | 'rounded' | 'arch' | 'diamond';
 export interface PageMetadata { notes?: string; duration?: number; animation?: string; guides?: {x:number[];y:number[]} }
-export interface ElementMetadata { link?: string; altText?: string; duration?: number }
+export interface ElementMetadata { link?: string; altText?: string; duration?: number; source?: {id:string;title:string;artist:string;license:string;licenseUrl:string;sourceUrl:string} }
 export interface ImageEffects { brightness: number; contrast: number; saturation: number; blur: number; grayscale: boolean }
 export interface ImageCropRect { left: number; top: number; width: number; height: number }
 export interface TableOptions { rows: number; columns: number; data?: string[][]; header?: boolean }
@@ -36,6 +37,8 @@ export interface DesignElement {
   rx?: number;
   ry?: number;
   src?: string;
+  imageFit?: 'cover'|'contain';
+  source?: ElementMetadata['source'];
 }
 
 export interface DesignSpec {
@@ -110,8 +113,10 @@ export interface SelectedObject {
   linethrough: boolean;
   stroke: string;
   strokeWidth: number;
+  strokeOnly?: boolean;
   textEffect: TextEffect;
   gradient?: { colors: string[]; angle: number };
+  vectorColors?: string[];
   metadata?: ElementMetadata;
 }
 

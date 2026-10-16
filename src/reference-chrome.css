@@ -1,0 +1,136 @@
+/* Measured in the installed Canva 1.126 reference editor, CSS pixels at 2×.
+   Shared layout tracks stay in styles.css; these rules refine visible chrome. */
+.studio-app {
+  --reference-chrome-surface: var(--surface);
+  --reference-icon-selected: #6956ff;
+  --reference-icon-backing: var(--surface);
+  --reference-icon-border: #e3e4e8;
+  --reference-icon-shadow: 0 1px 3px #00000018;
+}
+:root[data-theme="dark"] .studio-app {
+  --reference-chrome-surface: #1c1f27;
+  --reference-icon-backing: #1c1f27;
+  --reference-icon-border: #41444e;
+  --reference-icon-shadow: 0 2px 5px #0000004d;
+}
+
+.studio-app .desktop-tab {
+  font-size:14px;
+  font-weight:600;
+  line-height:20px;
+  letter-spacing:0;
+}
+.studio-app .topbar { padding-left:12px; gap:8px; }
+.studio-app .topbar .top-menu,
+.studio-app .topbar .quiet-button {
+  height:40px;
+  padding:0 12px;
+  font-size:14px;
+  font-weight:600;
+  line-height:20px;
+}
+.studio-app .topbar .top-menu > svg { display:none; }
+.studio-app .topbar .primary-button { height:40px; font-size:14px; font-weight:600; }
+
+.studio-app .tool-rail {
+  padding-top:12px;
+  gap:8px;
+  background:var(--reference-chrome-surface);
+}
+.studio-app .rail-button {
+  height:64px;
+  min-height:64px;
+  padding:0;
+  gap:4px;
+  border-radius:0;
+  font-size:12px;
+  font-weight:600;
+  line-height:16px;
+  letter-spacing:0;
+  color:var(--muted);
+  background:transparent;
+}
+.studio-app .rail-button > span:last-child { flex:none; white-space:nowrap; }
+.studio-app .rail-icon-wrap {
+  flex:none;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  width:32px;
+  height:32px;
+  border:1px solid transparent;
+  border-radius:12px;
+  --icon-cutout:var(--reference-icon-backing);
+}
+.studio-app .rail-button:hover,
+.studio-app .rail-button.selected,
+.studio-app .rail-button.selected:hover { background:transparent; color:var(--text); }
+.studio-app .rail-button:hover .rail-icon-wrap { background:var(--surface-hover); }
+.studio-app .rail-button.selected .rail-icon-wrap {
+  color:var(--reference-icon-selected);
+  background:var(--reference-icon-backing);
+  border-color:var(--reference-icon-border);
+  box-shadow:var(--reference-icon-shadow);
+}
+.studio-app .rail-button.selected::before { display:none; }
+.studio-app .asset-panel {
+  width:100%;
+  height:100%;
+  margin:0;
+  padding:16px;
+  border:0;
+  border-right:1px solid var(--border);
+  border-radius:0;
+  background:var(--reference-chrome-surface);
+}
+
+.studio-app .context-toolbar {
+  top:8px;
+  height:40px;
+  min-height:40px;
+  padding:3px 7px;
+  gap:4px;
+  background:var(--reference-chrome-surface);
+}
+.studio-app .context-toolbar .toolbar-button,
+.studio-app .context-toolbar .toolbar-select,
+.studio-app .context-toolbar select,
+.studio-app .context-toolbar input[type="number"] {
+  height:32px;
+  min-height:32px;
+  font-size:14px;
+  font-weight:600;
+  line-height:20px;
+}
+.studio-app .context-toolbar .toolbar-button { padding:5px 8px; }
+.studio-app .context-toolbar .icon-button { flex:none; width:32px; height:32px; padding:5px; }
+.studio-app .context-toolbar .toolbar-select {
+  width:122px;
+  min-width:122px;
+  max-width:168px;
+  padding:5px 8px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.studio-app .context-toolbar .toolbar-select > svg { display:none; }
+.studio-app .context-toolbar .font-size-control { flex:none; width:96px; height:32px; }
+.studio-app .context-toolbar .font-size-control .icon-button { width:28px; height:30px; min-height:30px; }
+.studio-app .context-toolbar .font-size-control input[type="number"] { flex:1; min-width:0; width:38px; height:30px; min-height:30px; padding:4px 0; }
+.studio-app .context-toolbar .toolbar-right > .toolbar-button > svg { display:none; }
+.studio-app .context-toolbar .lucide-bold { stroke-width:2.5; }
+.studio-app .context-toolbar .lucide-italic,
+.studio-app .context-toolbar .lucide-underline { stroke-width:2; }
+.studio-app .toolbar-popover { top:56px; }
+.studio-app .selection-actions {
+  height:36px;
+  padding:1px;
+  gap:0;
+  border-radius:18px;
+  background:var(--reference-chrome-surface);
+}
+.studio-app .selection-actions .icon-button { width:32px; height:32px; border-radius:50%; }
+
+@media(max-width:1280px) {
+  .studio-app .topbar .document-title { flex-basis:240px; }
+  .studio-app .context-toolbar { max-width:calc(100% - 16px); }
+}

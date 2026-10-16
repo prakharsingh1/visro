@@ -58,7 +58,7 @@ function queueDesign<T>(id: string, operation: () => Promise<T>): Promise<T> {
 }
 
 export interface SavedDesign { id: string; name: string; updated: number; project: unknown; thumbnail?: string; folder?: string; starred?: boolean; deleted?: number; }
-export interface LibraryAsset { id: string; name: string; data: string; kind: 'image' | 'font' | 'logo' | 'component'; updated: number; }
+export interface LibraryAsset { id: string; name: string; data: string; kind: 'image' | 'font' | 'logo' | 'component'; updated: number; source?: {id:string;title:string;artist:string;license:string;licenseUrl:string;sourceUrl:string}; }
 export interface ProjectVersion { id: string; designId: string; label: string; updated: number; project: unknown; }
 export interface Folder { id: string; name: string; }
 interface StoredMedia { id: string; data: string | Blob; }

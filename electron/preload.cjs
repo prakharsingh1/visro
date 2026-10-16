@@ -5,6 +5,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('visro', Object.freeze({
   writeCanvasClipboard: (input) => ipcRenderer.invoke('visro:clipboard:write', input),
   readCanvasClipboard: () => ipcRenderer.invoke('visro:clipboard:read'),
+  searchPublicImages: (input) => ipcRenderer.invoke('visro:photos:search', input),
+  getPublicImage: (input) => ipcRenderer.invoke('visro:photos:get', input),
   getLocalTypeface: () => ipcRenderer.invoke('visro:typeface:local'),
   getSettings: () => ipcRenderer.invoke('visro:settings:get'),
   saveSettings: (settings) => ipcRenderer.invoke('visro:settings:save', settings),

@@ -67,3 +67,12 @@ test('original template catalog has unique IDs and valid logical-pixel content',
     }
   }
 });
+
+test('public photo provenance survives project files without allowing untrusted source links',async()=>{
+ const {sanitizeElementMetadata,createProject,parseProject,stringifyProject}=await projectModule;
+ const source={id:'commons:123',title:'File:Photo.jpg',artist:'Author',license:'CC0',licenseUrl:'https://creativecommons.org/publicdomain/zero/1.0/',sourceUrl:'https://commons.wikimedia.org/wiki/File:Photo.jpg'};
+ const project=createProject();project.pages[0].canvas.objects.push({type:'Image',src:'data:image/png;base64,AAAA',visroMetadata:{source}});
+ assert.deepEqual(parseProject(stringifyProject(project)).pages[0].canvas.objects[0].visroMetadata.source,source);
+ assert.equal(sanitizeElementMetadata({source:{...source,sourceUrl:'https://127.0.0.1/private'}}).source,undefined);
+ assert.equal(sanitizeElementMetadata({source:{...source,license:'CC BY-NC'}}).source,undefined);
+});

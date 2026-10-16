@@ -4,6 +4,7 @@ import {TEMPLATES} from './templates';
 import {TemplatePreview} from './TemplatePreview';
 import type {DesignTemplate} from './editor-types';
 
+const CATALOG=[...TEMPLATES].sort((a,b)=>Number(b.id.startsWith('photo-original-'))-Number(a.id.startsWith('photo-original-')));
 const CATEGORIES=[...new Set(TEMPLATES.map(t=>t.category))];
 const COLORS=['#ffffff','#171717','#ef4444','#f59e0b','#22c55e','#06b6d4','#3b82f6','#a855f7','#ec4899'];
 const rgb=(hex:string)=>{const clean=hex.replace('#','');return [0,2,4].map(i=>parseInt(clean.slice(i,i+2),16));};
@@ -13,7 +14,7 @@ function readStars():string[]{try{const value=JSON.parse(localStorage.getItem('v
 export function TemplateBrowser({query='',compact=false,onUse}:{query?:string;compact?:boolean;onUse:(id:string,name:string)=>void}){
   const [category,setCategory]=useState('All'),[color,setColor]=useState(''),[starredOnly,setStarredOnly]=useState(false),[stars,setStars]=useState(readStars),[page,setPage]=useState(0),[preview,setPreview]=useState<DesignTemplate|null>(null);
   const search=useDeferredValue(query.trim().toLocaleLowerCase());
-  const results=useMemo(()=>TEMPLATES.filter(t=>(category==='All'||t.category===category)&&(!starredOnly||stars.includes(t.id))&&(!color||t.palette.some(c=>similar(c,color)))&&(!search||`${t.name} ${t.category} ${t.description}`.toLocaleLowerCase().includes(search))),[search,category,color,starredOnly,stars]);
+  const results=useMemo(()=>CATALOG.filter(t=>(category==='All'||t.category===category)&&(!starredOnly||stars.includes(t.id))&&(!color||t.palette.some(c=>similar(c,color)))&&(!search||`${t.name} ${t.category} ${t.description}`.toLocaleLowerCase().includes(search))),[search,category,color,starredOnly,stars]);
   const pageSize=compact?18:24,total=Math.max(1,Math.ceil(results.length/pageSize)),current=Math.min(page,total-1);
   useEffect(()=>setPage(0),[search,category,color,starredOnly]);
   useEffect(()=>{if(!preview)return;const key=(e:KeyboardEvent)=>{if(e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();setPreview(null);}};window.addEventListener('keydown',key,true);return()=>window.removeEventListener('keydown',key,true);},[preview]);

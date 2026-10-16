@@ -11,6 +11,7 @@ const { createMediaService, validateTimeline } = require('./media.cjs');
 const { validatePrintDocument, renderDocumentPDF } = require('./print.cjs');
 const { getLocalTypeface } = require('./typeface.cjs');
 const { createCanvasClipboard } = require('./clipboard.cjs');
+const { createPublicImageService } = require('./public-images.cjs');
 const { MAX_FILE_BYTES, safeName, serializeProject, parseProject, decodeExport, resolveAsset } = require('./files.cjs');
 
 function devURL(value) {
@@ -106,6 +107,7 @@ function boot() {
   let currentProjectPath = null;
   let store;
   let media;
+  let publicImages;
   const canvasClipboard = createCanvasClipboard({ clipboard, ClipboardItem, nativeImage });
   let inFlightAI = 0;
   const aiJobs = new Map();
@@ -147,6 +149,8 @@ function boot() {
   function installIPC() {
     handler('visro:clipboard:write', (input) => canvasClipboard.write(input));
     handler('visro:clipboard:read', () => canvasClipboard.read());
+    handler('visro:photos:search', (input) => publicImages.search(input));
+    handler('visro:photos:get', (input) => publicImages.get(input));
     handler('visro:typeface:local', () => getLocalTypeface());
     handler('visro:settings:get', () => store.getSettings());
     handler('visro:settings:save', (input) => store.saveSettings(input));
@@ -299,6 +303,7 @@ function boot() {
   }
 
   app.whenReady().then(async () => {
+    publicImages = createPublicImageService({root:app.getPath('userData')});
     store = createSettingsStore({ directory: app.getPath('userData'), safeStorage });
     media = createMediaService({ directory: path.join(app.getPath('userData'), 'media-library'), toolsDirectory: path.join(process.resourcesPath, 'media-tools'), developmentToolsDirectory: path.resolve(__dirname, '../build/media-tools'), onProgress: (progress) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('visro:media:progress', progress); } });
     const targetSession = session.defaultSession;

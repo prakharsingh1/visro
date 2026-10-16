@@ -67,6 +67,14 @@ export const TemplatePreview = memo(function TemplatePreview({
                     </tspan>
                   ))}
                 </text>
+              ) : e.type === "image" && e.src ? (
+                <image
+                  href={e.src}
+                  width={w}
+                  height={h}
+                  preserveAspectRatio={e.imageFit === "contain" ? "xMidYMid meet" : "xMidYMid slice"}
+                  aria-label={e.name || "Template photograph"}
+                />
               ) : e.type === "circle" ? (
                 <ellipse
                   cx={w / 2}

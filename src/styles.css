@@ -3073,3 +3073,7 @@ h4 {
 .quick-actions-results kbd { font:11px var(--ui-font-family); color:var(--muted); white-space:nowrap; }
 .quick-actions-results p { padding:25px; color:var(--muted); font-size:13px; }
 .quick-actions footer { padding:11px 18px; border-top:1px solid var(--border); color:var(--muted); font-size:10px; }
+
+.elements-filter-tabs { display:flex; gap:20px; margin:0 0 18px; border-bottom:1px solid var(--border); }
+.elements-filter-tabs button { font:600 14px/1.3 var(--ui-font-family); color:var(--muted); padding:10px 1px; border-bottom:2px solid transparent; }
+.elements-filter-tabs button[aria-selected="true"] { color:var(--text); border-color:var(--accent); }

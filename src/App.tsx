@@ -71,6 +71,10 @@ import {
 } from "lucide-react";
 import { StudioEditor } from "./editor";
 import { Home } from "./Home";
+import {PublicImageLibrary} from './PublicImageLibrary';
+import {GraphicsLibrary} from './GraphicsLibrary';
+import {ShapeLibrary} from './ShapeLibrary';
+import {getPublicImage as fetchPublicImage} from './public-images';
 import { TemplateBrowser } from "./TemplateBrowser";
 import { QuickActions, type QuickAction } from "./QuickActions";
 import {normalizeWorkspaceTabs,upsertWorkspaceTab,type WorkspaceTab} from './workspace-tabs';
@@ -102,7 +106,7 @@ import {
   DEFAULT_SETTINGS,
   saveExport,
   saveProjectFallback,
-  type Settings,
+  type Settings, type PublicImage, type PublicImageResult,
 } from "./bridge";
 import {
   listDesigns, getDesign, listDesignSummaries,
@@ -262,6 +266,8 @@ export default function App() {
     [mode, setMode] = useState<"design"|"document"|"sheet"|"video">("design"),
     [customFonts, setCustomFonts] = useState<string[]>([]),
     [fileMenu, setFileMenu] = useState(false), [presentAuto, setPresentAuto] = useState(false);
+  const [elementsTab,setElementsTab]=useState<'all'|'shapes'|'graphics'|'photos'>('all'),[publicImagePreviewOpen,setPublicImagePreviewOpen]=useState(false);
+  const photoSources=useRef(new Map<string,NonNullable<import('./editor-types').ElementMetadata['source']>>());
   const [maskSources,setMaskSources]=useState<{original:string;current:string}|null>(null);
   const [quickActionsOpen,setQuickActionsOpen]=useState(false);
   const workspaceActionRef=useRef<(action:string)=>void>(()=>{});
@@ -277,7 +283,8 @@ export default function App() {
   const closeContext=useCallback(()=>setContextMenu(null),[]);
   const interactionRef=useRef(false),replaceImageRef=useRef(false);
   const stylePaintRef=useRef(false),browserClipboardRef=useRef<Record<string,unknown>[]>([]);
-  const [positionTab,setPositionTab]=useState<"arrange"|"layers">("arrange"),[colorHex,setColorHex]=useState("#000000");
+  const [positionTab,setPositionTab]=useState<"arrange"|"layers">("arrange"),[colorHex,setColorHex]=useState("#000000"),[graphicColorTarget,setGraphicColorTarget]=useState<string|null>(null);
+  useEffect(()=>setGraphicColorTarget(null),[selected?.id]);
   const [toolbarPopover,setToolbarPopover]=useState<"spacing"|"transparency"|null>(null),[timerOpen,setTimerOpen]=useState(false),[timerSeconds,setTimerSeconds]=useState(0),[timerRunning,setTimerRunning]=useState(false);
   const [cropSource,setCropSource]=useState<ReturnType<StudioEditor["getImageCropSource"]>>(null);
   const [viewSettings,setViewSettings]=useState(()=>{try{const value=JSON.parse(localStorage.getItem('visro-view-settings')||'{}');return value&&typeof value==='object'?value as {rulers?:boolean;margins?:boolean;snapping?:boolean;locked?:boolean}:{};}catch{return {};}});
@@ -590,6 +597,7 @@ export default function App() {
   },[mode,notify]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
+      if(publicImagePreviewOpen)return;
       if(e.key==='Escape'){if(cropSource){setCropSource(null);return;}if(maskSources){setMaskSources(null);return;}if(guidesDialog){setGuidesDialog(false);return;}if(elementDialog){setElementDialog(null);return;}if(contextMenu){setContextMenu(null);return;}if(modal){setModal(null);return;}if(toolbarPopover){setToolbarPopover(null);return;}if(fileMenu){setFileMenu(false);return;}}
       if(quickActionsOpen)return;
       if(cropSource||maskSources)return;
@@ -597,6 +605,17 @@ export default function App() {
       const target = e.target as HTMLElement;
       if (target.closest('input,textarea,select,[contenteditable="true"]'))
         return;
+      if(!e.metaKey&&!e.ctrlKey&&!e.altKey&&(e.key==='Enter'||e.code==='Space')&&target.closest('button,a[href],summary,[role="button"],[role="tab"],[role="menuitem"],[role="checkbox"],[role="switch"]'))return;
+      const focusedTab=target.closest<HTMLElement>('[role="tab"]'),tabList=focusedTab?.closest('[role="tablist"]');
+      if(focusedTab&&tabList&&!e.metaKey&&!e.ctrlKey&&!e.altKey&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key)){
+        const tabs=Array.from(tabList.querySelectorAll<HTMLElement>('[role="tab"]')).filter(tab=>!tab.hasAttribute('disabled')&&tab.getAttribute('aria-disabled')!=='true'&&tab.getClientRects().length);
+        const current=tabs.indexOf(focusedTab),vertical=tabList.getAttribute('aria-orientation')==='vertical';
+        if(current>=0){
+          if((vertical&&['ArrowLeft','ArrowRight'].includes(e.key))||(!vertical&&['ArrowUp','ArrowDown'].includes(e.key)))return;
+          e.preventDefault();const next=e.key==='Home'?0:e.key==='End'?tabs.length-1:(current+(e.key==='ArrowRight'||e.key==='ArrowDown'?1:-1)+tabs.length)%tabs.length;
+          tabs[next]?.focus({preventScroll:true});tabs[next]?.click();return;
+        }
+      }
       if(!ready||switchingProject.current||!initializedProject.current)return;
       if(home || guidesDialog || (modal&&e.key!=='Escape'))return;
       const studio=engine.current;
@@ -675,10 +694,11 @@ export default function App() {
     const blur=()=>{engine.current?.setPanMode(false);engine.current?.flushPendingChanges();};
     window.addEventListener("keydown",key);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
     return()=>{window.removeEventListener('keydown',key);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
-  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit,quickActionsOpen,mode]);
+  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit,quickActionsOpen,mode,publicImagePreviewOpen]);
   useEffect(() => {
     if (!desktop) return;
     return desktop.onMenu((action) => {
+      if(publicImagePreviewOpen)return;
       if((!ready||switchingProject.current)&&!["new","open","settings","save","save-as"].includes(action))return;
       if (action === "save") void save();
       else if (action === "open") void open();
@@ -699,11 +719,11 @@ export default function App() {
       else if (action === "undo") historyEdit();
       else if (action === "redo") historyEdit(true);
     });
-  }, [save,open,newDesign,mode,copyCanvas,pasteCanvas,ready,historyEdit]);
+  }, [save,open,newDesign,mode,copyCanvas,pasteCanvas,ready,historyEdit,publicImagePreviewOpen]);
   const choosePanel = (p: Panel) => {
     setPanel(p);setPanelOpen(true);setInspectorOpen(false);
     if(p==="projects")void listDesignSummaries().then(setLibrary);
-    if(p==="uploads")void listAssets(["image","logo"]).then(a=>setUploads(a.map(v=>v.data)));
+    if(p==="uploads")void listAssets(["image","logo"]).then(a=>{for(const asset of a)if(asset.source)photoSources.current.set(asset.data,asset.source);setUploads(a.map(v=>v.data));});
     if(p==="components")void listAssets(["component"]).then(setComponents);
     if (p === "video") setMode("video");
     if (p === "documents") setMode("document");
@@ -713,6 +733,18 @@ export default function App() {
       setDrawing(false);
       engine.current?.setDrawing(false);
     }
+  };
+  const importPublicImage=async(image:Pick<PublicImage,'id'>,options?:{signal?:AbortSignal;prepared?:PublicImageResult},center?:{x:number;y:number})=>{
+    const studio=engine.current;if(!studio||!ready||switchingProject.current)return;
+    const id=activeId.current,generation=projectGeneration.current,pageId=studio.getState().activePageId;
+    const result=options?.prepared?.id===image.id?options.prepared:await fetchPublicImage({id:image.id,size:'image'},options?.signal);
+    if(options?.signal?.aborted)throw new DOMException('Adding this photo was cancelled.','AbortError');
+    const source={id:result.id,title:result.title,artist:result.artist,license:result.license,licenseUrl:result.licenseUrl,sourceUrl:result.sourceUrl};
+    await storeAsset({id:`public-photo-${result.id}`,name:result.name,data:result.data,kind:'image',source,updated:Date.now()});
+    photoSources.current.set(result.data,source);setUploads(previous=>[result.data,...previous.filter(data=>data!==result.data)]);
+    if(options?.signal?.aborted)throw new DOMException('Adding this photo was cancelled.','AbortError');
+    if(engine.current!==studio||activeId.current!==id||projectGeneration.current!==generation||switchingProject.current||studio.getState().activePageId!==pageId){notify('Photo saved in Uploads. The design changed while it was loading.');return;}
+    await studio.addImage(result.data,result.name,{center,pageId,source,signal:options?.signal});
   };
   const useTemplate = useCallback((id:string,templateName:string)=>void work('Applying template',async()=>{
     if(home){if(!await switchProject(async()=>({id:crypto.randomUUID(),name:templateName,load:studio=>studio.loadTemplate(id)})))return;}else{const template=TEMPLATES.find(t=>t.id===id);if(template){const w=state.width,h=state.height;await engine.current!.insertDesign({...template,width:w,height:h,elements:template.elements.map(e=>({...e,x:e.x*w/template.width,y:e.y*h/template.height,width:(e.width||200)*w/template.width,height:(e.height||200)*h/template.height,fontSize:e.fontSize?e.fontSize*Math.min(w/template.width,h/template.height):undefined}))});}}
@@ -917,6 +949,7 @@ export default function App() {
     }finally{closingTabIds.current.delete(id);}
   });
   workspaceActionRef.current=(action:string)=>{
+    if(publicImagePreviewOpen)return;
     if(action==='home')goHome();
     else if(action==='close-design'){if(!home)closeWorkspaceTab(activeId.current);}
     else if(action==='reopen-design'){const tab=closedTabs.current.shift();if(tab)openWorkspaceTab(tab.id);}
@@ -927,6 +960,7 @@ export default function App() {
   const quickActions:QuickAction[]=[
     {id:'text',label:'Add text',shortcut:'T',run:()=>engine.current?.addText('heading')},
     ...(['rect','circle','line','triangle','star'] as const).map(type=>({id:type,label:`Add ${type==='rect'?'rectangle':type}`,shortcut:type==='rect'?'R':type==='circle'?'C':type==='line'?'L':'',run:()=>engine.current?.addShape(type)})),
+    {id:'photos',label:'Search public-domain photos',keywords:'images pictures stock',run:()=>{choosePanel('elements');setElementsTab('photos');}},
     {id:'templates',label:'Search templates',keywords:'designs layouts',run:()=>choosePanel('templates')},
     {id:'layers',label:'Show layers panel',shortcut:'⌥1',run:()=>{setPositionTab('layers');setInspectorOpen(true);setPanelOpen(false);}},
     {id:'position',label:'Show position panel',keywords:'align arrange geometry',run:()=>{setPositionTab('arrange');setInspectorOpen(true);setPanelOpen(false);}},
@@ -955,6 +989,9 @@ export default function App() {
     {id:'templates' as const,label:'Templates',Icon:TemplatesIcon},{id:'elements' as const,label:'Elements',Icon:ElementsIcon},{id:'text' as const,label:'Text',Icon:TextIcon},{id:'brand' as const,label:'Brand',Icon:BrandIcon},{id:'uploads' as const,label:'Uploads',Icon:UploadsIcon},{id:'draw' as const,label:'Tools',Icon:ToolsIcon},{id:'projects' as const,label:'Projects',Icon:ProjectsIcon},{id:'apps' as const,label:'Apps',Icon:AppsIcon},{id:'components' as const,label:'Components',Icon:ComponentsIcon},{id:'audio' as const,label:'Audio',Icon:AudioIcon},{id:'background' as const,label:'Background',Icon:BackgroundIcon},{id:'charts' as const,label:'Charts',Icon:ChartsIcon},
   ];
   const bounds=selected?engine.current?.getSelectionBounds():null;
+  const activeColour=selected?.vectorColors?.length?(graphicColorTarget&&selected.vectorColors.includes(graphicColorTarget)?graphicColorTarget:selected.vectorColors[0]):selected?.strokeOnly?selected.stroke:selected?.fill||state.background;
+  const applyColour=(color:string)=>{if(selected?.vectorColors?.length){engine.current?.setGraphicColor(activeColour,color);setGraphicColorTarget(color);}else if(selected)update(selected.strokeOnly?{stroke:color}:{fill:color});else engine.current?.setBackground(color);};
+  const openColour=(color=activeColour)=>{setGraphicColorTarget(selected?.vectorColors?.length?color:null);setColorHex(color);choosePanel('color');};
   const onElementAction=(action:ElementAction)=>{
     const studio=engine.current,cur=studio?.getSelected();if(!studio)return;
     if(['front','back','up','down'].includes(action))studio.arrange(action as 'front'|'back'|'up'|'down');
@@ -970,7 +1007,7 @@ export default function App() {
     else if(action==='timing'){choosePanel('tools');setToolTab('animate');}
     else if(action==='write'||action==='translate'){setAiKind(action==='write'?'rewrite':'translate');choosePanel('ai');}
     else if(action==='crop')openCrop();
-    else if(action==='background'&&cur?.type==='image'){studio.removeFrame();studio.cropImage(state.width/state.height);studio.updateSelected({left:0,top:0,width:state.width,height:state.height});studio.arrange('back');}
+    else if(action==='background'&&cur?.type==='image')studio.setSelectedImageAsBackground();
   };
   return (
     <div className={`studio-app ${desktop?"native-desktop":""} ${inspectorOpen?"inspector-open position-open":panelOpen?"panel-open":""} ${commentsOpen?"comments-open":""} ${notesOpen?"notes-open":""} ${home?"home-open":""}`}>
@@ -1019,7 +1056,7 @@ export default function App() {
               className={`rail-button ${panel === id && panelOpen ? "selected" : ""}`}
               onClick={() => panel===id&&panelOpen?setPanelOpen(false):choosePanel(id)}
             >
-              <Icon size={22} strokeWidth={1.7} />
+              <span className="rail-icon-wrap"><Icon size={24} strokeWidth={1.5} filled={panel===id&&panelOpen}/></span>
               <span>{label}</span>
 
             </button>
@@ -1033,7 +1070,7 @@ export default function App() {
             </IconButton>
           </div>
         </nav>
-        <aside className={`asset-panel ${!panelOpen||inspectorOpen?"hidden":""}`}>
+        <aside className={`asset-panel ${panel==='elements'?'elements-panel':''} ${!panelOpen||inspectorOpen?"hidden":""}`}>
           <div className="panel-heading">
             <div>
 
@@ -1059,11 +1096,11 @@ export default function App() {
             <label className="search-box">
               <Search size={16} />
               <input
-                aria-label="Search templates or elements"
+                aria-label={panel==='templates'?'Search templates':elementsTab==='photos'?'Search photos':'Search elements'}
                 placeholder={
                   panel === "templates"
                     ? "Search templates"
-                    : "Search elements"
+                    : elementsTab==='photos'?"Search photos":"Search elements"
                 }
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -1105,36 +1142,15 @@ export default function App() {
           )}
           {panel === "elements" && (
             <>
-              <div className="section-label">Shapes</div>
-              <div className="shape-grid">
-                {[
-                  { type: "rect", name: "Rectangle", Icon: Square },
-                  { type: "circle", name: "Circle", Icon: Circle },
-                  { type: "triangle", name: "Triangle", Icon: Triangle },
-                  { type: "star", name: "Star", Icon: Star },
-                  { type: "line", name: "Line", Icon: Minus },
-                  {type:"ellipse",name:"Ellipse",Icon:Circle},{type:"diamond",name:"Diamond",Icon:Square},{type:"pentagon",name:"Pentagon",Icon:Shapes},{type:"hexagon",name:"Hexagon",Icon:Shapes},{type:"arrow",name:"Arrow",Icon:ArrowUpRight},{type:"heart",name:"Heart",Icon:Shapes},{type:"blob",name:"Blob",Icon:Circle},
-                ]
-                  .filter((v) =>
-                    v.name.toLowerCase().includes(search.toLowerCase()),
-                  )
-                  .map(({ type, name: label, Icon }) => (
-                    <button
-                      className="shape-card"
-                      key={type}
-                      draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"shape",type}))}
-                      onClick={() =>
-                        engine.current?.addShape(
-                          type as Parameters<StudioEditor["addShape"]>[0],
-                        )
-                      }
-                    >
-                      <Icon size={36} />
-                      <span>{label}</span>
-                    </button>
-                  ))}
-              </div>
-              <div className="element-category-grid">{(['graphics','frames','charts','tables'] as ToolTab[]).map(t=><button className="composition-card" key={t} onClick={()=>{choosePanel('tools');setToolTab(t);}}><StudioIcon name={t==='charts'?'charts':t==='tables'?'sheet':t==='frames'?'background':'elements'} size={24}/>{t[0].toUpperCase()+t.slice(1)}<ChevronRight size={18}/></button>)}</div>
+              <div className="elements-filter-tabs" role="tablist" aria-label="Element categories">{(['all','shapes','graphics','photos'] as const).map(tab=><button key={tab} role="tab" aria-selected={elementsTab===tab} tabIndex={elementsTab===tab?0:-1} onClick={()=>setElementsTab(tab)}>{tab[0].toUpperCase()+tab.slice(1)}</button>)}</div>
+              {elementsTab==='photos'?<PublicImageLibrary query={search} onQueryChange={setSearch} showSearch={false} onInsert={importPublicImage} onNotify={notify} onPreviewChange={setPublicImagePreviewOpen}/>:elementsTab==='graphics'?<GraphicsLibrary query={search} onQueryChange={setSearch} onInsert={graphic=>engine.current?.addGraphic(graphic.id)} onNotify={notify}/>:elementsTab==='shapes'?<ShapeLibrary query={search} onInsert={type=>engine.current?.addShape(type)}/>:<>
+                <div className="element-section-heading"><h3>Shapes</h3><button onClick={()=>setElementsTab('shapes')}>See all</button></div>
+                <ShapeLibrary query={search} compact onInsert={type=>engine.current?.addShape(type)}/>
+                <GraphicsLibrary query={search} onQueryChange={setSearch} compact onBrowse={()=>setElementsTab('graphics')} onInsert={graphic=>engine.current?.addGraphic(graphic.id)} onNotify={notify}/>
+                <div className="element-category-grid">{(['frames','charts','tables'] as ToolTab[]).map(t=><button className="composition-card" key={t} onClick={()=>{choosePanel('tools');setToolTab(t);}}><StudioIcon name={t==='charts'?'charts':t==='tables'?'sheet':'background'} size={24}/>{t[0].toUpperCase()+t.slice(1)}<ChevronRight size={18}/></button>)}</div>
+                <button className="full-button" onClick={()=>setElementsTab('photos')}><ImageIcon size={20}/>Photos<ChevronRight size={18}/></button>
+              </>}
+
             </>
           )}
           {panel === "text" && (
@@ -1255,7 +1271,7 @@ export default function App() {
                       <button
                         key={i}
                         draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"image",src}))}
-                        onClick={() => void engine.current?.addImage(src)}
+                        onClick={() => void work("Adding image",async()=>{await engine.current?.addImage(src,"Image",{source:photoSources.current.get(src)});})}
                       >
                         <img src={src} alt={`Uploaded image ${i + 1}`} />
                         <span>
@@ -1351,7 +1367,8 @@ export default function App() {
             </>
           )}
           {panel==='font'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search fonts" placeholder="Search fonts" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="full-button" onClick={()=>fontRef.current?.click()}><Upload size={18}/>Upload a font</button><div className="font-list">{fontOptions.filter(f=>f.toLowerCase().includes(search.toLowerCase())).map(f=><button key={f} style={{fontFamily:f}} className={selected?.fontFamily===f?'active':''} onClick={()=>update({fontFamily:f})}>{f}{selected?.fontFamily===f&&<Check size={18}/>}</button>)}</div></div>}
-          {panel==='color'&&<div className="feature-panel"><h3>Document colours</h3><div className="swatches">{[...new Set([...brand.colors,...COLORS])].map(c=><button key={c} title={c} aria-label={`Apply ${c}`} style={{background:c}} onClick={()=>selected?update({fill:c}):engine.current?.setBackground(c)}/>)}</div><label className="field-label">Hex colour<input aria-label="Hex colour" placeholder="#000000" value={colorHex} onChange={e=>{setColorHex(e.target.value);if(/^#[0-9a-f]{6}$/i.test(e.target.value))selected?update({fill:e.target.value}):engine.current?.setBackground(e.target.value);}}/></label><label className="field-label">Add a new colour<input aria-label="Custom colour" type="color" value={/^#[0-9a-f]{6}$/i.test(selected?.fill||state.background)?selected?.fill||state.background:'#000000'} onChange={e=>selected?update({fill:e.target.value}):engine.current?.setBackground(e.target.value)}/></label><h3>Gradients</h3><ToolsPanel tab="gradients" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></div>}
+          {panel==='color'&&<div className="feature-panel"><h3>Document colours</h3><div className="swatches">{[...new Set([...brand.colors,...COLORS])].map(c=><button key={c} title={c} aria-label={`Apply ${c}`} style={{background:c}} onClick={()=>applyColour(c)}/>)}</div><label className="field-label">Hex colour<input aria-label="Hex colour" placeholder="#000000" value={colorHex} onChange={e=>{setColorHex(e.target.value);if(/^#[0-9a-f]{6}$/i.test(e.target.value))applyColour(e.target.value);}}/></label><label className="field-label">Add a new colour<input aria-label="Custom colour" type="color" value={/^#[0-9a-f]{6}$/i.test(activeColour)?activeColour:'#000000'} onChange={e=>applyColour(e.target.value)}/></label>{!selected?.vectorColors?.length&&!selected?.strokeOnly&&<><h3>Gradients</h3><ToolsPanel tab="gradients" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></>}</div>}
+
           {panel==='image'&&<ImageControls getEditor={getEditor} selected={selected} onRemove={removeBackground} onMask={()=>void work('Opening mask editor',async()=>setMaskSources(await engine.current!.getImageMaskSources()))} onAI={()=>{setAiKind('edit');choosePanel('ai');}} onReplace={()=>{replaceImageRef.current=true;uploadRef.current?.click();}}/>}
           {panel==='projects'&&<div className="project-panel"><div className="chip-row"><button className="chip active">All</button><button className="chip" onClick={goHome}>Folders</button></div>{library.map(d=><button key={d.id} className="project-panel-card" onClick={()=>openDesign(d)}>{d.thumbnail?<img src={d.thumbnail} alt=""/>:<FileText size={32}/>}<span>{d.name}</span></button>)}<button className="full-button" onClick={()=>void open()}>Open project file</button></div>}
           {panel==='apps'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search apps" placeholder="Search apps" value={search} onChange={e=>setSearch(e.target.value)}/></label><h3>Discover</h3><div className="apps-grid">{[{name:'Magic Media',icon:'ai',action:()=>{setAiKind('image');choosePanel('ai');}},{name:'Magic Write',icon:'document',action:()=>{setAiKind('copy');choosePanel('ai');}},{name:'Bulk create',icon:'sheet',action:()=>{choosePanel('tools');setToolTab('bulk');}},{name:'QR code',icon:'apps',action:()=>{choosePanel('tools');setToolTab('qr');}},{name:'Video',icon:'video',action:()=>{setMode('video');setPanelOpen(false);}},{name:'Translate',icon:'text',action:()=>{setAiKind('translate');choosePanel('ai');}}].filter(a=>a.name.toLowerCase().includes(search.toLowerCase())).map(a=><button key={a.name} onClick={a.action}><StudioIcon name={a.icon as Parameters<typeof StudioIcon>[0]['name']} size={32}/><span>{a.name}</span></button>)}</div></div>}
@@ -1367,7 +1384,7 @@ export default function App() {
               {selected?.type === "text" ? <>
                 <button className="toolbar-select" aria-label="Text font" onClick={()=>choosePanel("font")}>{selected.fontFamily}<ChevronDown size={14}/></button>
                 <div className="font-size-control"><IconButton title="Decrease font size" onClick={()=>update({fontSize:Math.max(1,selected.fontSize-1)})}><Minus size={16}/></IconButton><input className="toolbar-number" aria-label="Text size" type="number" min={1} max={600} value={Math.round(selected.fontSize)} onChange={e=>update({fontSize:Number(e.target.value)})}/><IconButton title="Increase font size" onClick={()=>update({fontSize:selected.fontSize+1})}><Plus size={16}/></IconButton></div>
-                <button className="toolbar-text-colour" aria-label="Text colour" title="Text colour" onClick={()=>choosePanel("color")}><span style={{borderBottom:`3px solid ${selected.fill}`}}>A</span></button>
+                <button className="toolbar-text-colour" aria-label="Text colour" title="Text colour" onClick={()=>openColour()}><span style={{borderBottom:`3px solid ${selected.fill}`}}>A</span></button>
                 <IconButton title="Bold" active={selected.fontWeight===700||selected.fontWeight==="bold"} onClick={()=>update({fontWeight:selected.fontWeight===700||selected.fontWeight==="bold"?400:700})}><Bold size={17}/></IconButton>
                 <IconButton title="Italic" active={selected.fontStyle==="italic"} onClick={()=>update({fontStyle:selected.fontStyle==="italic"?"normal":"italic"})}><Italic size={17}/></IconButton>
                 <IconButton title="Underline (⌘U)" active={selected.underline} onClick={()=>update({underline:!selected.underline})}><Underline size={17}/></IconButton>
@@ -1384,11 +1401,11 @@ export default function App() {
                 <button className="toolbar-button" onClick={openCrop}>Crop</button><button className="toolbar-button" onClick={()=>engine.current?.flip("x")}>Flip</button>
                 <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("frames");}}>Frames</button>
               </> : selected ? <>
-                <button className="toolbar-color" aria-label="Shape colour" style={{background:selected.fill}} onClick={()=>choosePanel("color")}/>
-                <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Colour & gradient</button>
+                {selected.vectorColors?.length?selected.vectorColors.map((color,index)=><button key={index} className="toolbar-color" aria-label={`Graphic colour ${index+1}`} title={`Change ${color}`} style={{background:color}} onClick={()=>openColour(color)}/>):<><button className="toolbar-color" aria-label={selected.strokeOnly?"Line colour":"Shape colour"} style={{background:activeColour}} onClick={()=>openColour()}/>{!selected.strokeOnly&&<button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Colour & gradient</button>}</>}
+                {Boolean(selected.vectorColors?.length)&&<button className="toolbar-button" onClick={()=>engine.current?.ungroup()}>Ungroup</button>}
                 <button className="toolbar-button" onClick={()=>engine.current?.flip("x")}>Flip</button>
               </> : <>
-                <button className="toolbar-color" aria-label="Page colour" style={{background:state.background}} onClick={()=>choosePanel("color")}/>
+                <button className="toolbar-color" aria-label="Page colour" style={{background:state.background}} onClick={()=>openColour()}/>
                 <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Background</button>
                 <button className="toolbar-button" onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>{state.width} × {state.height}</button>
               </>}
@@ -1412,7 +1429,18 @@ export default function App() {
             onPointerUp={()=>{interactionRef.current=false;viewportRef.current?.classList.remove('interacting');}}
             onContextMenuCapture={e=>{e.preventDefault();if(mode!=='design')return;const r=viewportRef.current!.getBoundingClientRect();const cur=engine.current?.selectAt({x:e.clientX-r.left,y:e.clientY-r.top,includeLocked:true});if(cur)setContextMenu({x:e.clientX,y:e.clientY});}}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={e=>{e.preventDefault();const raw=e.dataTransfer.getData('text/visro-asset');if(raw){const r=viewportRef.current!.getBoundingClientRect();void work('Adding element',async()=>{const asset=JSON.parse(raw);const studio=engine.current!;if(asset.kind==='image'&&typeof asset.src==='string')await studio.addImage(asset.src);else if(asset.kind==='shape')studio.addShape(asset.type);else if(asset.kind==='text')studio.addText(asset.role||'body');else return;const selected=studio.getSelected();const v=studio.canvas.viewportTransform;const x=(e.clientX-r.left-v[4])/v[0],y=(e.clientY-r.top-v[5])/v[3];if(selected)studio.updateSelected({left:x-selected.width/2,top:y-selected.height/2});});}else void uploadFiles(e.dataTransfer.files);}}
+            onDrop={e=>{e.preventDefault();const studio=engine.current;if(!studio||!ready||switchingProject.current)return;
+              const r=viewportRef.current!.getBoundingClientRect(),v=studio.canvas.viewportTransform,center={x:(e.clientX-r.left-v[4])/v[0],y:(e.clientY-r.top-v[5])/v[3]},pageId=studio.getState().activePageId,generation=projectGeneration.current;
+              const graphic=e.dataTransfer.getData('text/visro-graphic');
+              if(graphic){void work('Adding graphic',async()=>{const data=JSON.parse(graphic);if(typeof data.id!=='string')throw new Error('Choose a graphic from Elements.');studio.addGraphic(data.id,{center,pageId});});return;}
+              const publicPhoto=e.dataTransfer.getData('text/visro-public-image');
+              if(publicPhoto){void work('Adding photo',async()=>{const photo=JSON.parse(publicPhoto);if(typeof photo.id!=='string')throw new Error('Choose a photo from the image library.');await importPublicImage(photo,undefined,center);});return;}
+              const raw=e.dataTransfer.getData('text/visro-asset');
+              if(raw){void work('Adding element',async()=>{const asset=JSON.parse(raw);if(generation!==projectGeneration.current||switchingProject.current)return;
+                if(asset.kind==='image'&&typeof asset.src==='string'){await studio.addImage(asset.src,'Image',{center,pageId,source:photoSources.current.get(asset.src)});return;}
+                if(asset.kind==='shape')studio.addShape(asset.type,{center,pageId});else if(asset.kind==='text')studio.addText(asset.role||'body',{center,pageId});
+              });}else void uploadFiles(e.dataTransfer.files);
+            }}
 
           >
             <canvas ref={canvasRef} />

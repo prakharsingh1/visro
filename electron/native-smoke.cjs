@@ -9,6 +9,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
+const { createServer } = require('node:http');
 const { rasterPointForFill, gestureDeltaBounds } = require('./native-geometry.cjs');
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -28,8 +29,14 @@ async function connectCDP(endpoint) {
   });
   let sequence = 0;
   const pending = new Map();
+  const events = new Map();
+  const listeners = new Map();
   socket.addEventListener('message', (event) => {
     const message = JSON.parse(String(event.data));
+    if (message.method) for (const listener of listeners.get(message.method) || []) listener(message.params);
+    if (message.method && events.has(message.method)) {
+      const item = events.get(message.method); events.delete(message.method); clearTimeout(item.timer); item.resolve(message.params);
+    }
     if (!pending.has(message.id)) return;
     const { resolve, reject, timer } = pending.get(message.id);
     pending.delete(message.id);
@@ -49,7 +56,40 @@ async function connectCDP(endpoint) {
     if (result.exceptionDetails) throw new Error(result.exceptionDetails.exception?.description || result.exceptionDetails.text);
     return result.result.value;
   }
-  return { command, evaluate, close: () => socket.close() };
+  function once(method, timeoutMs = 10000) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => { events.delete(method); reject(new Error(`Native smoke event timed out: ${method}.`)); }, timeoutMs);
+      events.set(method, { resolve, reject, timer });
+    });
+  }
+  function on(method, listener) {
+    const handlers = listeners.get(method) || new Set(); handlers.add(listener); listeners.set(method, handlers);
+    return () => { handlers.delete(listener); if (!handlers.size) listeners.delete(method); };
+  }
+  return { command, evaluate, once, on, close: () => socket.close() };
+}
+
+async function nativeClick(renderer, expression) {
+  const point = await renderer.evaluate(`(()=>{const element=${expression};if(!element)throw new Error('The native click target is missing.');element.scrollIntoView({block:'nearest'});const r=element.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()`);
+  await renderer.command('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', buttons: 1, clickCount: 1 });
+  await renderer.command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', buttons: 0, clickCount: 1 });
+}
+
+async function nativeLibraryDrag(renderer, expression) {
+  const points = await renderer.evaluate(`(()=>{const element=${expression};element.scrollIntoView({block:'center'});const source=element.getBoundingClientRect(),target=document.querySelector('.canvas-viewport').getBoundingClientRect();return{from:{x:source.x+source.width/2,y:source.y+source.height/2},to:{x:target.x+target.width/2,y:target.y+target.height/2}};})()`);
+  await renderer.command('Input.setInterceptDrags', { enabled: true });
+  const intercepted = renderer.once('Input.dragIntercepted'); intercepted.catch(() => {});
+  try {
+    await renderer.command('Input.dispatchMouseEvent', { type: 'mouseMoved', ...points.from });
+    await renderer.command('Input.dispatchMouseEvent', { type: 'mousePressed', ...points.from, button: 'left', buttons: 1, clickCount: 1 });
+    for (let step = 1; step <= 6; step++) await renderer.command('Input.dispatchMouseEvent', { type: 'mouseMoved', x: points.from.x + (points.to.x - points.from.x) * step / 6, y: points.from.y + (points.to.y - points.from.y) * step / 6, button: 'left', buttons: 1 });
+    const drag = await intercepted;
+    for (const type of ['dragEnter', 'dragOver', 'drop']) await renderer.command('Input.dispatchDragEvent', { type, ...points.to, data: drag.data });
+    return drag.data.items.map(item => ({ mimeType: item.mimeType, data: item.data }));
+  } finally {
+    await renderer.command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...points.to, button: 'left', buttons: 0, clickCount: 1 });
+    await renderer.command('Input.setInterceptDrags', { enabled: false });
+  }
 }
 
 async function waitForRenderer(cdp, predicate, message, timeoutMs = 15000) {
@@ -202,6 +242,7 @@ async function runNativeCaptionRegression(renderer, main, profile, enginePath, s
   await renderer.evaluate("Array.from(document.querySelectorAll('.media-library button')).find(button=>button.textContent.trim()==='Captions').click()");
   await waitForRenderer(renderer, "Boolean(document.querySelector('textarea[aria-label=\"Caption text 1\"]'))", 'The saved caption track must remain editable after reopening.');
   if (screenshotPath) {
+    await renderer.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
     const screenshot = await renderer.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
     const file = path.resolve(screenshotPath).replace(/\.png$/i, '-captions.png');
     await fs.mkdir(path.dirname(file), { recursive: true });
@@ -210,6 +251,183 @@ async function runNativeCaptionRegression(renderer, main, profile, enginePath, s
   await renderer.evaluate(`localStorage.setItem('visro-active-design',${JSON.stringify(originalId)})`);
   await renderer.command('Page.reload'); await openHomeDesign(renderer, originalName);
   return { timedPreview: true, editable: true, projectUndo: true, nativeProjectRedo: true, autosaveRestored: true, nativeExport: true, frameWhitePixels: frames, outputBytes: (await fs.stat(destination)).size, originalDesignRestored: true };
+}
+
+async function runNativePublicImageRegression(renderer, main, profile, screenshotPath) {
+  assert.ok(main, 'Public-image acceptance requires the isolated native inspector.');
+  const originalId = await renderer.evaluate("localStorage.getItem('visro-active-design')");
+  const electronAPI = "process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron')";
+  assert.equal(await renderer.evaluate("typeof window.visro.searchPublicImages==='function'&&typeof window.visro.getPublicImage==='function'"), true, 'Public image search/get must be exposed by the packaged bridge.');
+  await renderer.evaluate("window.__visroSmokePhotos={state:'pending'};window.visro.searchPublicImages({query:'mountain',limit:24}).then(result=>{const image=result.items.find(item=>/\\.jpe?g$/i.test(item.title));if(!image)throw new Error('No verified JPEG photo was returned.');window.__visroSmokePhotos={state:'ready',image,count:result.items.length};}).catch(error=>window.__visroSmokePhotos={state:'error',message:error.message});true");
+  await waitForRenderer(renderer, "window.__visroSmokePhotos.state!=='pending'", 'The packaged public-domain search did not settle.', 45000);
+  const search = await renderer.evaluate('window.__visroSmokePhotos');
+  assert.equal(search.state, 'ready', search.message || 'Commons must return verified public-domain/CC0 photos.');
+  assert.ok(search.count > 0 && search.count <= 24); assert.match(search.image.id, /^commons:[1-9]\d+$/); assert.ok(['CC0', 'Public domain'].includes(search.image.license));
+  // Warm one visible preview through the actual IPC; its full-sized transfer is
+  // exercised by opening the real preview dialog below, not by a fixture image.
+  await renderer.evaluate(`window.__visroSmokePhotoGet={state:'pending'};window.visro.getPublicImage({id:${JSON.stringify(search.image.id)},size:'thumbnail'}).then(image=>window.__visroSmokePhotoGet={state:'ready',bytes:image.bytes,width:image.imageWidth,height:image.imageHeight,dataURI:image.data.startsWith('data:image/')}).catch(error=>window.__visroSmokePhotoGet={state:'error',message:error.message});true`);
+  await waitForRenderer(renderer, "window.__visroSmokePhotoGet.state!=='pending'", 'The packaged photo preview did not settle.', 45000);
+  const thumbnail = await renderer.evaluate('window.__visroSmokePhotoGet'); assert.equal(thumbnail.state, 'ready', thumbnail.message); assert.ok(thumbnail.bytes > 1000); assert.ok(thumbnail.dataURI && Math.max(thumbnail.width, thumbnail.height) <= 480);
+  assert.equal(await main.evaluate(`(()=>{const item=${electronAPI}.Menu.getApplicationMenu().items.find(item=>item.label==='File')?.submenu?.items.find(item=>item.accelerator==='CmdOrCtrl+T');if(!item)return false;item.click();return true;})()`), true);
+  await waitForRenderer(renderer, `localStorage.getItem('visro-active-design')!==${JSON.stringify(originalId)}&&!document.querySelector('.home-shell,.canvas-loading,.busy-toast')`, 'The public-photo test design did not open.');
+  const photoDesignId = await renderer.evaluate("localStorage.getItem('visro-active-design')");
+  await renderer.evaluate("(()=>{const input=document.querySelector('input[aria-label=\"Design name\"]');input.focus();input.select();})()");
+  await renderer.command('Input.insertText', { text: 'Native public image acceptance' });
+  await renderer.evaluate("(()=>{const button=Array.from(document.querySelectorAll('.rail-button')).find(button=>button.textContent.trim()==='Elements');if(!button.classList.contains('selected'))button.click();})()");
+  await waitForRenderer(renderer, "Boolean(document.querySelector('.elements-panel:not(.hidden) .search-box input'))", 'Elements must open its search box.');
+  await renderer.evaluate("(()=>{const input=document.querySelector('.elements-panel .search-box input');input.focus();input.select();})()");
+  await renderer.command('Input.insertText', { text: 'mountain' });
+  await renderer.evaluate("Array.from(document.querySelectorAll('.elements-filter-tabs button')).find(button=>button.textContent==='Photos').click()");
+  const previewSelector = `Array.from(document.querySelectorAll('.public-photo-image')).find(button=>button.getAttribute('aria-label')===${JSON.stringify(`Add ${search.image.name} photo to canvas`)})`;
+  await waitForRenderer(renderer, `Boolean(${previewSelector})`, 'The real Elements → Photos grid must contain the searched photo.');
+  await renderer.evaluate(`${previewSelector}.scrollIntoView({block:'center'})`);
+  await waitForRenderer(renderer, `(()=>{const button=${previewSelector},image=button?.querySelector('img');return image?.complete&&image.naturalWidth>0&&image.src.startsWith('data:image/')&&button.draggable;})()`, 'The real Elements → Photos grid must paint its decoded, draggable preview.', 45000);
+  await renderer.evaluate(`${previewSelector}.closest('.public-photo-card').querySelector('.public-photo-details').click()`);
+  await waitForRenderer(renderer, "Boolean(document.querySelector('.public-photo-detail [class~=coral]:not(:disabled)'))&&document.querySelector('.public-photo-detail-art img')?.complete", 'The native full-photo preview did not finish loading.', 60000);
+  const preview = await renderer.evaluate("(()=>{const image=document.querySelector('.public-photo-detail-art img');return{width:image.naturalWidth,height:image.naturalHeight,dataURI:image.src.startsWith('data:image/'),license:document.querySelector('.public-photo-detail-license')?.textContent,error:document.querySelector('.public-photo-detail [role=alert]')?.textContent||''};})()");
+  assert.equal(preview.error, '', preview.error || 'The full photo must load without a preview error.');
+  assert.ok(preview.dataURI && Math.max(preview.width, preview.height) <= 2400); assert.match(preview.license, /CC0|Public domain/);
+  const addPoint = await renderer.evaluate("(()=>{const button=Array.from(document.querySelectorAll('.public-photo-detail button')).find(button=>button.textContent.trim()==='Add to design'),r=button.getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()");
+  await renderer.command('Input.dispatchMouseEvent', { type: 'mousePressed', ...addPoint, button: 'left', buttons: 1, clickCount: 1 });
+  await renderer.command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...addPoint, button: 'left', buttons: 0, clickCount: 1 });
+  await waitForRenderer(renderer, "!document.querySelector('.public-photo-detail')&&Array.from(document.querySelectorAll('.toolbar-button')).some(button=>button.textContent.trim()==='BG Remover')", 'Adding the preview must create a selected editable photo.');
+  const savedPhoto = `(async()=>{const saved=await ${readSavedProject};const images=saved?.project.pages.flatMap(page=>page.canvas.objects||[]).filter(object=>object.visroMetadata?.source?.id===${JSON.stringify(search.image.id)})||[];const digest=images[0]?.src?Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(images[0].src)))).map(byte=>byte.toString(16).padStart(2,'0')).join(''):null;return{designId:saved?.id,name:saved?.name,count:images.length,image:images[0]?{id:images[0].id,embedded:images[0].src?.startsWith('data:image/'),sha256:digest,source:images[0].visroMetadata.source}:null};})()`;
+  await waitForRenderer(renderer, `(async()=>{const saved=await ${savedPhoto};return saved.count===1&&saved.image.embedded&&saved.designId===${JSON.stringify(photoDesignId)};})()`, 'The inserted photo and source/license metadata must autosave locally.');
+  const persisted = await renderer.evaluate(savedPhoto); assert.equal(persisted.image.source.license, search.image.license); assert.equal(persisted.image.source.sourceUrl, search.image.sourceUrl);
+  const paint = `(()=>{const source=document.querySelector('.lower-canvas');if(!source?.width)return null;const canvas=document.createElement('canvas');canvas.width=400;canvas.height=Math.max(1,Math.round(source.height/source.width*400));const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(source,0,0,canvas.width,canvas.height);const data=context.getImageData(0,0,canvas.width,canvas.height).data,colors=new Set();for(let i=0;i<data.length;i+=4){if(data[i+3]>200)colors.add((data[i]>>4)*256+(data[i+1]>>4)*16+(data[i+2]>>4));}return{colors:colors.size};})()`;
+  await waitForRenderer(renderer, `(()=>{const pixels=${paint};return pixels?.colors>40;})()`, 'Imported photo pixels must visibly paint onto the native design.');
+  const beforePixels = await renderer.evaluate(paint);
+  await renderer.evaluate("document.querySelector('button[aria-label=\"Close side panel\"]')?.click()");
+  let probeRequests = 0;
+  const probeServer = createServer((_request,response)=>{
+    probeRequests++;
+    response.writeHead(200, {'Content-Type':'text/plain','Cache-Control':'no-store','Access-Control-Allow-Origin':'*','Cross-Origin-Resource-Policy':'cross-origin'});
+    response.end('visro-network-control');
+  });
+  await new Promise((resolve,reject)=>{probeServer.once('error',reject);probeServer.listen(0,'127.0.0.1',resolve);});
+  const probeURL = `http://127.0.0.1:${probeServer.address().port}/visro-network-control`;
+  const networkProbe = `(async()=>{try{const response=await fetch(${JSON.stringify(probeURL)},{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(8000)});return{status:response.status,text:await response.text()};}catch(error){return{error:error.message};}})()`;
+  const intercepted = [], transfers = [];
+  let removeListener, offlineNetwork;
+  await renderer.command('Page.enable'); await renderer.command('Network.enable');
+  try {
+    // The app normally blocks direct browser HTTP through CSP. Allow only this
+    // isolated test context, then reload because Chromium initializes CSP bypass
+    // at navigation. The local control server avoids external/CORS ambiguity.
+    await renderer.command('Page.setBypassCSP', { enabled: true });
+    await renderer.command('Page.reload'); await openHomeDesign(renderer, 'Native public image acceptance');
+    const reachable = await renderer.evaluate(networkProbe);
+    assert.deepEqual(reachable, {status:200,text:'visro-network-control'}, 'The exact renderer probe must succeed before network blocking.');
+    assert.equal(probeRequests, 1);
+    // Electron custom-scheme navigations reset navigator overrides, and session
+    // emulation did not block this renderer's requests in a standalone probe.
+    // Intercept every actual HTTP(S) request and fail it at the browser boundary;
+    // count real paused requests rather than mocking navigator or fetch.
+    removeListener = renderer.on('Fetch.requestPaused', event=>{
+      intercepted.push({url:event.request.url,reason:'InternetDisconnected'});
+      const transfer = renderer.command('Fetch.failRequest', {requestId:event.requestId,errorReason:'InternetDisconnected'});
+      transfer.catch(()=>{}); transfers.push(transfer);
+    });
+    await renderer.command('Fetch.enable', {patterns:[{urlPattern:'http://*',requestStage:'Request'},{urlPattern:'https://*',requestStage:'Request'}]});
+    await renderer.command('Network.overrideNetworkState', {offline:true,latency:0,downloadThroughput:0,uploadThroughput:0});
+    const onlineBeforeReload = await renderer.evaluate('navigator.onLine');
+    const beforeReload = await renderer.evaluate(networkProbe);
+    assert.match(beforeReload.error || '', /Failed to fetch/, 'The isolated renderer must reject its actual HTTP probe before reload.');
+    await renderer.command('Page.reload'); await openHomeDesign(renderer, 'Native public image acceptance');
+    const onlineAfterReload = await renderer.evaluate('navigator.onLine');
+    const afterReload = await renderer.evaluate(networkProbe);
+    assert.match(afterReload.error || '', /Failed to fetch/, 'The isolated renderer must still reject its actual HTTP probe after reload.');
+    await Promise.all(transfers);
+    assert.equal(intercepted.filter(event=>event.url===probeURL).length, 2, 'Both real renderer probes must reach browser interception.');
+    assert.equal(probeRequests, 1, 'The disconnected renderer requests must never reach the control server.');
+    offlineNetwork = {boundary:'renderer-http-and-https-request-interception',onlineControlStatus:reachable.status,controlServerRequests:probeRequests,failedRequests:2,blockedRequestEvents:intercepted.length,errorReason:'InternetDisconnected',navigatorOnlineBeforeReload:onlineBeforeReload,navigatorOnlineAfterReload:onlineAfterReload};
+    await waitForRenderer(renderer, `(()=>{const pixels=${paint};return pixels?.colors>40;})()`, 'The embedded photo must render after a blocked-network project reload.');
+    const restored = await renderer.evaluate(savedPhoto); assert.equal(restored.image.id,persisted.image.id); assert.equal(restored.image.embedded,true); assert.equal(restored.image.sha256,persisted.image.sha256); assert.deepEqual(restored.image.source,persisted.image.source);
+    if (screenshotPath) {
+      await renderer.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+      const screenshot = await renderer.command('Page.captureScreenshot', {format:'png',captureBeyondViewport:false});
+      await fs.mkdir(path.dirname(path.resolve(screenshotPath)), {recursive:true});
+      await fs.writeFile(path.resolve(screenshotPath).replace(/\.png$/i,'-public-images.png'),Buffer.from(screenshot.data,'base64'));
+    }
+    await renderer.command('Fetch.disable'); removeListener(); removeListener = null;
+    await renderer.command('Network.overrideNetworkState', {offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+    await renderer.command('Page.setBypassCSP', {enabled:false});
+    await renderer.command('Page.reload'); await openHomeDesign(renderer,'Native public image acceptance');
+    await renderer.command('Log.enable');
+    const securityLog = renderer.once('Log.entryAdded',5000); securityLog.catch(()=>{});
+    const blocked = await renderer.evaluate(networkProbe), security = await securityLog;
+    assert.match(blocked.error || '', /Failed to fetch/, 'Normal production CSP must block the direct HTTP probe again.');
+    assert.equal(security.entry.source,'security'); assert.match(security.entry.text,/connect-src/);
+    assert.equal(probeRequests,1,'Restored CSP must block the HTTP control before it reaches the server.');
+    offlineNetwork.productionCSPRechecked = true;
+  } finally {
+    await renderer.command('Fetch.disable'); removeListener?.();
+    await renderer.command('Network.overrideNetworkState', {offline:false,latency:0,downloadThroughput:-1,uploadThroughput:-1});
+    await renderer.command('Page.setBypassCSP', {enabled:false});
+    probeServer.closeIdleConnections();
+    await new Promise(resolve=>probeServer.close(resolve));
+  }
+  const cachedImages = (await fs.readdir(path.join(profile, 'public-images'))).filter(file=>/\.bin$/.test(file)).length;
+  await renderer.evaluate(`(()=>{const index=JSON.parse(localStorage.getItem('visro-workspace-tabs')||'[]').findIndex(tab=>tab.id===${JSON.stringify(originalId)});document.querySelectorAll('.desktop-tab[role="tab"]')[index]?.click();})()`);
+  await waitForRenderer(renderer, `localStorage.getItem('visro-active-design')===${JSON.stringify(originalId)}&&!document.querySelector('.canvas-loading,.busy-toast,.home-shell')`, 'Public-photo acceptance must return to the original design.');
+  return { provider: 'wikimedia-commons', searchCount: search.count, id: search.image.id, license: search.image.license, nativeIPCSearch: true, nativeIPCGet: true, gridDataURI: true, draggablePreview: true, thumbnail, preview, inserted: true, savedSource: persisted.image.source, embeddedSHA256: persisted.image.sha256, localCacheImages: cachedImages, paintColors: beforePixels.colors, autosaveRestored: true, offlineRendererReopen: true, offlineNetwork, originalDesignRestored: true };
+}
+
+async function runNativeElementLibraryRegression(renderer, main, screenshotPath) {
+  assert.ok(main, 'Element library acceptance requires the isolated native inspector.');
+  const originalId = await renderer.evaluate("localStorage.getItem('visro-active-design')"), electronAPI = "process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron')";
+  const menu = accelerator => main.evaluate(`(()=>{const item=${electronAPI}.Menu.getApplicationMenu().items.find(item=>item.label==='Edit')?.submenu?.items.find(item=>item.accelerator===${JSON.stringify(accelerator)});if(!item)return false;item.click();return true;})()`);
+  await main.evaluate(`(()=>{${electronAPI}.Menu.getApplicationMenu().items.find(item=>item.label==='File').submenu.items.find(item=>item.accelerator==='CmdOrCtrl+T').click();})()`);
+  await waitForRenderer(renderer, `localStorage.getItem('visro-active-design')!==${JSON.stringify(originalId)}&&!document.querySelector('.home-shell,.canvas-loading,.busy-toast')`, 'The element-library test design did not open.');
+  await renderer.evaluate("(()=>{const input=document.querySelector('input[aria-label=\"Design name\"]');input.focus();input.select();})()"); await renderer.command('Input.insertText', { text: 'Native element library acceptance' });
+  await renderer.evaluate("(()=>{const button=Array.from(document.querySelectorAll('.rail-button')).find(button=>button.textContent.trim()==='Elements');if(!button.classList.contains('selected'))button.click();})()");
+  const searchInput = async text => {
+    await renderer.evaluate("(()=>{const input=document.querySelector('.elements-panel .search-box input');input.focus();input.select();})()");
+    await renderer.command('Input.insertText', { text });
+  };
+  const category = name => renderer.evaluate(`Array.from(document.querySelectorAll('.elements-filter-tabs button')).find(button=>button.textContent===${JSON.stringify(name)}).click()`);
+  await waitForRenderer(renderer, "Boolean(document.querySelector('.elements-panel:not(.hidden) .search-box input'))", 'The native Elements library did not open.');
+  await searchInput('heart'); await category('Shapes');
+  await waitForRenderer(renderer, "Boolean(document.querySelector('.element-shape-tile[aria-label=\"Add Heart\"]'))", 'The new shape library must expose its native Heart tile.');
+  await nativeClick(renderer, "document.querySelector('.element-shape-tile[aria-label=\"Add Heart\"]')");
+  await waitForRenderer(renderer, `(async()=>{const saved=await ${readSavedProject};return saved?.project.pages[0].canvas.objects.length===1&&saved.project.pages[0].canvas.objects[0].visroName==='Heart';})()`, 'A native shape click must autosave one Heart vector.');
+  await searchInput('Three-step funnel'); await category('Graphics');
+  const graphic = "document.querySelector('.original-graphic-add[aria-label=\"Add Three-step funnel graphic\"]')";
+  await waitForRenderer(renderer, `Boolean(${graphic})`, 'The graphics library must expose the original, multicolor funnel.');
+  const drag = await nativeLibraryDrag(renderer, graphic);
+  assert.deepEqual(drag.find(item=>item.mimeType==='text/visro-graphic'), { mimeType: 'text/visro-graphic', data: JSON.stringify({ id: 'graphic-chart-funnel' }) }, 'A real HTML dragstart must carry its vetted graphic ID.');
+  const objects = `(async()=>{const saved=await ${readSavedProject};return saved?.project.pages[0].canvas.objects||[];})()`;
+  const group = `(async()=>{const objects=await ${objects};return objects.find(object=>object.visroGraphicId==='graphic-chart-funnel');})()`;
+  await waitForRenderer(renderer, `(async()=>Boolean(await ${group}))()`, 'Dropping a graphic on the native canvas must autosave its native group.');
+  const inserted = await renderer.evaluate(group); assert.equal(inserted.objects.length, 3); assert.ok(inserted.objects.every(part=>String(part.type).toLowerCase()==='path')); assert.ok(inserted.objects.every(part=>part.id));
+  assert.equal(await menu('CmdOrCtrl+Z'), true);
+  await waitForRenderer(renderer, `(async()=>{const objects=await ${objects};return objects.length===1&&!objects.some(object=>object.visroGraphicId);})()`, 'A single native Undo must remove the complete dropped graphic.');
+  assert.equal(await menu('CmdOrCtrl+Shift+Z'), true);
+  await waitForRenderer(renderer, `(async()=>Boolean(await ${group}))()`, 'Native Redo must restore the dropped vector graphic.');
+  await nativeClick(renderer, "document.querySelector('.canvas-viewport')");
+  await waitForRenderer(renderer, "Boolean(document.querySelector('button[aria-label=\"Graphic colour 1\"]'))", 'A multicolor native graphic must expose its editable palette.');
+  await nativeClick(renderer, "document.querySelector('button[aria-label=\"Graphic colour 1\"]')");
+  await waitForRenderer(renderer, "Boolean(document.querySelector('input[aria-label=\"Hex colour\"]'))", 'A graphic palette swatch must open the color editor.');
+  await renderer.evaluate("(()=>{const input=document.querySelector('input[aria-label=\"Hex colour\"]');input.focus();input.select();})()"); await renderer.command('Input.insertText', { text: '#123456' });
+  await waitForRenderer(renderer, `(async()=>{const graphic=await ${group};return graphic?.objects.some(part=>part.fill==='#123456'||part.stroke==='#123456');})()`, 'Changing a graphic swatch must save the edited vector palette.');
+  const changed = await renderer.evaluate(group), beforePalette = inserted.objects.map(part=>({fill:part.fill,stroke:part.stroke})), afterPalette = changed.objects.map(part=>({fill:part.fill,stroke:part.stroke}));
+  assert.notDeepEqual(afterPalette, beforePalette); assert.equal(afterPalette.filter((part,index)=>part.fill!==beforePalette[index].fill||part.stroke!==beforePalette[index].stroke).length, 1, 'Only the selected funnel palette color must change.');
+  await nativeClick(renderer, "document.querySelector('.topbar button[aria-label=\"Undo (⌘Z)\"],.topbar button[title=\"Undo (⌘Z)\"]')");
+  await waitForRenderer(renderer, `(async()=>{const graphic=await ${group};return JSON.stringify(graphic?.objects.map(part=>({fill:part.fill,stroke:part.stroke})))===${JSON.stringify(JSON.stringify(beforePalette))};})()`, 'Toolbar Undo must restore the original graphic palette.');
+  await nativeClick(renderer, "document.querySelector('.canvas-viewport')");
+  await waitForRenderer(renderer, "Array.from(document.querySelectorAll('.toolbar-button')).some(button=>button.textContent.trim()==='Ungroup')", 'The restored graphic must be selectable for native ungroup.');
+  await nativeClick(renderer, "Array.from(document.querySelectorAll('.toolbar-button')).find(button=>button.textContent.trim()==='Ungroup')");
+  await waitForRenderer(renderer, `(async()=>{const objects=await ${objects};return objects.length===4&&objects.every(object=>String(object.type).toLowerCase()==='path');})()`, 'Ungroup must leave the Heart and all three independently editable vector parts.');
+  await renderer.command('Page.reload'); await openHomeDesign(renderer, 'Native element library acceptance');
+  assert.equal((await renderer.evaluate(objects)).length, 4, 'The expanded native vector library must survive a full project reopen.');
+  if (screenshotPath) {
+    await renderer.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    const screenshot = await renderer.command('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    await fs.mkdir(path.dirname(path.resolve(screenshotPath)), { recursive: true }); await fs.writeFile(path.resolve(screenshotPath).replace(/\.png$/i, '-elements.png'), Buffer.from(screenshot.data, 'base64'));
+  }
+  await renderer.evaluate(`(()=>{const index=JSON.parse(localStorage.getItem('visro-workspace-tabs')||'[]').findIndex(tab=>tab.id===${JSON.stringify(originalId)});document.querySelectorAll('.desktop-tab[role="tab"]')[index]?.click();})()`);
+  await waitForRenderer(renderer, `localStorage.getItem('visro-active-design')===${JSON.stringify(originalId)}&&!document.querySelector('.canvas-loading,.busy-toast,.home-shell')`, 'Element-library acceptance must return to the original design.');
+  return { shapeClick: true, realGraphicDrag: true, droppedNativeParts: 3, nativeUndoRedo: true, paletteEditUndo: true, ungroupedEditablePaths: 4, autosaveRestored: true, originalDesignRestored: true };
 }
 
 async function runClipboardRegression(renderer, main) {
@@ -427,7 +645,7 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, paintProbe, firstSelection, finalSelection, restoredSelection, keyboardNudgedSelection, arrowNudge: 1, shiftArrowNudge: 10, hoverHighlight: true, contextMenu, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
 }
 
-async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
+async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, publicImages = false, elements = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
   const root = path.resolve(__dirname, '..');
   let executable, args;
   if (appPath) {
@@ -442,7 +660,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
   delete environment.ELECTRON_RUN_AS_NODE;
   delete environment.VISRO_DEV_URL;
   args.push('--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', `--user-data-dir=${profile}`);
-  if (clipboard || captions) args.push('--inspect=0');
+  if (clipboard || captions || publicImages || elements) args.push('--inspect=0');
   const child = spawn(executable, args, { cwd: root, env: environment, stdio: ['ignore', 'ignore', 'pipe'] });
   let debuggerURL;
   let mainInspectorURL;
@@ -559,7 +777,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
     assert.equal(result.mediaEngine.available, true, 'Packaged FFmpeg must be available without user PATH.');
     assert.equal(result.mediaEngine.bundled, true);
     assert.match(result.mediaEngine.version, /^9\.0\.2/);
-    if (clipboard || captions) {
+    if (clipboard || captions || publicImages || elements) {
       progress('checking native runtime version and asynchronous storage');
       if (mainInspectorURL) mainCDP = await connectCDP(mainInspectorURL);
       if (mainCDP) {
@@ -601,6 +819,14 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
       progress('checking native timed caption editing and rendered video frames');
       const enginePath = appPath ? path.join(path.dirname(path.dirname(executable)), 'Resources/media-tools/ffmpeg') : path.join(root, 'build/media-tools/ffmpeg');
       result.captions = await runNativeCaptionRegression(cdp, mainCDP, profile, enginePath, screenshotPath);
+    }
+    if (publicImages) {
+      progress('checking native public-domain search, preview, insertion and offline project reload');
+      result.publicImages = await runNativePublicImageRegression(cdp, mainCDP, profile, screenshotPath);
+    }
+    if (elements) {
+      progress('checking native shape clicks, real graphic dragging, palette Undo and vector ungroup');
+      result.elements = await runNativeElementLibraryRegression(cdp, mainCDP, screenshotPath);
     }
     if (cutoutPath) {
       progress('uploading local cutout fixture');
@@ -704,7 +930,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
 
 if (require.main === module) {
   const argument = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; };
-  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
+  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), publicImages: process.argv.includes('--public-images'), elements: process.argv.includes('--elements'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
     if (error.validation) process.stdout.write(`${JSON.stringify({ ...error.validation, cleanup: { ok: false, error: error.message } }, null, 2)}\n`);
     if (error.validationError) process.stderr.write(`Native validation failed: ${error.validationError}\n`);
     process.stderr.write(`Native smoke failed: ${error.message}\n`);

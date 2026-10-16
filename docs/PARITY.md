@@ -1,12 +1,12 @@
 # Canva reference and Visro workflow map
 
-Reviewed 16 October 2026; installed Canva observations were made on 13 and 16 October. The requested scope is **local projects with Gemini only**. Visro implements a broad local creative workspace with familiar Canva controls. This map records implemented behavior and remaining limits; it does not claim complete 1:1 parity with Canva's entire product or backend.
+Reviewed 16 October 2026; installed Canva observations were made on 13 and 16 October. Projects stay local, Gemini is the only AI provider, and the user subsequently authorized public image search/downloads. Visro implements a broad local creative workspace with familiar Canva controls. This map records implemented behavior and remaining limits; it does not claim complete 1:1 parity with Canva's entire product or backend.
 
 ## Reference used
 
 The installed Canva Mac app, version **1.126.0**, was inspected directly for visual layout and visible menu commands. Its collapsed Home navigation is 72px wide, with Create/Home/Projects/Templates/Brand/Canva AI/More and a centered search area. The observed editor has 40px desktop tabs, a 56px teal/purple header, a 72px tool rail and a dark workspace near `#0e1013`. The main rail order is Templates, Elements, Text, Brand, Uploads, Tools, Projects and Apps, followed by pinned Components, Audio, Background and Charts.
 
-Context controls float above the artwork. **Position opens on the left**, beginning below the combined 96px tab/header area; Comments opens on the right, and Notes below the canvas. The Position reference includes Arrange/Layers, forward/back/front/back order, page alignment, width/height/ratio and X/Y/rotation fields. Purple outlines with white corner handles, selected-element actions, centered page thumbnails and the lower zoom/pages controls informed Visro's corresponding layout. Interface glyphs are recreated from these observations with 24px geometry and rounded 1.5px strokes; they are not claimed to be extracted original SVGs.
+Context controls float above the artwork. **Position opens on the left**, beginning below the combined 96px tab/header area; Comments opens on the right, and Notes below the canvas. The Position reference includes Arrange/Layers, forward/back/front/back order, page alignment, width/height/ratio and X/Y/rotation fields. Purple outlines with white corner handles, selected-element actions, centered page thumbnails and the lower zoom/pages controls informed Visro's corresponding layout. Header/context type uses 14px/600 and rail labels 12px/600, with a 72px rail pitch, 32px buttons for selected actions and a 40px context bar at y=104. Interface glyphs are independently recreated from screenshots with 24px geometry and rounded 1.5px strokes; they are not claimed to be extracted original SVGs.
 
 Canva Sans is read from the user's installed Canva desktop package at runtime when available. Visro does not redistribute that proprietary font. Its 21-family open font catalog and local font upload work independently. Actual loaded FontFace entries were checked in the browser; CSS fallback checks alone are not treated as evidence that Canva Sans loaded.
 
@@ -23,15 +23,17 @@ Canva's [Visual Suite](https://www.canva.com/visual-suite/) describes the broade
 | Canva Sans and design fonts | Implemented; actual faces loaded | Local installed Canva Sans, 21 bundled open families and user uploads; no proprietary font catalog distribution. |
 | Workspace tabs | Implemented | Native ⌘T/⌘W/⇧⌘T, ⌥⌘←/→ and ⌘1…9; pending edits saved before tab switches, closed tabs can reopen. Browser tab commands remain browser-owned. |
 | Template discovery | Implemented; gallery filter/preview/create checked | Name/description search, category/color filters, saved stars; 24 results per Home page and 18 per editor panel. |
-| Templates and common formats | Implemented; 500 original editable layouts | 46 existing originals plus 454 additions in 26 composition families, 23 categories and 19 collections; no copied Canva library. |
-| Text, shapes, photos, SVGs and drawing | Implemented | Supported editable local object types. |
+| Templates and common formats | Implemented; 530 original editable layouts | 46 existing originals, 454 vector/type additions and 30 detailed photographic originals. Twelve bundled CC0/public-domain photos, original copy and editable objects; no copied Canva library. |
+| Public photo search | Implemented; keyless Commons service | Elements → Photos, public-domain/CC0 filters, preview/source details, 24-result pages and lazy thumbnails. Click or drag to add; locally cached bytes and source provenance persist in portable projects. Queries and uncached image downloads contact Commons; no Canva stock service. |
+| Text, shapes, photos, SVGs and drawing | Implemented | Supported editable local object types, including 56 native shapes across six categories, with lines, dashes, arrows, callouts, polygons and stars. |
 | Typography and text effects | Implemented | Font drawer, formatting, spacing and listed effects; no entire Canva effect catalog. |
 | Drag, transform, groups, keyboard nudges and undo | Implemented; real browser interaction checked | Pointer commits, Option-drag duplication, Tab layer cycling, click-behind selection and fractional-coordinate undo; 1px/10px movement and ⌘+Arrow resize preserve expected geometry. Exact packaged evidence is in VALIDATION.md. |
 | Copy/paste, duplicate, copy style and context menus | Implemented; real UI copy/paste persisted | In-app object handling and native clipboard integration; exact packaged evidence is recorded in VALIDATION.md. |
 | Quick actions and focus shortcuts | Implemented | `/` or ⌘E, sidebar toggle, canvas/toolbar/sidebar focus and keyboard context menu. Text inputs retain their own shortcuts. |
 | Position, layers, snapping and distribution | Implemented | Left Position drawer, ordering, page alignment, geometry, visibility and locks. |
 | Rulers and guides | Implemented; browser pointer/reopen checked | File Settings / Shift+R, guide grids, locks, snapping, page persistence and view-only safe margins. |
-| Graphics, emoji, components and QR | Implemented | Local collections and generated elements; no paid stock marketplace. |
+| Original graphics library | Implemented; all 192 insertions validated in the editor engine | Ten categories of independently drawn static artwork; search, categories, stars, recent use and 24-result pages. Click or drag to add native path groups, recolor palette colors and ungroup parts. Decorative infographic motifs and frames have no linked-data or photo-mask behavior. |
+| Emoji, components and QR | Implemented | Local collections and generated elements; no paid stock marketplace. |
 | Gradients and image frames | Implemented | Linear gradients and circle/rounded/arch/diamond masks. |
 | Crop, flip, replace and photo adjustments | Implemented; crop pointer/engine tests passed | Interactive crop preserves frame proportions; supported cumulative filters. |
 | Photo background remover | Implemented; earlier packaged photo verified | Bundled local IS-Net model and real transparent PNG output. |
@@ -67,8 +69,8 @@ Actual Visro regressions exercised drag, empty-textbox hit handling, arrow movem
 
 ## Excluded by user preference
 
-Cloud projects, account synchronization, real-time collaborators, paid stock and premium proprietary templates, external publishing/hosting, social scheduling, email campaigns, analytics, print ordering, remote integrations and enterprise approvals are excluded. A Gemini key does not supply those Canva services.
+Cloud projects, account synchronization, real-time collaborators, paid stock and premium proprietary templates, external publishing/hosting, social scheduling, email campaigns, analytics, print ordering, remote integrations and enterprise approvals are excluded. A Gemini key does not supply those Canva services. User-authorized Commons search is a separate public asset source; it does not synchronize or publish projects.
 
-The 500 bundled layouts are independently authored Visro Originals, not Canva’s ranked or copied template catalog. Canva’s [Content License Agreement, §9.8](https://www.canva.com/policies/content-license-agreement/) restricts competitive use of its licensed content.
+The 530 bundled layouts are independently authored Visro Originals with separately credited public-domain/CC0 source photographs, not Canva’s ranked or copied template catalog. Canva’s [Content License Agreement, §9.8](https://www.canva.com/policies/content-license-agreement/) restricts competitive use of its licensed content.
 
 The remaining local gaps are recorded explicitly above. No hidden Canva feature is represented as unlocked, and no live AI output is replaced with a successful-looking placeholder.

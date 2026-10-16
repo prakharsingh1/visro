@@ -110,7 +110,15 @@ export interface AIProgress {
   percent: number;
   message: string;
 }
+export interface PublicImage {
+  id: string; title: string; name: string; description: string; artist: string;
+  width: number; height: number; license: 'CC0'|'Public domain'; licenseUrl: string; sourceUrl: string; restrictions: string;
+}
+export interface PublicImageResult extends PublicImage { data: string; mime: string; bytes: number; imageWidth: number; imageHeight: number }
+export interface PublicImageSearchResult { provider: 'wikimedia-commons'; query: string; items: PublicImage[]; nextOffset: number|null }
 export interface DesktopAPI {
+  searchPublicImages(input: {query: string; offset?: number; limit?: number; license?: 'all'|'public-domain'|'cc0'}): Promise<PublicImageSearchResult>;
+  getPublicImage(input: {id: string; size?: 'thumbnail'|'image'}): Promise<PublicImageResult>;
   writeCanvasClipboard(input: { objects: Record<string, unknown>[]; plainText?: string }): Promise<boolean>;
   readCanvasClipboard(): Promise<{ kind: 'objects'; objects: Record<string, unknown>[] } | { kind: 'image'; data: string } | { kind: 'text'; text: string } | null>;
   getLocalTypeface(): Promise<{ name: string; data: string } | null>;
