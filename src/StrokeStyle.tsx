@@ -59,7 +59,7 @@ export function StrokeStyle({selected,onUpdate,disabled=false}:{selected:StrokeS
 }
 
 export function CornerRounding({selected,onChange,disabled=false}:{selected:StrokeSelection;onChange:(radius:number)=>void;disabled?:boolean}){
- const unavailable=disabled||selected.locked,supported=selected.isImage||selected.type==='rect'||selected.shapeType==='rect'||selected.shapeType==='rounded-rect',state=useStrokePopover(selected.id,unavailable||!supported);
+ const unavailable=disabled||selected.locked,supported=selected.isImage||selected.type==='rect',state=useStrokePopover(selected.id,unavailable||!supported);
  if(!supported)return null;
  const max=Math.max(0,Math.floor(Math.min(selected.width,selected.height)/2)),radius=Math.max(0,Math.min(max,selected.cornerRadius||0));
  return <><button ref={state.trigger} className="icon-button corner-rounding-trigger" aria-label="Corner rounding" title="Corner rounding" aria-haspopup="dialog" aria-expanded={state.open} disabled={unavailable} onClick={()=>state.setOpen(open=>!open)} onKeyDown={event=>{if(event.key==='ArrowDown'||event.key==='ArrowUp'){event.preventDefault();event.stopPropagation();state.setOpen(true);}}}><StudioIcon name="corners" size={24}/></button>{state.open&&createPortal(<StrokePopup popup={state.popup} position={state.position} label="Corner rounding"><NumericRange label="Corner rounding" value={radius} max={max} onChange={onChange}/></StrokePopup>,state.portal)}</>;

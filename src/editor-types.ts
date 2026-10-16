@@ -119,6 +119,11 @@ export interface SelectedObject {
   strokeLineCap?:'butt'|'round'|'square';
   cornerRadius?:number;
   strokeOnly?: boolean;
+  lineStyle?: import('./line-geometry').LineStyle;
+  shapeEffect?: import('./shape-effects').ShapeEffect;
+  canShapeEffect?: boolean;
+  fillGradient?: {type?:'linear'|'radial';colors:string[];angle:number};
+  strokeGradient?: {type?:'linear'|'radial';colors:string[];angle:number};
   frameId?: string;
   emptyFrame?: boolean;
   shapeType?: ShapeType;

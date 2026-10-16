@@ -13,7 +13,10 @@ export function ContinuousPages({getEditor,viewportRef,state,enabled,projectKey,
   const renderedRange=useRef({start:-1,end:-1}),publishedPreviews=useRef(new WeakMap<HTMLImageElement,string>()),publishedFooter=useRef(new Map<string,number>());
   const current=useRef({state,onVisiblePage,onNotify,enabled,readOnly,onPreview});current.current={state,onVisiblePage,onNotify,enabled,readOnly,onPreview};
   const updateVisible=(shape:PageStackLayout,scroll:number)=>{const next=visibleStackRange(shape,scroll);if(next.start!==renderedRange.current.start||next.end!==renderedRange.current.end){renderedRange.current=next;setRange(next);}const index=visibleStackPage(shape,scroll);if(lastVisible.current===index)return;lastVisible.current=index;current.current.onVisiblePage(index);};
-  useEffect(()=>{generation.current++;navigation.current++;preservingScroll.current=false;programmaticScroll.current=null;cache.current.clear();publishedPreviews.current=new WeakMap();publishedFooter.current.clear();setImages({});setFooterIds([]);active.current='';lastVisible.current=-1;return()=>{generation.current++;navigation.current++;gestureCleanup.current?.();};},[projectKey]);
+  // Reset before the layout synchronizer below. A passive reset runs after its
+  // first synchronization and mistakes a replacement project for page navigation,
+  // preserving the old horizontal scroll and moving the freshly fitted canvas.
+  useLayoutEffect(()=>{generation.current++;navigation.current++;preservingScroll.current=false;programmaticScroll.current=null;cache.current.clear();publishedPreviews.current=new WeakMap();publishedFooter.current.clear();setImages({});setFooterIds([]);active.current='';lastVisible.current=-1;return()=>{generation.current++;navigation.current++;gestureCleanup.current?.();};},[projectKey]);
   const pageIdsKey=state.pages.map(page=>page.id).join('\0');
   useEffect(()=>{
     const strip=viewportRef.current?.closest('main')?.querySelector<HTMLElement>('.page-strip');if(!enabled||!strip)return;
@@ -67,9 +70,9 @@ export function ContinuousPages({getEditor,viewportRef,state,enabled,projectKey,
   // Structural page changes also need layout before the next user gesture.
   useEffect(()=>{if(enabled)getEditor()?.canvas.requestRenderAll();},[state.pages.length,state.activePageId,state.width,state.height,enabled,getEditor]);
   useEffect(()=>{
-    if(!enabled||!layout)return;let cancelled=false,idle:number|undefined;const epoch=generation.current,abort=new AbortController();
-    const timer=setTimeout(()=>{const run=async()=>{
-      const studio=getEditor();if(!studio||cancelled||interacting.current)return;
+    if(!enabled||!layout)return;let cancelled=false,idle:number|undefined,timer:ReturnType<typeof setTimeout>|undefined,needsResume=false;const epoch=generation.current,abort=new AbortController();
+    const run=async()=>{
+      const studio=getEditor();if(!studio||cancelled)return;if(interacting.current){needsResume=true;return;}needsResume=false;
       const fullIds=new Set([...state.pages.slice(range.start,range.end+1).map(page=>page.id),state.activePageId]),footer=new Set(footerIds),ids=[...new Set([...fullIds,...footer])];
       const maximum=Math.max(state.width,state.height),smallFactor=Math.min(.5,128/maximum),factor=Math.max(smallFactor,Math.min(.5,1.5*layout.pageWidth/state.width,600/maximum));
       const valid=()=>!cancelled&&epoch===generation.current&&getEditor()===studio&&current.current.state.revision===state.revision;
@@ -81,12 +84,20 @@ export function ContinuousPages({getEditor,viewportRef,state,enabled,projectKey,
         if(entry.scale*maximum>128.01){const image=new Image();image.src=data;await image.decode();if(!valid()||cache.current.get(id)!==entry)return;const output=document.createElement('canvas'),scale=128/Math.max(image.naturalWidth,image.naturalHeight);output.width=Math.max(1,Math.round(image.naturalWidth*scale));output.height=Math.max(1,Math.round(image.naturalHeight*scale));const context=output.getContext('2d');if(!context)return;context.fillStyle='#fff';context.fillRect(0,0,output.width,output.height);context.drawImage(image,0,0,output.width,output.height);data=output.toDataURL('image/jpeg',.7);}
         if(!valid()||cache.current.get(id)!==entry)return;current.current.onPreview?.(id,data,projectKey);publishedFooter.current.set(id,entry.revision);
       };
-      for(const id of ids){if(!valid()||interacting.current)return;const targetFactor=fullIds.has(id)?factor:smallFactor,known=cache.current.get(id);if(known?.revision===state.revision&&known.scale>=targetFactor-.00001){try{await publishSmall(id,known);}catch{}continue;}
+      for(const id of ids){if(!valid())return;if(interacting.current){needsResume=true;return;}const targetFactor=fullIds.has(id)?factor:smallFactor,known=cache.current.get(id);if(known?.revision===state.revision&&known.scale>=targetFactor-.00001){try{await publishSmall(id,known);}catch{}continue;}
         try{const data=await studio.previewPage(id,targetFactor,abort.signal);if(!valid())return;const entry={revision:state.revision,data,scale:targetFactor};cache.current.delete(id);cache.current.set(id,entry);let bytes=[...cache.current.values()].reduce((sum,item)=>sum+item.data.length*2,0);while(cache.current.size>Math.max(16,ids.length)||bytes>12*1024*1024){const oldest=cache.current.keys().next().value!;bytes-=cache.current.get(oldest)!.data.length*2;cache.current.delete(oldest);}setImages(Object.fromEntries([...cache.current].map(([key,item])=>[key,item.data])));await publishSmall(id,entry);}catch{/* The live page remains editable when a preview is unavailable. */}
         await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));
       }
-    };if('requestIdleCallback'in window)idle=(window as Window&{requestIdleCallback:(job:()=>void)=>number}).requestIdleCallback(()=>void run());else void run();},600);
-    return()=>{cancelled=true;abort.abort();clearTimeout(timer);if(idle!==undefined&&'cancelIdleCallback'in window)window.cancelIdleCallback(idle);};
+    };
+    const schedule=(delay:number)=>{if(cancelled||timer!==undefined||idle!==undefined)return;timer=setTimeout(()=>{timer=undefined;if('requestIdleCallback'in window)idle=window.requestIdleCallback(()=>{idle=undefined;void run();},{timeout:1000});else void run();},delay);};
+    // A stationary Space-pan can span the warm-up deadline without changing a
+    // revision or layout. Resume its paused batch from the release event, after
+    // the parent pointer handler has cleared the shared interaction ref. Keep
+    // one pending task rather than polling for the entire held gesture.
+    const resume=()=>{if(needsResume)schedule(80);};
+    for(const event of ['pointerup','pointercancel','mouseup','blur'])window.addEventListener(event,resume);
+    schedule(600);
+    return()=>{cancelled=true;abort.abort();if(timer!==undefined)clearTimeout(timer);if(idle!==undefined&&'cancelIdleCallback'in window)window.cancelIdleCallback(idle);for(const event of ['pointerup','pointercancel','mouseup','blur'])window.removeEventListener(event,resume);};
   },[enabled,layout?.pageWidth,layout?.pageHeight,range.start,range.end,footerIds,state.revision,state.activePageId,state.width,state.height,state.pages,getEditor,interacting,projectKey]);
   const activate=async(id:string,event?:React.PointerEvent)=>{
     if(event&&event.button!==0)return;

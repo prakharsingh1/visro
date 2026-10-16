@@ -101,7 +101,7 @@ async function nativeKey(renderer, key, code, modifiers = 0) {
 
 /** Actual DOM controls, Chromium input and autosaved public document data only.
  * This deliberately avoids private editor instances or React component hooks. */
-async function runNativeControlsRegression(renderer, fixturePath, screenshotPath, onProgress = () => {}) {
+async function runNativeControlsRegression(renderer, fixturePath, screenshotPath, onProgress = () => {}, {panIdle=false} = {}) {
   const originalId = await renderer.evaluate("localStorage.getItem('visro-active-design')"), report = {};
   renderer.controlsTrace=[];
   const progress=stage=>{renderer.controlsTrace.push({stage,time:Date.now()});onProgress(stage);};
@@ -324,13 +324,30 @@ async function runNativeControlsRegression(renderer, fixturePath, screenshotPath
     await waitForCenteredRectangle();
     const footerState=`(()=>{const node=document.querySelector('.canvas-viewport');return{active:document.querySelector('.continuous-page.active')?.dataset.pageId,selected:document.querySelector('.canvas-footer').textContent.includes('Element selected'),undo:document.querySelector('.topbar button[title="Undo (⌘Z)"]').disabled,redo:document.querySelector('.topbar button[title="Redo (⌘⇧Z)"]').disabled,scrollLeft:node.scrollLeft,scrollTop:node.scrollTop};})()`;
     const coldBefore={state:await renderer.evaluate(footerState),document:JSON.stringify((await saved()).project)};
+    if(panIdle){
+      progress('holding a stationary native Space-pan across preview warm-up');
+      assert.equal(await renderer.evaluate("Array.from(document.querySelectorAll('[data-preview-page-id] .page-mini img')).some(image=>image.complete&&image.naturalWidth)"),false,'The held-pan regression must start with a genuinely cold footer.');
+      const point=await pointOnPage();await focusCanvas();
+      await renderer.command('Input.dispatchKeyEvent',{type:'rawKeyDown',key:' ',code:'Space',windowsVirtualKeyCode:32});
+      await renderer.command('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',buttons:1,clickCount:1});
+      try{
+        await waitForRenderer(renderer,"document.querySelector('.canvas-viewport').classList.contains('interacting')",'A real held Space-pan must enter the interaction state.');
+        await delay(1450);
+        assert.equal(await renderer.evaluate("Array.from(document.querySelectorAll('[data-preview-page-id] .page-mini img')).some(image=>image.complete&&image.naturalWidth)"),false,'Preview rendering must stay paused throughout the held native pan.');
+        assert.equal(JSON.stringify((await saved()).project),coldBefore.document);
+      }finally{
+        await renderer.command('Input.dispatchMouseEvent',{type:'mouseReleased',...point,button:'left',buttons:0,clickCount:1});
+        await renderer.command('Input.dispatchKeyEvent',{type:'keyUp',key:' ',code:'Space',windowsVirtualKeyCode:32});
+      }
+      await waitForRenderer(renderer,"!document.querySelector('.canvas-viewport').classList.contains('interacting')",'Releasing the held pan must leave interaction mode.');
+    }
     const footerPaint=`(()=>{return ${JSON.stringify(record.project.pages.map(page=>page.id))}.map((id,index)=>{const button=document.querySelector('[data-preview-page-id="'+id+'"]'),image=button?.querySelector('.page-mini img');let colored=0;if(image?.complete&&image.naturalWidth){const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,32,32);const pixels=context.getImageData(0,0,32,32).data;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>200&&pixels[i]>180&&(index%2?pixels[i+1]>120&&pixels[i+1]<230&&pixels[i+2]>150&&pixels[i+2]<240:pixels[i+1]>40&&pixels[i+1]<180&&pixels[i+2]<140))colored++;}return{id,complete:Boolean(image?.complete&&image.naturalWidth),width:image?.naturalWidth||0,height:image?.naturalHeight||0,embedded:Boolean(image?.src.startsWith('data:image/')),colored};});})()`;
     await waitForRenderer(renderer,`(${footerPaint}).every(page=>page.complete&&page.embedded&&page.width>=128&&page.height>=128&&page.colored>20)`,'Every cold footer thumbnail, including unvisited page1, must decode and paint its own colored artwork.');
     const coldFooter=await renderer.evaluate(footerPaint);
     assert.deepEqual(await renderer.evaluate(footerState),coldBefore.state,'Background footer previews must preserve the active page, selection, history and artboard scroll.');
     assert.equal(JSON.stringify((await saved()).project),coldBefore.document,'Background footer preview generation must preserve the exact saved document.');
     await capture('cold-footer-previews');
-    report.coldFooter={initialActivePage:3,pages:coldFooter,noPageVisitsOrArtboardScroll:true,activeSelectionAndHistoryPreserved:true,documentPreserved:true};
+    report.coldFooter={initialActivePage:3,pages:coldFooter,noPageVisitsOrArtboardScroll:true,activeSelectionAndHistoryPreserved:true,documentPreserved:true,...(panIdle?{stationarySpacePanHeldMs:1450,warmingResumedWithoutDocumentEdit:true}:{})};
 
     progress('checking native twelve-page low-zoom range and inactive-page zoom anchor');
     record.project.pages=fixturePages(12);record.project.activePageId=record.project.pages[0].id;record.updated=Date.now();
@@ -947,7 +964,7 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, paintProbe, firstSelection, finalSelection, restoredSelection, keyboardNudgedSelection, arrowNudge: 1, shiftArrowNudge: 10, hoverHighlight: true, contextMenu, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
 }
 
-async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, publicImages = false, elements = false, controls = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
+async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, publicImages = false, elements = false, controls = false, v07Controls = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
   const root = path.resolve(__dirname, '..');
   let executable, args;
   if (appPath) {
@@ -962,7 +979,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
   delete environment.ELECTRON_RUN_AS_NODE;
   delete environment.VISRO_DEV_URL;
   args.push('--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', `--user-data-dir=${profile}`);
-  if (clipboard || captions || publicImages || elements || controls) args.push('--inspect=0');
+  if (clipboard || captions || publicImages || elements || controls || v07Controls) args.push('--inspect=0');
   const child = spawn(executable, args, { cwd: root, env: environment, stdio: ['ignore', 'ignore', 'pipe'] });
   let debuggerURL;
   let mainInspectorURL;
@@ -1079,7 +1096,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
     assert.equal(result.mediaEngine.available, true, 'Packaged FFmpeg must be available without user PATH.');
     assert.equal(result.mediaEngine.bundled, true);
     assert.match(result.mediaEngine.version, /^9\.0\.2/);
-    if (clipboard || captions || publicImages || elements || controls) {
+    if (clipboard || captions || publicImages || elements || controls || v07Controls) {
       progress('checking native runtime version and asynchronous storage');
       if (mainInspectorURL) mainCDP = await connectCDP(mainInspectorURL);
       if (mainCDP) {
@@ -1130,9 +1147,12 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
       progress('checking native shape clicks, real graphic dragging, palette Undo and vector ungroup');
       result.elements = await runNativeElementLibraryRegression(cdp, mainCDP, screenshotPath);
     }
-    if (controls) {
+    if (controls || v07Controls) {
       progress('checking native continuous pages, frames, text and editing modes');
-      result.controls = await runNativeControlsRegression(cdp, cutoutPath || path.join(root, 'output/fixtures/cutout-person.jpeg'), screenshotPath, progress);
+      result.controls = await runNativeControlsRegression(cdp, cutoutPath || path.join(root, 'output/fixtures/cutout-person.jpeg'), screenshotPath, progress, {panIdle:v07Controls});
+    }
+    if (v07Controls) {
+      result.v07Controls = await require('./native-v07-controls.cjs').runNativeV07Controls(cdp,mainCDP,profile,screenshotPath,progress,{nativeClick,nativeKey,waitForRenderer,openHomeDesign,readSavedProject,delay});
     }
     if (cutoutPath) {
       progress('uploading local cutout fixture');
@@ -1204,7 +1224,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
         const file = path.resolve(screenshotPath).replace(/\.png$/i, '-failure.png');
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(file, Buffer.from(screenshot.data, 'base64'));
-        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},gestureTrace:${JSON.stringify(error.smokeGestureTrace || cdp.gestureTrace || [])},gestureSummary:${JSON.stringify(cdp.gestureSummary || null)},nativeTabsTrace:${JSON.stringify(cdp.nativeTabsTrace || [])},controlsTrace:${JSON.stringify(cdp.controlsTrace || [])},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
+        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},gestureTrace:${JSON.stringify(error.smokeGestureTrace || cdp.gestureTrace || [])},gestureSummary:${JSON.stringify(cdp.gestureSummary || null)},nativeTabsTrace:${JSON.stringify(cdp.nativeTabsTrace || [])},controlsTrace:${JSON.stringify(cdp.controlsTrace || [])},v07Trace:${JSON.stringify(cdp.v07Trace || [])},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
         await fs.writeFile(file.replace(/\.png$/i, '.json'), `${JSON.stringify(state, null, 2)}\n`);
       } catch { /* Preserve the actual assertion if the renderer is stalled. */ }
     }
@@ -1236,7 +1256,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
 
 if (require.main === module) {
   const argument = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; };
-  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), publicImages: process.argv.includes('--public-images'), elements: process.argv.includes('--elements'), controls: process.argv.includes('--controls'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
+  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), publicImages: process.argv.includes('--public-images'), elements: process.argv.includes('--elements'), controls: process.argv.includes('--controls'), v07Controls: process.argv.includes('--v07-controls'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
     if (error.validation) process.stdout.write(`${JSON.stringify({ ...error.validation, cleanup: { ok: false, error: error.message } }, null, 2)}\n`);
     if (error.validationError) process.stderr.write(`Native validation failed: ${error.validationError}\n`);
     process.stderr.write(`Native smoke failed: ${error.message}\n`);

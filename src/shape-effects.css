@@ -1,0 +1,39 @@
+.shape-effects-panel{display:flex;flex-direction:column;min-height:100%;color:var(--text);font:400 14px/20px var(--ui-font-family)}
+.studio-app .asset-panel:has(.shape-effects-panel)>.panel-heading{margin-bottom:8px}
+.shape-effects-body{display:block;min-width:0;margin:0;padding:0 0 20px;border:0}
+.shape-effect-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.shape-effect-basic{display:flex;flex-direction:column;gap:16px}
+.shape-effect-row-group{min-width:0}
+.shape-effect-tile{display:flex;flex-direction:column;gap:8px;align-items:center;min-width:0;width:100%;padding:0;border:0;background:transparent;color:var(--text);font:400 12px/16px var(--ui-font-family);cursor:pointer}
+.shape-effect-preview{display:block;aspect-ratio:1;width:100%;border:1px solid var(--border);border-radius:8px;background:var(--surface-subtle);overflow:hidden}
+.shape-effect-preview svg{display:block;width:100%;height:100%}
+.shape-effect-tile.active .shape-effect-preview{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent)}
+.shape-effect-tile:hover .shape-effect-preview{background:var(--surface-hover)}
+.shape-effect-tile:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:8px}
+.shape-effect-tile:disabled{cursor:default}
+.shape-effects-body:disabled{opacity:.55}
+.shape-effects-body h3{margin:24px 0 16px;font:600 16px/22px var(--ui-font-family);color:var(--text)}
+.shape-effect-controls{display:flex;flex-direction:column;gap:16px;padding:24px 0 8px}
+.shape-effect-range{display:flex;flex-direction:column;gap:8px;font:400 14px/20px var(--ui-font-family)}
+.shape-effect-range>div{display:flex;align-items:center;gap:16px}
+.shape-effect-range input[type=range]{display:block;flex:1;min-width:0;width:100%;margin:0;accent-color:var(--accent)}
+.shape-effect-stepper{display:flex;align-items:center;flex:none;box-sizing:border-box;width:112px;height:40px;padding:3px;border:1px solid var(--border-strong);border-radius:12px;background:var(--surface);overflow:hidden}
+.shape-effect-stepper>button{display:grid;place-items:center;flex:none;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--text);cursor:pointer}
+.shape-effect-stepper>button:hover:not(:disabled){background:var(--surface-hover)}
+.shape-effect-stepper>button:disabled{color:var(--subtle);cursor:default}
+.shape-effect-stepper>button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.shape-effect-stepper>button svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round}
+.shape-effect-range .shape-effect-stepper input[type=number]{flex:none;box-sizing:border-box;width:40px;height:32px;min-width:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--text);text-align:center;font:400 14px/20px var(--ui-font-family);appearance:textfield;-moz-appearance:textfield}
+.shape-effect-stepper input[type=number]:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:4px}
+.shape-effect-range input[type=number]::-webkit-inner-spin-button,.shape-effect-range input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.shape-effect-colors{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:40px;font:400 14px/20px var(--ui-font-family)}
+.shape-effect-colors>div{display:flex;align-items:center;gap:8px}
+.shape-effect-color{position:relative;display:block;width:32px;height:32px;border:1px solid var(--border-strong);border-radius:50%;overflow:hidden;cursor:pointer}
+.shape-effect-color>span{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.shape-effect-color input{position:absolute;inset:-8px;width:48px;height:48px;margin:0;padding:0;opacity:0;cursor:pointer}
+.shape-effect-color:focus-within{outline:2px solid var(--accent);outline-offset:3px}
+.shape-effects-footer{position:sticky;bottom:-16px;z-index:2;margin-top:auto;padding:16px 0;background:var(--surface)}
+.shape-effect-remove{display:flex;align-items:center;justify-content:center;width:100%;height:40px;padding:0 16px;border:0;border-radius:8px;background:var(--accent);color:#fff;font:600 14px/20px var(--ui-font-family);cursor:pointer}
+.shape-effect-remove:hover:not(:disabled){background:var(--accent-hover)}
+.shape-effect-remove:disabled{background:var(--surface-subtle);color:var(--muted);cursor:default}
+.shape-effect-remove:focus-visible{outline:2px solid var(--accent);outline-offset:3px}

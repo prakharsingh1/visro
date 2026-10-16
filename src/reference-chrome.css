@@ -130,6 +130,7 @@
   pointer-events:none;
 }
 .studio-app .context-toolbar .toolbar-color:hover::after { border-color:var(--muted); }
+.studio-app .context-toolbar .toolbar-stroke-colour::before { content:"";position:absolute;inset:10px;border-radius:50%;background:var(--reference-chrome-surface);pointer-events:none; }
 .studio-app .context-toolbar .toolbar-text-colour {
   display:flex;
   flex:0 0 32px;

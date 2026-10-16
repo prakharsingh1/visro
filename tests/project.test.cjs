@@ -3,6 +3,18 @@ const assert = require('node:assert/strict');
 
 const projectModule = import('../src/project.ts');
 
+test('line endpoints survive nested project round trips and malformed controls are removed',async()=>{
+ const {createProject,parseProject,stringifyProject,validateProject}=await projectModule;
+ const line={version:1,start:{x:-120,y:0},end:{x:120,y:30},route:'curved',startMarker:'bar',endMarker:'circle-outline'};
+ const project=createProject();project.pages[0].canvas.objects.push({type:'Group',objects:[{type:'Group',visroLine:line}]});
+ assert.deepEqual(parseProject(stringifyProject(project)).pages[0].canvas.objects[0].objects[0].visroLine,line);
+ for(const corrupt of [{...line,start:{x:Infinity,y:0}},{...line,version:2},{...line,endMarker:'invented'},{...line,route:'invalid'},null]){
+  project.pages[0].canvas.objects[0].objects[0].visroLine=corrupt;
+  assert.equal(validateProject(project).pages[0].canvas.objects[0].objects[0].visroLine,undefined);
+  assert.equal(project.pages[0].canvas.objects[0].objects[0].visroLine,corrupt,'validation must preserve its source');
+ }
+});
+
 test('project round trip preserves multiple pages, image sources, and branding', async () => {
   const { createProject, parseProject, stringifyProject } = await projectModule;
   const project = createProject('Launch concept', 1920, 1080, '#FAF5EC');

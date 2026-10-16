@@ -87,6 +87,8 @@ import { QuickActions, type QuickAction } from "./QuickActions";
 import {normalizeWorkspaceTabs,upsertWorkspaceTab,type WorkspaceTab} from './workspace-tabs';
 import {PositionPanel} from "./PositionPanel";
 import {StrokeStyle,CornerRounding} from './StrokeStyle';
+import {LineEditing} from './LineEditing';
+import {ShapeEffects} from './ShapeEffects';
 import {ImageControls} from "./ImageControls";
 import {ElementMenu,type ElementAction} from "./ElementMenu";
 import {CanvasGuides} from "./CanvasGuides";
@@ -124,7 +126,7 @@ import {
 } from "./storage";
 
 type Panel =
-  "templates" | "elements" | "text" | "uploads" | "ai" | "brand" | "draw" | "tools" | "video" | "documents" | "sheets" | "projects" | "apps" | "components" | "audio" | "background" | "charts" | "image" | "color" | "font" | "shape-edit";
+  "templates" | "elements" | "text" | "uploads" | "ai" | "brand" | "draw" | "tools" | "video" | "documents" | "sheets" | "projects" | "apps" | "components" | "audio" | "background" | "charts" | "image" | "color" | "font" | "shape-edit" | "shape-effects";
 type AIKind = "design" | "image" | "edit" | "copy" | "translate" | "rewrite" | "summarize" | "remix" | "resize" | "voice" | "video";
 type Modal = "settings" | "export" | "resize" | "library" | "present" | null;
 const COLORS = [
@@ -297,7 +299,8 @@ export default function App() {
   const stylePaintRef=useRef(false),browserClipboardRef=useRef<Record<string,unknown>[]>([]);
   useEffect(()=>{const input=uploadRef.current;if(!input)return;const cancel=()=>{replaceImageRef.current=null;};input.addEventListener('cancel',cancel);return()=>input.removeEventListener('cancel',cancel);},[]);
   const [positionTab,setPositionTab]=useState<"arrange"|"layers">("arrange"),[colorHex,setColorHex]=useState("#000000"),[graphicColorTarget,setGraphicColorTarget]=useState<string|null>(null);
-  useEffect(()=>setGraphicColorTarget(null),[selected?.id]);
+  const [colourTarget,setColourTarget]=useState<'fill'|'stroke'|'effect'|'effect2'>('fill');
+  useEffect(()=>{setGraphicColorTarget(null);setColourTarget('fill');},[selected?.id]);
   useEffect(()=>{if(replaceTarget&&(replaceTarget.pageId!==state.activePageId||selected?.id!==replaceTarget.id))setReplaceTarget(null);},[replaceTarget,state.activePageId,selected?.id]);
   const [toolbarPopover,setToolbarPopover]=useState<"spacing"|"transparency"|"flip"|null>(null),[timerOpen,setTimerOpen]=useState(false),[timerSeconds,setTimerSeconds]=useState(0),[timerRunning,setTimerRunning]=useState(false);
   const [cropSource,setCropSource]=useState<ReturnType<StudioEditor["getImageCropSource"]>>(null);
@@ -1054,9 +1057,11 @@ export default function App() {
     {id:'templates' as const,label:'Templates',Icon:TemplatesIcon},{id:'elements' as const,label:'Elements',Icon:ElementsIcon},{id:'text' as const,label:'Text',Icon:TextIcon},{id:'brand' as const,label:'Brand',Icon:BrandIcon},{id:'uploads' as const,label:'Uploads',Icon:UploadsIcon},{id:'draw' as const,label:'Tools',Icon:ToolsIcon},{id:'projects' as const,label:'Projects',Icon:ProjectsIcon},{id:'apps' as const,label:'Apps',Icon:AppsIcon},{id:'components' as const,label:'Components',Icon:ComponentsIcon},{id:'audio' as const,label:'Audio',Icon:AudioIcon},{id:'background' as const,label:'Background',Icon:BackgroundIcon},{id:'charts' as const,label:'Charts',Icon:ChartsIcon},
   ];
   const bounds=selected?engine.current?.getSelectionBounds():null;
-  const activeColour=selected?.vectorColors?.length?(graphicColorTarget&&selected.vectorColors.includes(graphicColorTarget)?graphicColorTarget:selected.vectorColors[0]):selected?.strokeOnly?selected.stroke:selected?.fill||state.background;
-  const applyColour=(color:string)=>{if(selected?.vectorColors?.length){engine.current?.setGraphicColor(activeColour,color);setGraphicColorTarget(color);}else if(selected)update(selected.strokeOnly?{stroke:color}:{fill:color});else engine.current?.setBackground(color);};
-  const openColour=(color=activeColour)=>{setGraphicColorTarget(selected?.vectorColors?.length?color:null);setColorHex(color);choosePanel('color');};
+  const selectionActionsPosition=bounds?{left:Math.max(8,Math.min(bounds.left+bounds.width/2-82,(viewportRef.current?.clientWidth||800)-172)),top:Math.max(8,Math.min(bounds.top>=118?bounds.top-62:bounds.top+bounds.height+64,(viewportRef.current?.clientHeight||600)-44))}:null;
+  const activeColour=colourTarget==='effect'?selected?.shapeEffect?.color||'#000000':colourTarget==='effect2'?selected?.shapeEffect?.color2||'#00ffff':colourTarget==='stroke'?selected?.stroke||'#000000':selected?.vectorColors?.length?(graphicColorTarget&&selected.vectorColors.includes(graphicColorTarget)?graphicColorTarget:selected.vectorColors[0]):selected?.strokeOnly?selected.stroke:selected?.fill||state.background;
+  const applyColour=(color:string)=>{if(selected&&(colourTarget==='effect'||colourTarget==='effect2'))void engine.current?.setShapeEffect(colourTarget==='effect'?{color}:{color2:color});else if(selected&&colourTarget==='stroke')update({stroke:color});else if(selected?.vectorColors?.length){engine.current?.setGraphicColor(activeColour,color);setGraphicColorTarget(color);}else if(selected)update(selected.strokeOnly?{stroke:color}:{fill:color});else engine.current?.setBackground(color);};
+  const openColour=(color?:string,target:typeof colourTarget='fill')=>{const value=color??(selected?.strokeOnly?selected.stroke:selected?.fill||state.background);setColourTarget(target);setGraphicColorTarget(selected?.vectorColors?.length?value:null);setColorHex(value);choosePanel('color');};
+  const colourPaint=(color:string,gradient?:{type?:'linear'|'radial';colors:string[];angle:number})=>gradient?`${gradient.type==='radial'?'radial-gradient(circle,':`linear-gradient(${gradient.angle+90}deg,`}${gradient.colors.join(',')})`:color;
   const onElementAction=(action:ElementAction)=>{
     const studio=engine.current,cur=studio?.getSelected();if(!studio)return;
     if(['front','back','up','down'].includes(action))studio.arrange(action as 'front'|'back'|'up'|'down');
@@ -1156,7 +1161,7 @@ export default function App() {
                           ? "Visro AI"
                           : panel === "brand"
                             ? "Brand"
-                            : panel === "projects" ? "Projects" : panel === "apps" ? "Apps" : panel === "components" ? "Components" : panel === "audio" ? "Audio" : panel === "background" ? "Background" : panel === "charts" ? "Charts" : panel === "shape-edit" ? "Edit" : panel === "image" ? "Edit image" : panel === "color" ? "Colour" : panel === "font" ? "Font" : panel === "tools" ? toolTab[0].toUpperCase()+toolTab.slice(1) : panel === "video" ? "Video" : panel === "documents" ? "Documents" : panel === "sheets" ? "Sheets" : "Draw"}
+                            : panel === "projects" ? "Projects" : panel === "apps" ? "Apps" : panel === "components" ? "Components" : panel === "audio" ? "Audio" : panel === "background" ? "Background" : panel === "charts" ? "Charts" : panel === "shape-edit" ? "Edit" : panel === "shape-effects" ? "Effects" : panel === "image" ? "Edit image" : panel === "color" ? "Colour" : panel === "font" ? "Font" : panel === "tools" ? toolTab[0].toUpperCase()+toolTab.slice(1) : panel === "video" ? "Video" : panel === "documents" ? "Documents" : panel === "sheets" ? "Sheets" : "Draw"}
               </h2>
             </div>
             <button className="icon-button" aria-label="Close side panel" onClick={()=>setPanelOpen(false)}><X size={20}/></button>
@@ -1228,7 +1233,8 @@ export default function App() {
 
             </>
           )}
-          {panel==='shape-edit'&&<ShapeLibrary onInsert={type=>engine.current?.replaceShape(type)}/>}
+          {panel==='shape-edit'&&<ShapeLibrary onInsert={type=>void work('Changing shape',async()=>{await engine.current?.replaceShape(type);})}/>}
+          {panel==='shape-effects'&&(selected?.canShapeEffect?<ShapeEffects effect={selected.shapeEffect} disabled={editingMode!=='editing'||selected.locked} onChange={patch=>{void engine.current?.setShapeEffect(patch).catch(error=>notify(error instanceof Error?error.message:'The shape effect could not be changed.'));}}/>:<p className="small-hint">Select a shape to edit its effects.</p>)}
           {panel === "text" && (
             <>
               <button
@@ -1444,7 +1450,7 @@ export default function App() {
             </>
           )}
           {panel==='font'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search fonts" placeholder="Search fonts" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="full-button" onClick={()=>fontRef.current?.click()}><Upload size={18}/>Upload a font</button>{selected?.type==='text'&&<label className="font-weight-control">Style<select aria-label="Font weight" value={Number(selected.fontWeight)||({bold:700,normal:400}[String(selected.fontWeight) as 'bold'|'normal']||400)} onChange={event=>update({fontWeight:Number(event.target.value)})}>{TEXT_FONT_WEIGHTS.map(weight=><option key={weight.value} value={weight.value}>{weight.label}</option>)}</select></label>}<div className="font-list">{fontOptions.filter(f=>f.toLowerCase().includes(search.toLowerCase())).map(f=><button key={f} style={{fontFamily:f}} className={selected?.fontFamily===f?'active':''} onClick={()=>update({fontFamily:f})}>{f}{selected?.fontFamily===f&&<Check size={18}/>}</button>)}</div></div>}
-          {panel==='color'&&<div className="feature-panel"><h3>Document colours</h3><div className="swatches">{[...new Set([...brand.colors,...COLORS])].map(c=><button key={c} title={c} aria-label={`Apply ${c}`} style={{background:c}} onClick={()=>applyColour(c)}/>)}</div><label className="field-label">Hex colour<input aria-label="Hex colour" placeholder="#000000" value={colorHex} onChange={e=>{setColorHex(e.target.value);if(/^#[0-9a-f]{6}$/i.test(e.target.value))applyColour(e.target.value);}}/></label><label className="field-label">Add a new colour<input aria-label="Custom colour" type="color" value={/^#[0-9a-f]{6}$/i.test(activeColour)?activeColour:'#000000'} onChange={e=>applyColour(e.target.value)}/></label>{!selected?.vectorColors?.length&&!selected?.strokeOnly&&<><h3>Gradients</h3><ToolsPanel tab="gradients" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></>}</div>}
+          {panel==='color'&&<div className="feature-panel"><h3>Document colours</h3><div className="swatches">{[...new Set([...brand.colors,...COLORS])].map(c=><button key={c} title={c} aria-label={`Apply ${c}`} style={{background:c}} onClick={()=>applyColour(c)}/>)}</div><label className="field-label">Hex colour<input aria-label="Hex colour" placeholder="#000000" value={colorHex} onChange={e=>{setColorHex(e.target.value);if(/^#[0-9a-f]{6}$/i.test(e.target.value))applyColour(e.target.value);}}/></label><label className="field-label">Add a new colour<input aria-label="Custom colour" type="color" value={/^#[0-9a-f]{6}$/i.test(activeColour)?activeColour:'#000000'} onChange={e=>applyColour(e.target.value)}/></label>{colourTarget==='fill'&&!selected?.vectorColors?.length&&!selected?.strokeOnly&&<><h3>Gradients</h3><ToolsPanel tab="gradients" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></>}</div>}
 
           {panel==='image'&&<ImageControls getEditor={getEditor} selected={selected} onRemove={removeBackground} onMask={()=>void work('Opening mask editor',async()=>setMaskSources(await engine.current!.getImageMaskSources()))} onAI={()=>{setAiKind('edit');choosePanel('ai');}} onReplace={()=>{replaceImageRef.current=selected?.id||null;uploadRef.current?.click();}}/>}
           {panel==='projects'&&<div className="project-panel"><div className="chip-row"><button className="chip active">All</button><button className="chip" onClick={goHome}>Folders</button></div>{library.map(d=><button key={d.id} className="project-panel-card" onClick={()=>openDesign(d)}>{d.thumbnail?<img src={d.thumbnail} alt=""/>:<FileText size={32}/>}<span>{d.name}</span></button>)}<button className="full-button" onClick={()=>void open()}>Open project file</button></div>}
@@ -1472,10 +1478,11 @@ export default function App() {
                 <StrokeStyle selected={selected} onUpdate={update}/><CornerRounding selected={selected} onChange={radius=>engine.current?.setCornerRadius(radius)}/>
                 <button className="toolbar-button" onClick={openCrop}>Crop</button><button className="toolbar-button" onClick={()=>setToolbarPopover(toolbarPopover==='flip'?null:'flip')}>Flip <ChevronDown size={13}/></button>
               </> : selected ? <>
-                {!selected.strokeOnly&&!selected.vectorColors?.length&&<button className="toolbar-button" onClick={()=>choosePanel('shape-edit')}>Edit</button>}
-                {selected.vectorColors?.length?selected.vectorColors.map((color,index)=><button key={index} className="toolbar-color" aria-label={`Graphic colour ${index+1}`} title={`Change ${color}`} style={{background:color}} onClick={()=>openColour(color)}/>):<><button className="toolbar-color" aria-label={selected.strokeOnly?"Line colour":"Shape colour"} style={{background:activeColour}} onClick={()=>openColour()}/></>}
+                {selected.count===1&&!['group','activeselection'].includes(selected.type)&&!selected.strokeOnly&&!selected.vectorColors?.length&&<button className="toolbar-button" onClick={()=>choosePanel('shape-edit')}>Edit</button>}
+                {selected.vectorColors?.length?selected.vectorColors.map((color,index)=><button key={index} className="toolbar-color" aria-label={`Graphic colour ${index+1}`} title={`Change ${color}`} style={{background:color}} onClick={()=>openColour(color)}/>):<><button className="toolbar-color" aria-label={selected.strokeOnly?"Line colour":"Shape colour"} style={{background:colourPaint(selected.strokeOnly?selected.stroke:selected.fill,selected.strokeOnly?selected.strokeGradient:selected.fillGradient)}} onClick={()=>openColour()}/>{!selected.strokeOnly&&selected.strokeWidth>0&&<button className="toolbar-color toolbar-stroke-colour" aria-label="Stroke colour" title="Stroke colour" style={{background:colourPaint(selected.stroke,selected.strokeGradient)}} onClick={()=>openColour(selected.stroke,'stroke')}/>}</>}
                 {!selected.vectorColors?.length&&<StrokeStyle selected={selected} onUpdate={update}/>}<CornerRounding selected={selected} onChange={radius=>engine.current?.setCornerRadius(radius)}/>
-                {Boolean(selected.vectorColors?.length)&&<button className="toolbar-button" onClick={()=>engine.current?.ungroup()}>Ungroup</button>}
+                {selected.lineStyle&&<LineEditing selectionId={selected.id} lineStyle={selected.lineStyle} disabled={editingMode!=='editing'||selected.locked} onUpdate={patch=>engine.current?.updateLineStyle(patch)} onSwap={()=>engine.current?.swapSelectedLineEnds()}/>}
+                {Boolean(selected.vectorColors?.length)&&!selected.shapeEffect&&<button className="toolbar-button" onClick={()=>engine.current?.ungroup()}>Ungroup</button>}
               </> : <>
                 <button className="toolbar-color" aria-label="Page colour" style={{background:state.background}} onClick={()=>openColour()}/>
                 <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Background</button>
@@ -1483,10 +1490,12 @@ export default function App() {
               </>}
               {selected&&<IconButton title="Transparency" active={toolbarPopover==='transparency'} onClick={()=>setToolbarPopover(toolbarPopover==='transparency'?null:'transparency')}><StudioIcon name="transparency" size={24}/></IconButton>}
               {selected?.type==='text'&&<button className="toolbar-button" onClick={()=>{choosePanel('tools');setToolTab('effects');}}>Effects</button>}
+              {selected?.shapeEffect&&selected.shapeEffect.type!=='none'&&<><button className="toolbar-color" aria-label="Shape effect colour" title="Effect colour" style={{background:selected.shapeEffect.color}} onClick={()=>openColour(selected.shapeEffect!.color,'effect')}/>{selected.shapeEffect.type==='glitch'&&<button className="toolbar-color" aria-label="Second shape effect colour" title="Second effect colour" style={{background:selected.shapeEffect.color2}} onClick={()=>openColour(selected.shapeEffect!.color2,'effect2')}/>}</>}
+              {selected?.canShapeEffect&&!selected.lineStyle&&<button className={`toolbar-button ${panel==='shape-effects'&&panelOpen?'active':''}`} aria-pressed={panel==='shape-effects'&&panelOpen} onClick={()=>choosePanel('shape-effects')}>Effects</button>}
               <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("animate");}}>Animate</button>
             </div>
             <div className="toolbar-right">
-              <button className={`toolbar-button ${inspectorOpen?"active":""}`} onClick={()=>{setPositionTab("arrange");setInspectorOpen(!inspectorOpen);setPanelOpen(false);}}>Position <Layers size={16}/></button>
+              <button className={`toolbar-button ${inspectorOpen?"active":""}`} onClick={()=>{setPositionTab("arrange");setInspectorOpen(!inspectorOpen);setPanelOpen(false);}}>Position</button>
               {selected&&<span className="toolbar-divider"/>}{selected&&<IconButton title="Copy style (⌥⌘C)" onClick={()=>{if(engine.current?.copyStyle()){stylePaintRef.current=true;notify("Click another element to apply this style.");}}}><StudioIcon name="paint-roller" size={24}/></IconButton>}
 
               {mode!=="design"&&<button className="toolbar-button" onClick={()=>setMode("design")}>Design</button>}
@@ -1520,7 +1529,7 @@ export default function App() {
           >
             <div className="canvas-interaction-plane"><canvas ref={canvasRef} />
             {mode==='design'&&<CanvasGuides getEditor={getEditor} ready={ready} pageId={state.activePageId} rulers={Boolean(viewSettings.rulers)} margins={Boolean(viewSettings.margins)} locked={Boolean(viewSettings.locked)||editingMode!=='editing'} guides={state.pageMetadata?.guides} onChange={guides=>engine.current?.setPageMetadata({guides})}/>}
-            {selected&&bounds&&mode==='design'&&bounds.left+bounds.width>0&&bounds.top+bounds.height>0&&bounds.left<(viewportRef.current?.clientWidth||0)&&bounds.top<(viewportRef.current?.clientHeight||0)&&<div className="selection-actions" style={{left:Math.max(8,Math.min(bounds.left+bounds.width/2-85,(viewportRef.current?.clientWidth||800)-180)),top:Math.max(8,Math.min(bounds.top+bounds.height+14,(viewportRef.current?.clientHeight||600)-50))}}><IconButton title="Comment" onClick={()=>setCommentsOpen(true)}><MessageCircle size={19}/></IconButton><IconButton title={selected.locked?'Unlock':'Lock position and appearance'} onClick={()=>engine.current?.setLayerLocked(selected.id,!selected.locked)}>{selected.locked?<Lock size={19}/>:<Unlock size={19}/>}</IconButton><IconButton title="Duplicate (⌘D)" onClick={()=>void engine.current?.duplicate()}><Copy size={19}/></IconButton><IconButton title="Delete" onClick={()=>engine.current?.remove()}><Trash2 size={19}/></IconButton><IconButton title="More" onClick={()=>{const r=viewportRef.current!.getBoundingClientRect();setContextMenu({x:r.left+bounds.left+bounds.width/2,y:r.top+bounds.top+bounds.height+60});}}><MoreHorizontal size={20}/></IconButton></div>}
+            {selected&&bounds&&mode==='design'&&bounds.left+bounds.width>0&&bounds.top+bounds.height>0&&bounds.left<(viewportRef.current?.clientWidth||0)&&bounds.top<(viewportRef.current?.clientHeight||0)&&<div className="selection-actions" style={selectionActionsPosition??undefined}><IconButton title="Comment" onClick={()=>setCommentsOpen(true)}><StudioIcon name="comments" size={24}/></IconButton><IconButton title={selected.locked?'Unlock':'Lock position and appearance'} onClick={()=>engine.current?.setLayerLocked(selected.id,!selected.locked)}>{selected.locked?<StudioIcon name="lock" size={24}/>:<StudioIcon name="unlock" size={24}/>}</IconButton><IconButton title="Duplicate (⌘D)" onClick={()=>void engine.current?.duplicate()}><StudioIcon name="duplicate" size={24}/></IconButton><IconButton title="Delete" onClick={()=>engine.current?.remove()}><StudioIcon name="trash" size={24}/></IconButton><IconButton title="More" onClick={()=>{const r=document.querySelector('.selection-actions [aria-label="More"]')?.getBoundingClientRect();if(r)setContextMenu({x:r.left,y:r.bottom+4});}}><StudioIcon name="more" size={24}/></IconButton></div>}
 
             </div>
             <ContinuousPages getEditor={getEditor} viewportRef={viewportRef} state={state} enabled={ready&&!home&&mode==='design'} readOnly={editingMode!=='editing'} navigateRef={pageNavigator} projectKey={activeId.current} interacting={interactionRef} thumbnails={pageThumbnails} onPreview={publishPagePreview} onVisiblePage={setVisiblePageIndex} onNotify={notify}/>
@@ -1657,7 +1666,7 @@ export default function App() {
         }}
       />
       {quickActionsOpen&&<QuickActions actions={quickActions} onClose={()=>setQuickActionsOpen(false)}/>}
-      {contextMenu&&<ElementMenu canFrame={Boolean(selected&&!selected.strokeOnly&&!['image','text','group','activeselection','line'].includes(selected.type))} x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
+      {contextMenu&&<ElementMenu canUngroup={!selected?.shapeEffect} canFrame={Boolean(selected&&!selected.strokeOnly&&!['image','text','group','activeselection','line'].includes(selected.type))} x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
       {guidesDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setGuidesDialog(false);}}><section className="modal element-dialog" role="dialog" aria-modal="true" aria-label="Add guides"><button className="modal-close icon-button" aria-label="Close guides" onClick={()=>setGuidesDialog(false)}><X size={20}/></button><h2>Add guides</h2><form onSubmit={e=>{e.preventDefault();const {columns,rows,gap,margin}=guideGrid;const positions=(count:number,size:number)=>{if(!count)return[];const available=size-2*margin-(count-1)*gap;if(available<=0)throw new Error('The margin and gap must fit inside the page.');const cell=available/count;return [...new Set(Array.from({length:count+1},(_,i)=>i===count?size-margin:margin+i*(cell+gap)).flatMap((v,i)=>i>0&&i<count&&gap?[v-gap,v]:[v]))];};try{engine.current?.setPageMetadata({guides:{x:positions(columns,state.width),y:positions(rows,state.height)}});setViewSettings(v=>({...v,rulers:true,snapping:true}));setGuidesDialog(false);}catch(error){notify((error as Error).message);}}}><NumberField label="Columns" value={guideGrid.columns} min={0} max={24} step={1} onChange={columns=>setGuideGrid(v=>({...v,columns:Math.round(columns)}))}/><NumberField label="Rows" value={guideGrid.rows} min={0} max={24} step={1} onChange={rows=>setGuideGrid(v=>({...v,rows:Math.round(rows)}))}/><NumberField label="Gap (px)" value={guideGrid.gap} min={0} max={state.width/2} onChange={gap=>setGuideGrid(v=>({...v,gap}))}/><NumberField label="Margin (px)" value={guideGrid.margin} min={0} max={Math.min(state.width,state.height)/2} onChange={margin=>setGuideGrid(v=>({...v,margin}))}/><button className="full-button coral" type="submit">Add guides</button></form></section></div>}
       {elementDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setElementDialog(null);}}><section className="modal element-dialog"><button className="modal-close icon-button" aria-label="Close" onClick={()=>setElementDialog(null)}><X size={20}/></button><h2>{elementDialog.kind==='link'?'Link':elementDialog.kind==='alt'?'Alternative text':'Create component'}</h2><form onSubmit={e=>{e.preventDefault();void work("Saving element",async()=>{const d=elementDialog;if(d.kind==='component'){const objects=await engine.current!.exportSelectedObjects();await storeAsset({id:crypto.randomUUID(),kind:'component',name:d.value.trim()||'Component',data:JSON.stringify(objects),updated:Date.now()});notify('Component saved. Find it in Components.');}else engine.current?.setElementMetadata(d.kind==='link'?{link:d.value.trim()}:{altText:d.value});setElementDialog(null);});}}><label className="field-label">{elementDialog.kind==='link'?'Enter a link':elementDialog.kind==='alt'?'Describe this element':'Name'}<input autoFocus aria-label={elementDialog.kind==='link'?'Element link':elementDialog.kind==='alt'?'Alternative text':'Component name'} value={elementDialog.value} onChange={e=>setElementDialog({...elementDialog,value:e.target.value})}/></label><button className="full-button coral" type="submit">Save</button></form></section></div>}
       {cropSource&&<ImageCropEditor source={cropSource} onCancel={()=>setCropSource(null)} onDone={async rect=>{engine.current?.cropSelectedImage(rect);setCropSource(null);notify("Image cropped.");}}/>}
@@ -2022,8 +2031,10 @@ export default function App() {
                       notify("Choose dimensions from 100 to 8000 pixels.");
                       return;
                     }
-                    engine.current?.resizeDesign(size.w, size.h, {scaleContent:true});
-                    setModal(null);setHome(false);
+                    void work('Resizing your design',async()=>{
+                      await engine.current?.resizeDesign(size.w,size.h,{scaleContent:true});
+                      setModal(null);setHome(false);
+                    });
                   }}
                 >
                   <Maximize2 size={16} />
@@ -2034,7 +2045,7 @@ export default function App() {
                   onClick={() =>
                     void work("Adding your page", async () => {
                       await engine.current?.addPage();
-                      engine.current?.resizeDesign(size.w, size.h);
+                      await engine.current?.resizeDesign(size.w, size.h);
                       setModal(null);
                     })
                   }

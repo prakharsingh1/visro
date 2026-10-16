@@ -1,5 +1,10 @@
 import {convertShapeToFrameObject} from './shape-frame';
 import {formatTextSelection} from './text-formatting';
+import {convertCatalogLineObject,getLineStyle,installLineControls,isEditableLine,swapLineObjectEnds,syncLineAppearance,syncLineSubtree,updateLineObject} from './line-editing';
+import type {LineGeometry,LineStyle} from './line-geometry';
+import {resizeSerializedObjects} from './document-resize';
+import {installInteractionControls} from './interaction-controls';
+import {SHAPE_EFFECT_CUSTOM_PROPS,applyShapeEffectPatch,createShapeEffectObject,getShapeEffect,getShapeEffectBase,isShapeEffectObject,normalizeShapeEffect,refreshShapeEffect,supportsShapeEffect,updateShapeEffectBase,updateVectorBasePaint,type ShapeEffect,type ShapeEffectPatch,type ShapeEffectObject} from './shape-effects';
 import {inlineBundledImage} from './bundled-images';
 import {getGraphic} from './graphics-library';
 import {getShapeGeometry} from './shapes';
@@ -81,6 +86,10 @@ type StudioObject = FabricObject & {
   visroEmptyFrame?: boolean;
   visroGridId?: string;
   visroShapeType?: ShapeType;
+  visroShapeEffect?:ShapeEffect;
+  visroShapeEffectBase?:ShapeEffectObject['visroShapeEffectBase'];
+  visroShapeEffectRole?:ShapeEffectObject['visroShapeEffectRole'];
+  visroLine?: LineGeometry;
 };
 type OptionDrag = {
   target: FabricObject;
@@ -92,7 +101,7 @@ type OptionDrag = {
   failed: boolean;
   finish: () => void;
 };
-const CUSTOM_PROPS = ["id", "visroName", "visroLocked", "visroTextEffect", "visroGradient", "visroFrame", "visroTextBaseFill", "visroOriginalSrc", "visroMetadata", "visroGraphicId", "visroEmptyFrame", "visroGridId", "visroShapeType"];
+const CUSTOM_PROPS = ["id", "visroName", "visroLocked", "visroTextEffect", "visroGradient", "visroFrame", "visroTextBaseFill", "visroOriginalSrc", "visroMetadata", "visroGraphicId", "visroEmptyFrame", "visroGridId", "visroShapeType", "visroLine",...SHAPE_EFFECT_CUSTOM_PROPS];
 const SELECTION_COLOR = '#8B3DFF';
 const INTERACTION_STYLE = {
   cornerColor: '#ffffff', cornerStrokeColor: SELECTION_COLOR,
@@ -108,6 +117,7 @@ function label(object: StudioObject, name: string): StudioObject {
   object.id = newId();
   object.visroName = name;
   object.set(INTERACTION_STYLE);
+  installInteractionControls(object);
   return object;
 }
 
@@ -130,11 +140,28 @@ function isText(object: FabricObject): object is Textbox {
 }
 
 function objectType(object: FabricObject): string {
+  if(isShapeEffectObject(object))return objectType(getShapeEffectBase(object));
+  if (isEditableLine(object)) return 'line';
   if (isText(object)) return "text";
   if (object instanceof FabricImage) return "image";
   if (object instanceof Group || object instanceof ActiveSelection)
     return "group";
   return object.type;
+}
+
+function selectedGradient(value:FabricObject['fill']):SelectedObject['fillGradient'] {
+  if(!(value instanceof Gradient))return undefined;
+  const coords=value.coords,angle=value.type==='radial'?0:Math.atan2(coords.y2-coords.y1,coords.x2-coords.x1)*180/Math.PI;
+  return{type:value.type,colors:value.colorStops.map(stop=>stop.color),angle};
+}
+function resizedNativeGradient(value:FabricObject['fill'],width:number,height:number,oldWidth:number,oldHeight:number):FabricObject['fill'] {
+  if(!(value instanceof Gradient))return value;
+  const data=value.toObject();if(!data.coords)return value;const coords={x1:data.coords.x1??0,y1:data.coords.y1??0,x2:data.coords.x2??0,y2:data.coords.y2??0},radial=data.coords as {r1?:number;r2?:number};let r1=radial.r1??0,r2=radial.r2??0;
+  if(data.gradientUnits==='pixels'){
+    const sx=width/Math.max(.001,oldWidth),sy=height/Math.max(.001,oldHeight);
+    coords.x1*=sx;coords.x2*=sx;coords.y1*=sy;coords.y2*=sy;r1*=Math.max(sx,sy);r2*=Math.max(sx,sy);
+  }
+  return data.type==='radial'?new Gradient({...data,type:'radial',coords:{...coords,r1,r2}}):new Gradient({...data,type:'linear',coords});
 }
 
 function bounded(value: number, minimum: number, maximum: number): number {
@@ -200,6 +227,7 @@ export class StudioEditor {
   private styleClipboard?: Record<string, unknown>;
   private optionDrag?: OptionDrag;
   private removeLayerPicker?: () => void;
+  private documentMutationAllowed=()=>true;
 
   constructor(element: HTMLCanvasElement, options: EditorOptions = {}) {
     this.options = options;
@@ -236,9 +264,10 @@ export class StudioEditor {
     this.canvas.on("selection:cleared", () => this.selectionChanged());
     this.canvas.on('text:selection:changed',()=>this.selectionChanged());
     this.canvas.on('text:editing:entered',()=>this.selectionChanged());
-    this.canvas.on("object:modified", ({ target }) => {
+    this.canvas.on("object:modified", ({ target,action }) => {
       this.snapGuides = {}; this.hoverTarget = undefined;
       if (this.optionDrag?.moved && this.optionDrag.target === target) return;
+      if(target&&typeof action==='string'&&action.startsWith('scale'))syncLineSubtree(target);
       this.commit();
     });
     this.canvas.on('before:transform', ({ e, transform }) => {
@@ -362,12 +391,13 @@ export class StudioEditor {
     return this.runQueued(()=>this.insertFrameInternal(id,captured));
   }
   convertSelectedShapeToFrame():Promise<void> {
-    const previous=this.canvas.getActiveObject() as StudioObject|undefined,pageId=this.document.activePageId;
+    const previous=this.canvas.getActiveObject() as StudioObject|undefined,pageId=this.document.activePageId,origin=this.document;
     return this.runQueued(async()=>{
       this.assertOriginPage(pageId);
       if(!previous?.id||this.findObject(previous.id)!==previous||this.objectLocked(previous))throw new Error('Select an unlocked filled shape first.');
-      const frame=await convertShapeToFrameObject(previous,{signal:this.lifecycle.signal}) as StudioObject;
-      try{this.assertOriginPage(pageId);if(this.findObject(previous.id)!==previous||this.objectLocked(previous))throw new Error('The shape was removed or locked while the frame was preparing.');}catch(error){frame.dispose();throw error;}
+      const revision=this.revision,plain=isShapeEffectObject(previous)?await createShapeEffectObject(previous,{type:'none'},{signal:this.lifecycle.signal}):previous;
+      let frame:StudioObject;try{frame=await convertShapeToFrameObject(plain,{signal:this.lifecycle.signal}) as StudioObject;}finally{if(plain!==previous)plain.dispose();}
+      try{this.assertOriginPage(pageId);if(origin!==this.document||!this.documentMutationAllowed()||revision!==this.revision||this.findObject(previous.id)!==previous||this.objectLocked(previous))throw new Error('The shape was removed, changed or locked while the frame was preparing.');}catch(error){frame.dispose();throw error;}
       frame.set(INTERACTION_STYLE);
       const parent=previous.group instanceof Group&&!(previous.group instanceof ActiveSelection)?previous.group:undefined,index=(parent?parent.getObjects():this.canvas.getObjects()).indexOf(previous);
       this.canvas.discardActiveObject();
@@ -394,6 +424,33 @@ export class StudioEditor {
   duplicatePage(id?: string): Promise<void> { return this.runQueued(() => this.duplicatePageInternal(id)); }
   deletePage(id?: string): Promise<void> { return this.runQueued(() => this.deletePageInternal(id)); }
   setPage(id: string): Promise<void> { return this.runQueued(() => this.setPageInternal(id)); }
+  setShapeEffect(patch:ShapeEffectPatch={}):Promise<void> {
+    const origin=this.document,pageId=this.document.activePageId,ids=[...new Set(this.canvas.getActiveObjects().map(object=>(object as StudioObject).id).filter((id):id is string=>Boolean(id)))];
+    return this.runQueued(async()=>{
+      const guard=()=>{this.assertOriginPage(pageId);if(this.document!==origin||!this.documentMutationAllowed())throw new Error('This design is no longer editable.');};guard();
+      const targets=ids.map(id=>this.findObject(id));if(!targets.length)return;
+      if(targets.some(object=>!object||this.objectLocked(object)||isEditableLine(object)||!supportsShapeEffect(object)))throw new Error('Select unlocked vector shapes or graphics for effects.');
+      const objects=targets as StudioObject[],changed=objects.filter(object=>patch.preset||JSON.stringify(normalizeShapeEffect(patch,getShapeEffect(object)))!==JSON.stringify(getShapeEffect(object)));if(!changed.length)return;
+      if(changed.every(object=>isShapeEffectObject(object)&&normalizeShapeEffect(patch,getShapeEffect(object)).type===getShapeEffect(object).type&&getShapeEffect(object).type!=='none')){
+        changed.forEach(object=>applyShapeEffectPatch(object,patch));this.commit(patch.preset?'':`shape-effect:${ids.join(',')}:${Object.keys(patch).sort().join(',')}`);return;
+      }
+      const revision=this.revision,replacements=await Promise.all(changed.map(object=>createShapeEffectObject(object,patch,{signal:this.lifecycle.signal})));
+      try{guard();if(revision!==this.revision||changed.some(object=>this.findObject(object.id!)!==object||this.objectLocked(object)))throw new Error('The selected shape changed while the effect was preparing. Choose the effect again.');}catch(error){replacements.forEach(object=>object.dispose());throw error;}
+      changed.forEach((object,index)=>this.replaceShapeEffectTarget(object,replacements[index]));
+      const selected=ids.map(id=>this.findObject(id)).filter((object):object is StudioObject=>Boolean(object));if(selected.length)this.canvas.setActiveObject(selected.length===1?selected[0]:new ActiveSelection(selected,{canvas:this.canvas}));this.commit();
+    });
+  }
+  private replaceShapeEffectTarget(previous:StudioObject,result:FabricObject):void {
+    const parent=previous.group instanceof Group&&!(previous.group instanceof ActiveSelection)?previous.group:undefined,index=(parent?parent.getObjects():this.canvas.getObjects()).indexOf(previous);
+    this.canvas.discardActiveObject();result.set(INTERACTION_STYLE);
+    if(parent){parent.insertAt(index,result);parent.remove(previous);parent.set('dirty',true);}else{this.canvas.insertAt(index,result);this.canvas.remove(previous);}
+    this.normalizeShapeEffectInteraction(result);result.setCoords();
+  }
+  private normalizeShapeEffectInteraction(object:FabricObject):void {
+    if(!isShapeEffectObject(object))return;
+    object.set({subTargetCheck:false,interactive:false,objectCaching:false});
+    const disable=(child:FabricObject)=>{child.set({selectable:false,evented:false});if(child instanceof Group)child.getObjects().forEach(disable);};object.getObjects().forEach(disable);
+  }
   undo(): Promise<void> { return this.runQueued(() => this.undoInternal()); }
   redo(): Promise<void> { return this.runQueued(() => this.redoInternal()); }
   exportImage(options: ExportOptions = {}): Promise<string> { return this.runQueued(() => this.exportImageInternal(options)); }
@@ -551,13 +608,13 @@ export class StudioEditor {
   getSelected(): SelectedObject | null {
     const object = this.canvas.getActiveObject() as StudioObject | undefined;
     if (!object) return null;
-    const text = isText(object) ? object : undefined;
+    const base=getShapeEffectBase(object) as StudioObject,text = isText(base) ? base : undefined,lineStyle=getLineStyle(object),fillGradient=selectedGradient(base.fill),strokeGradient=selectedGradient(base.stroke),targets=this.canvas.getActiveObjects(),first=targets[0];
     return {
       id: object.id ?? "",
       type: objectType(object),
       name: objectName(object),
       text: text?.text,
-      fill: typeof object.fill === "string" ? object.fill : "#292620",
+      fill: lineStyle?(typeof object.stroke==='string'?object.stroke:'#292620'):typeof base.fill === "string" ? base.fill : fillGradient?.colors[0]??"#292620",
       fontSize: text?.fontSize ?? 32,
       fontFamily: text?.fontFamily ?? "Arial",
       fontWeight:text?.fontWeight??'normal',
@@ -571,24 +628,28 @@ export class StudioEditor {
       width: object.getScaledWidth(),
       height: object.getScaledHeight(),
       angle: object.angle,
-      locked: Boolean(object.visroLocked),
+      locked: this.objectLocked(object),
       visible: object.visible,
       count: this.canvas.getActiveObjects().length,
       isImage: object instanceof FabricImage,
       underline: text?.underline ?? false,
       linethrough: text?.linethrough ?? false,
-      stroke: typeof object.stroke === 'string' ? object.stroke : '',
-      strokeWidth: object.strokeWidth,
-      strokeDashArray:object.strokeDashArray?[...object.strokeDashArray]:null,
-      strokeLineCap:object.strokeLineCap,
-      cornerRadius:object instanceof Rect?object.rx*Math.abs(object.scaleX):object instanceof FabricImage&&object.clipPath instanceof Rect?object.clipPath.rx*Math.abs(object.clipPath.scaleX*object.scaleX):0,
+      stroke: typeof base.stroke === 'string' ? base.stroke : strokeGradient?.colors[0]??'',
+      strokeWidth: base.strokeWidth,
+      strokeDashArray:base.strokeDashArray?[...base.strokeDashArray]:null,
+      strokeLineCap:base.strokeLineCap,
+      cornerRadius:base instanceof Rect?base.rx*Math.abs(base.getObjectScaling().x):object instanceof FabricImage&&object.clipPath instanceof Rect?object.clipPath.rx*Math.abs(object.clipPath.scaleX*object.scaleX):0,
       frameId:object.visroFrame,
       emptyFrame:object.visroEmptyFrame,
-      shapeType:object.visroShapeType,
-      strokeOnly: Boolean(object.stroke) && (!object.fill || object.fill === 'transparent' || object.fill === 'none'),
+      shapeType:base.visroShapeType??object.visroShapeType,
+      strokeOnly: !!lineStyle||Boolean(base.stroke) && (!base.fill || base.fill === 'transparent' || base.fill === 'none'),
+      ...(lineStyle?{lineStyle}:{}),
+      shapeEffect:first&&isShapeEffectObject(first)?getShapeEffect(first):undefined,
+      canShapeEffect:targets.length>0&&targets.every(target=>!this.objectLocked(target)&&!isEditableLine(target)&&supportsShapeEffect(target)),
+      fillGradient,strokeGradient,
       textEffect: object.visroTextEffect ?? 'none',
-      gradient: cloneProject(object.visroGradient),
-      vectorColors: object.visroGraphicId ? this.graphicColors(object) : undefined,
+      gradient: cloneProject(Array.isArray(base.visroGradient?.colors)?base.visroGradient:fillGradient),
+      vectorColors:base instanceof Group&&!isEditableLine(object)&&supportsShapeEffect(base)?this.graphicColors(base):undefined,
       metadata: cloneProject(object.visroMetadata),
       ...(text?getTextObjectSelectionStyle(text as unknown as IText):{}),
     };
@@ -735,35 +796,55 @@ export class StudioEditor {
     else {
       const style = {...common,fill:definition.filled?'#F26B3A':'transparent',stroke:definition.filled?undefined:'#292620',strokeWidth:definition.strokeWidth,strokeDashArray:definition.dash?[...definition.dash]:undefined,strokeLineCap:definition.lineCap??'round' as const,strokeLineJoin:'round' as const,scaleX:width/100,scaleY:height/100};
       if (definition.kind === 'polygon') object = new Polygon(definition.points,style);
-      else if (definition.kind === 'line') object = new Line(definition.points,style);
+      else if (definition.kind === 'line') object = new Line([0,0,width,0],{...style,scaleX:1,scaleY:1,strokeDashArray:definition.dash?[...definition.dash]:undefined});
       else object = new Path(definition.path,style);
     }
     const center=placement?.center??{x:this.width/2,y:this.height/2};
     object.setPositionByOrigin(new Point(center.x,center.y),'center','center');
     const named=label(object,definition.name);named.visroShapeType=type;
-    this.addAndSelect(named);
+    this.addAndSelect(convertCatalogLineObject(named,type) as StudioObject);
   }
 
-  replaceShape(type:ShapeType):void {
+  replaceShape(type:ShapeType):void|Promise<void> {
     if(this.destroyed||this.restoring)return;
     const previous=this.canvas.getActiveObject() as StudioObject|undefined;
-    if(!previous||previous instanceof FabricImage||isText(previous)||previous instanceof Group||this.objectLocked(previous))throw new Error('Select an unlocked vector shape first.');
+    if(previous&&isShapeEffectObject(previous)){
+      const origin=this.document,pageId=this.document.activePageId,id=previous.id;
+      return this.runQueued(async()=>{
+        const current=id?this.findObject(id):undefined;this.assertOriginPage(pageId);
+        if(!current||origin!==this.document||!this.documentMutationAllowed()||this.objectLocked(current)||!isShapeEffectObject(current)||getShapeEffectBase(current) instanceof Group)throw new Error('Select an unlocked individual vector shape first.');
+        const revision=this.revision,state=getShapeEffect(current),plain=await createShapeEffectObject(current,{type:'none'},{signal:this.lifecycle.signal});
+        let replacement=this.makeReplacementShape(plain as StudioObject,type);plain.dispose();
+        if(!isEditableLine(replacement)){
+          const {preset,...parameters}=state;const wrapped=await createShapeEffectObject(replacement,parameters,{signal:this.lifecycle.signal}) as StudioObject;wrapped.visroShapeEffect!.preset=preset;replacement.dispose();replacement=wrapped;
+        }
+        try{this.assertOriginPage(pageId);if(origin!==this.document||!this.documentMutationAllowed()||revision!==this.revision||this.findObject(id!)!==current||this.objectLocked(current))throw new Error('The shape changed while its replacement was preparing.');}catch(error){replacement.dispose();throw error;}
+        this.replaceShapeEffectTarget(current,replacement);installLineControls(replacement);this.canvas.setActiveObject(replacement);this.commit();
+      });
+    }
+    if(!previous||previous instanceof FabricImage||isText(previous)||previous instanceof Group&&!isEditableLine(previous)||this.objectLocked(previous))throw new Error('Select an unlocked vector shape first.');
+    const object=this.makeReplacementShape(previous,type),parent=previous.group instanceof Group&&!(previous.group instanceof ActiveSelection)?previous.group:undefined,index=(parent?parent.getObjects():this.canvas.getObjects()).indexOf(previous);
+    this.canvas.discardActiveObject();
+    if(parent){parent.remove(previous);parent.insertAt(index,object);parent.set('dirty',true);}
+    else{this.canvas.remove(previous);this.canvas.insertAt(index,object);}
+    object.setCoords();installLineControls(object);this.canvas.setActiveObject(object);this.commit();
+  }
+  private makeReplacementShape(previous:StudioObject,type:ShapeType):StudioObject {
     const definition=getShapeGeometry(type),common={originX:previous.originX,originY:previous.originY,strokeWidth:0};
     let replacement:FabricObject;
     if(definition.kind==='polygon')replacement=new Polygon(definition.points,common);
     else if(definition.kind==='line')replacement=new Line(definition.points,common);
     else replacement=new Path(definition.path,common);
-    const object=replacement as StudioObject,oldFilled=Boolean(previous.fill&&previous.fill!=='none'&&previous.fill!=='transparent');
+    let object=replacement as StudioObject;const oldFilled=Boolean(previous.fill&&previous.fill!=='none'&&previous.fill!=='transparent');
     object.set({...INTERACTION_STYLE,originX:previous.originX,originY:previous.originY,opacity:previous.opacity,visible:previous.visible,shadow:previous.shadow,strokeUniform:previous.strokeUniform,strokeLineCap:definition.lineCap??previous.strokeLineCap,strokeLineJoin:previous.strokeLineJoin,strokeDashArray:definition.dash?[...definition.dash]:previous.strokeDashArray,strokeWidth:definition.filled?previous.strokeWidth:Math.max(1,previous.strokeWidth||definition.strokeWidth),fill:definition.filled?(oldFilled?previous.fill:previous.stroke||'#292620'):'transparent',stroke:definition.filled?previous.stroke:(oldFilled?previous.fill:previous.stroke)||'#292620'});
-    object.id=previous.id;object.visroName=definition.name;object.visroShapeType=type;object.visroMetadata=cloneProject(previous.visroMetadata);object.visroGradient=cloneProject(previous.visroGradient);
-    if(object.visroGradient&&definition.filled)object.set('fill',this.makeGradient(object.visroGradient.colors,object.visroGradient.angle,object.width,object.height));
+    const identity=previous as StudioObject;object.id=identity.id;object.visroName=definition.name;object.visroShapeType=type;object.visroMetadata=cloneProject(identity.visroMetadata);object.visroGradient=cloneProject(identity.visroGradient);
+    if(definition.filled&&previous.fill instanceof Gradient){object.set('fill',resizedNativeGradient(previous.fill,object.width,object.height,previous.width,previous.height));const info=selectedGradient(previous.fill)!;object.visroGradient={colors:info.colors,angle:info.angle};}
+    if(previous.stroke instanceof Gradient)object.set('stroke',resizedNativeGradient(previous.stroke,object.width,object.height,previous.width,previous.height));
+    object=convertCatalogLineObject(object,type) as StudioObject;
     const matrix=util.multiplyTransformMatrices(previous.calcTransformMatrix(),[object.width>0?Math.max(previous.width,previous.strokeWidth||1)/object.width:1,0,0,object.height>0?Math.max(previous.height,previous.strokeWidth||1)/object.height:1,0,0]);
-    const parent=previous.group instanceof Group&&!(previous.group instanceof ActiveSelection)?previous.group:undefined,index=(parent?parent.getObjects():this.canvas.getObjects()).indexOf(previous);
-    this.canvas.discardActiveObject();
-    if(parent){parent.remove(previous);util.applyTransformToObject(object,matrix);parent.insertAt(index,object);parent.set('dirty',true);}
-    else{this.canvas.remove(previous);util.applyTransformToObject(object,matrix);this.canvas.insertAt(index,object);}
+    util.applyTransformToObject(object,matrix);
     if(object.flipX!==previous.flipX){const center=object.getCenterPoint();object.set({flipX:!object.flipX,flipY:!object.flipY,angle:object.angle+180});object.setPositionByOrigin(center,'center','center');}
-    object.setCoords();this.canvas.setActiveObject(object);this.commit();
+    syncLineSubtree(object);object.setCoords();return object;
   }
 
   addTable(options: TableOptions): void {
@@ -864,13 +945,14 @@ export class StudioEditor {
   }
 
   setCornerRadius(radius:number):void {
-    const object=this.canvas.getActiveObject() as StudioObject|undefined;
-    if(this.destroyed||this.restoring||!object||this.objectLocked(object)||!(object instanceof Rect||object instanceof FabricImage))return;
+    const selected=this.canvas.getActiveObject() as StudioObject|undefined,object=selected?getShapeEffectBase(selected) as StudioObject:undefined;
+    if(this.destroyed||this.restoring||!selected||!object||this.objectLocked(selected)||!(object instanceof Rect||object instanceof FabricImage))return;
     if(!Number.isFinite(radius)||radius<0)throw new Error('Use a nonnegative corner radius.');
-    const value=Math.min(radius,Math.min(object.width*Math.abs(object.scaleX),object.height*Math.abs(object.scaleY))/2),rx=value/Math.max(.000001,Math.abs(object.scaleX)),ry=value/Math.max(.000001,Math.abs(object.scaleY));
+    const scaling=isShapeEffectObject(selected)?object.getObjectScaling():new Point(object.scaleX,object.scaleY),value=Math.min(radius,Math.min(object.width*Math.abs(scaling.x),object.height*Math.abs(scaling.y))/2),rx=value/Math.max(.000001,Math.abs(scaling.x)),ry=value/Math.max(.000001,Math.abs(scaling.y));
     if(object instanceof Rect)object.set({rx,ry});
     else if(value===0){if(object.clipPath instanceof Rect){object.set('clipPath',undefined);delete (object as StudioObject).visroFrame;}else return;}
     else{object.set('clipPath',new Rect({originX:'center',originY:'center',left:0,top:0,width:object.width,height:object.height,rx,ry,fill:'#000000',strokeWidth:0}));(object as StudioObject).visroFrame='rounded';}
+    if(isShapeEffectObject(selected)){selected.getObjects().forEach(child=>{if(child instanceof Rect)child.set({rx,ry});});refreshShapeEffect(selected);}
     object.set('dirty',true);this.commit();
   }
 
@@ -949,7 +1031,8 @@ export class StudioEditor {
 
   setGraphicColor(from: string, to: string): void {
     const object = this.canvas.getActiveObject() as StudioObject | undefined;
-    if (!object?.visroGraphicId || object.visroLocked || !/^#[0-9a-f]{6}$/i.test(from) || !/^#[0-9a-f]{6}$/i.test(to) || this.destroyed || this.restoring) return;
+    const base=object?getShapeEffectBase(object):undefined;
+    if(!object||!(base instanceof Group)||isEditableLine(object)||!supportsShapeEffect(base)||this.objectLocked(object)||!/^#[0-9a-f]{6}$/i.test(from)||!/^#[0-9a-f]{6}$/i.test(to)||this.destroyed||this.restoring)return;
     const visit = (part: FabricObject): void => {
       if (part instanceof Group) { part.getObjects().forEach(visit); part.set('dirty', true); }
       else for (const key of ['fill','stroke'] as const) {
@@ -957,7 +1040,7 @@ export class StudioEditor {
         if (typeof value === 'string' && value.toLowerCase() === from.toLowerCase()) part.set(key, to);
       }
     };
-    visit(object);
+    visit(base);refreshShapeEffect(object);
     this.commit(`graphic-color:${object.id}`);
   }
 
@@ -969,8 +1052,8 @@ export class StudioEditor {
     if (objects.length) {
       for (const object of objects) {
         if (object.visroLocked || object instanceof FabricImage) continue;
-        object.set('fill', this.makeGradient(palette, normalizedAngle, object.width, object.height));
-        object.visroGradient = { colors: [...palette], angle: normalizedAngle };
+        const base=getShapeEffectBase(object) as StudioObject;if(base instanceof Group&&(!supportsShapeEffect(base)||isEditableLine(object)))continue;
+        const apply=(part:FabricObject)=>{if(part instanceof Group){part.getObjects().forEach(apply);part.set('dirty',true);}const target=part as StudioObject,fill=this.makeGradient(palette,normalizedAngle,part.width,part.height);if(!(part instanceof Group)&&(!part.fill||['none','transparent'].includes(String(part.fill)))&&part.stroke)part.set('stroke',fill);else part.set('fill',fill);target.visroGradient={colors:[...palette],angle:normalizedAngle};};apply(base);refreshShapeEffect(object);
       }
     } else {
       const page = this.document.pages.find((candidate) => candidate.id === this.document.activePageId);
@@ -1205,6 +1288,7 @@ export class StudioEditor {
     }
     for (const object of objects) {
       if (object.visroLocked) continue;
+      const lineAppearance=isEditableLine(object)&&['fill','stroke','strokeWidth','strokeDashArray','strokeLineCap','width','height'].some(key=>Object.hasOwn(update,key)),lineCenter=object instanceof Line&&lineAppearance&&!['left','top','width','height','angle'].some(key=>Object.hasOwn(update,key))?object.getRelativeCenterPoint():undefined;
       const values: Record<string, unknown> = {};
       for (const key of ["fill", "stroke", "strokeWidth", "opacity"] as const) {
         if (update[key] !== undefined) values[key] = update[key];
@@ -1223,6 +1307,7 @@ export class StudioEditor {
         values.opacity = bounded(update.opacity, 0, 1);
       if (update.name !== undefined) object.visroName = update.name;
       if (update.fill !== undefined) delete object.visroGradient;
+      if(isEditableLine(object)&&update.fill!==undefined){if(update.stroke===undefined)values.stroke=update.fill;values.fill=null;}
       if (isText(object)) {
         for (const key of [
           "text",
@@ -1246,10 +1331,54 @@ export class StudioEditor {
         values.scaleX = resizedScale(object,'x',update.width);
       if (update.height !== undefined && !multiple)
         values.scaleY = resizedScale(object,'y',update.height);
+      if(isShapeEffectObject(object)){
+        const appearance=Object.fromEntries(Object.entries(values).filter(([key])=>['fill','stroke','strokeWidth','strokeDashArray','strokeLineCap'].includes(key)));
+        if(update.fill!==undefined)delete (getShapeEffectBase(object) as StudioObject).visroGradient;
+        updateShapeEffectBase(object,appearance);for(const key of Object.keys(appearance))delete values[key];
+      }else if(object instanceof Group&&!isEditableLine(object)&&supportsShapeEffect(object)){
+        const appearance=Object.fromEntries(Object.entries(values).filter(([key])=>['fill','stroke','strokeWidth','strokeDashArray','strokeLineCap'].includes(key)));updateVectorBasePaint(object,appearance);for(const key of Object.keys(appearance))delete values[key];
+      }
       object.set(values);
+      if(lineCenter)object.setPositionByOrigin(lineCenter,'center','center');
+      if(lineAppearance)this.syncResizedLine(object,!multiple?update.width:undefined,!multiple?update.height:undefined);
+      else if(!multiple&&object instanceof Group&&(update.width!==undefined||update.height!==undefined))this.syncResizedLine(object,update.width,update.height);
       object.setCoords();
     }
+    if(multiple&&(update.width!==undefined||update.height!==undefined))this.syncResizedLine(selection!,update.width,update.height);
     this.commit(`selection:${objects.map((object) => object.id).join(',')}:${Object.keys(update).sort().join(',')}`);
+  }
+
+  private syncResizedLine(object:FabricObject,width?:number,height?:number):void {
+    if(!syncLineSubtree(object)||!(object instanceof Group))return;
+    // Markers retain their painted weight when a line length changes. Their
+    // fixed-size caps therefore need a small correction to the requested box.
+    for(let pass=0;pass<4;pass++){
+      const values:Record<string,number>={},stroke=object.strokeUniform?object.strokeWidth:0;
+      for(const [target,axis,current,scale]of[[width,'scaleX',object.getScaledWidth(),object.scaleX],[height,'scaleY',object.getScaledHeight(),object.scaleY]] as const)if(target!==undefined&&Number.isFinite(target)&&Math.abs(target-current)>.005&&current-stroke>.000001)values[axis]=scale*Math.max(.001,target-stroke)/(current-stroke);
+      if(!Object.keys(values).length)break;object.set(values);syncLineSubtree(object);
+    }
+  }
+
+  updateLineStyle(patch:Partial<LineStyle>):void {
+    if(this.destroyed||this.restoring)return;const object=this.canvas.getActiveObject() as StudioObject|undefined;
+    if(!object||!isEditableLine(object)||this.objectLocked(object))return;
+    const before=getLineStyle(object)!;
+    if(Object.entries(patch).every(([key,value])=>before[key as keyof LineStyle]===value))return;
+    this.flushPendingChanges();this.replaceLineTarget(object,updateLineObject(object,patch));this.commit();
+  }
+
+  swapSelectedLineEnds():void {
+    if(this.destroyed||this.restoring)return;const object=this.canvas.getActiveObject() as StudioObject|undefined;
+    if(!object||!isEditableLine(object)||this.objectLocked(object))return;const style=getLineStyle(object)!;if(style.startMarker===style.endMarker)return;
+    this.flushPendingChanges();this.replaceLineTarget(object,swapLineObjectEnds(object));this.commit();
+  }
+
+  private replaceLineTarget(previous:StudioObject,result:FabricObject):void {
+    if(previous===result){installLineControls(result);return;}
+    const parent=previous.group instanceof Group&&!(previous.group instanceof ActiveSelection)?previous.group:undefined,index=(parent?parent.getObjects():this.canvas.getObjects()).indexOf(previous);
+    this.canvas.discardActiveObject();
+    if(parent){parent.insertAt(index,result);parent.remove(previous);parent.set('dirty',true);}else{this.canvas.insertAt(index,result);this.canvas.remove(previous);}
+    result.setCoords();installLineControls(result);this.canvas.setActiveObject(result);
   }
 
   /** Move immediately; one undo snapshot and UI update per animation frame. */
@@ -1325,6 +1454,7 @@ export class StudioEditor {
     const targetHeight = bounded(height + dy, stroke + 1, MAX_DESIGN_SIZE * 4);
     if (dx) selection.set('scaleX', selection.scaleX * (targetWidth - stroke) / Math.max(.000001, width - stroke));
     if (dy) selection.set('scaleY', selection.scaleY * (targetHeight - stroke) / Math.max(.000001, height - stroke));
+    if(selection instanceof Group)this.syncResizedLine(selection,dx?targetWidth:undefined,dy?targetHeight:undefined);
     selection.setCoords();
     this.hoverTarget = undefined;
     this.queueTransform(key);
@@ -1402,13 +1532,16 @@ export class StudioEditor {
   copyStyle(): boolean {
     const object = this.canvas.getActiveObjects()[0] as StudioObject | undefined;
     if (!object) return false;
+    const base=getShapeEffectBase(object) as StudioObject;
     const style: Record<string, unknown> = {};
     for (const key of ['fill', 'stroke', 'strokeWidth', 'opacity', 'paintFirst'] as const) {
-      const value = object[key];
+      const value = key==='opacity'?object.opacity:base[key];
       if (typeof value !== 'object' || value === null) style[key] = value;
     }
-    if (object.visroGradient) style.visroGradient = cloneProject(object.visroGradient);
-    if (object.shadow) style.shadow = object.shadow.toObject();
+    for(const key of ['fill','stroke'] as const)if(base[key] instanceof Gradient)style[`${key}NativeGradient`]={value:resizedNativeGradient(base[key],base.width,base.height,base.width,base.height),width:base.width,height:base.height};
+    if (base.visroGradient) style.visroGradient = cloneProject(base.visroGradient);
+    if(isShapeEffectObject(object))style.shadow=cloneProject(object.visroShapeEffectBase?.shadow??null);
+    else if (object.shadow) style.shadow = object.shadow.toObject();
     else style.shadow = null;
     if (isText(object)) {
       for (const key of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'underline', 'linethrough', 'textAlign', 'lineHeight', 'charSpacing'] as const) style[key] = object[key];
@@ -1424,18 +1557,25 @@ export class StudioEditor {
     const style = this.styleClipboard;
     for (const object of this.canvas.getActiveObjects() as StudioObject[]) {
       if (object.visroLocked) continue;
+      const base=getShapeEffectBase(object) as StudioObject;
       const values: Record<string, unknown> = {};
       for (const key of ['fill', 'stroke', 'strokeWidth', 'opacity', 'paintFirst']) if (Object.hasOwn(style, key)) values[key] = style[key];
       values.shadow = style.shadow ? new Shadow(style.shadow as ConstructorParameters<typeof Shadow>[0]) : null;
       const gradient = style.visroGradient as StudioObject['visroGradient'];
-      if (gradient) { object.visroGradient = cloneProject(gradient); values.fill = this.makeGradient(gradient.colors, gradient.angle, object.width, object.height); }
-      else delete object.visroGradient;
+      if (gradient) { base.visroGradient = cloneProject(gradient); values.fill = this.makeGradient(gradient.colors, gradient.angle, base.width, base.height); }
+      else delete base.visroGradient;
+      for(const key of ['fill','stroke'] as const){const native=style[`${key}NativeGradient`] as {value:FabricObject['fill'];width:number;height:number}|undefined;if(native?.value instanceof Gradient)values[key]=resizedNativeGradient(native.value,base.width,base.height,native.width,native.height);}
       if (isText(object)) {
         for (const key of ['fontFamily', 'fontSize', 'fontWeight', 'fontStyle', 'underline', 'linethrough', 'textAlign', 'lineHeight', 'charSpacing']) if (Object.hasOwn(style, key)) values[key] = style[key];
         (object as StudioObject).visroTextEffect = style.visroTextEffect as TextEffect | undefined;
         (object as StudioObject).visroTextBaseFill = style.visroTextBaseFill as string | undefined;
       }
-      object.set(values); object.setCoords();
+      const lineCenter=object instanceof Line?object.getRelativeCenterPoint():undefined;
+      if(isShapeEffectObject(object)){
+        object.set('opacity',values.opacity??object.opacity);delete values.opacity;
+        object.visroShapeEffectBase={...object.visroShapeEffectBase,shadow:style.shadow?cloneProject(style.shadow) as NonNullable<StudioObject['visroShapeEffectBase']>['shadow']:null};base.set(values);refreshShapeEffect(object);
+      }else object.set(values);
+      if(lineCenter)object.setPositionByOrigin(lineCenter,'center','center');syncLineAppearance(object);object.setCoords();
     }
     this.commit();
   }
@@ -1597,6 +1737,8 @@ export class StudioEditor {
     if (
       !(group instanceof Group) ||
       group instanceof ActiveSelection ||
+      isEditableLine(group) ||
+      isShapeEffectObject(group) ||
       (group as StudioObject).visroLocked
     )
       return;
@@ -1668,33 +1810,28 @@ export class StudioEditor {
     this.commit();
   }
 
-  resizeDesign(width: number, height: number, options: { scaleContent?: boolean } = {}): void {
-    if (this.destroyed || this.restoring) return;
-    this.syncPage();
-    const oldWidth = this.width, oldHeight = this.height;
-    this.document.width = bounded(Math.round(width), 16, MAX_DESIGN_SIZE);
-    this.document.height = bounded(Math.round(height), 16, MAX_DESIGN_SIZE);
-    if (options.scaleContent) {
-      const sx = this.width / oldWidth, sy = this.height / oldHeight;
-      this.canvas.discardActiveObject();
-      for (const object of this.canvas.getObjects()) {
-        object.set({ left: object.left * sx, top: object.top * sy, scaleX: object.scaleX * sx, scaleY: object.scaleY * sy });
-        object.setCoords();
-      }
+  resizeDesign(width: number, height: number, options: { scaleContent?: boolean } = {}): Promise<void> {
+    const origin=this.document,pageId=this.document.activePageId;
+    return this.runQueued(async()=>{
+      const guard=()=>{this.assertOriginPage(pageId);if(origin!==this.document||!this.documentMutationAllowed())throw new Error('This design is no longer editable.');};guard();
       this.syncPage();
-      for (const page of this.document.pages) {
-        if (page.id === this.document.activePageId) continue;
-        const objects = page.canvas.objects as Record<string, unknown>[];
-        for (const object of objects) {
-          object.left = Number(object.left ?? 0) * sx; object.top = Number(object.top ?? 0) * sy;
-          object.scaleX = Number(object.scaleX ?? 1) * sx; object.scaleY = Number(object.scaleY ?? 1) * sy;
-        }
+      const targetWidth=bounded(Math.round(width),16,MAX_DESIGN_SIZE),targetHeight=bounded(Math.round(height),16,MAX_DESIGN_SIZE),revision=this.revision;
+      const matrix:[number,number,number,number,number,number]=[targetWidth/this.width,0,0,targetHeight/this.height,0,0];
+      const prepared=new Map<string,Record<string,unknown>[]>();
+      if(options.scaleContent)for(const page of this.document.pages){
+        if(page.id!==pageId)prepared.set(page.id,await resizeSerializedObjects((page.canvas.objects??[]) as Record<string,unknown>[],matrix,{signal:this.lifecycle.signal}));
       }
-    }
-    this.rebuildBackgroundGradient();
-    this.updateClip();
-    this.fit();
-    this.commit();
+      guard();if(revision!==this.revision)throw new Error('The design changed while its resized geometry was preparing. Resize it again.');
+      this.document.width=targetWidth;this.document.height=targetHeight;
+      if(options.scaleContent){
+        this.canvas.discardActiveObject();
+        for(const object of this.canvas.getObjects()){
+          util.applyTransformToObject(object,util.multiplyTransformMatrices(matrix,object.calcTransformMatrix()));syncLineSubtree(object);object.setCoords();
+        }
+        for(const page of this.document.pages){const objects=prepared.get(page.id);if(objects)page.canvas={...page.canvas,objects};}
+      }
+      this.rebuildBackgroundGradient();this.updateClip();this.fit();this.commit();
+    });
   }
 
   resizeViewport(width: number, height: number): void {
@@ -2075,7 +2212,7 @@ export class StudioEditor {
   }
 
   selectLayer(id: string): void {
-    const object=this.findObject(id);
+    let object=this.findObject(id);while(object?.group&&isShapeEffectObject(object.group))object=object.group as StudioObject;
     if (object?.visible) {
       this.canvas.setActiveObject(object);
       this.canvas.requestRenderAll();
@@ -2256,6 +2393,8 @@ export class StudioEditor {
   private addAndSelect(object: StudioObject): void {
     if (this.destroyed || this.restoring) return;
     this.canvas.isDrawingMode = false;
+    installLineControls(object);
+    installInteractionControls(object);
     this.canvas.add(object);
     this.canvas.setActiveObject(object);
     this.commit();
@@ -2310,7 +2449,7 @@ export class StudioEditor {
   }
 
   private normalizeObjects():void {
-    const visit=(raw:FabricObject):void=>{const object=raw as StudioObject;object.id??=newId();object.visroName??=objectName(object);object.set({...INTERACTION_STYLE,evented:!object.visroLocked,selectable:!object.visroLocked});if(object instanceof Group)object.getObjects().forEach(visit);};
+    const visit=(raw:FabricObject):void=>{const object=raw as StudioObject;object.id??=newId();object.visroName??=objectName(object);object.set({...INTERACTION_STYLE,evented:!object.visroLocked,selectable:!object.visroLocked});if(object instanceof Group)object.getObjects().forEach(visit);if(isEditableLine(object)){installLineControls(object);if(object instanceof Group){object.set({subTargetCheck:false,interactive:false});object.getObjects().forEach(child=>child.set({evented:false,selectable:false}));}}installInteractionControls(object);this.normalizeShapeEffectInteraction(object);};
     this.canvas.getObjects().forEach(visit);
   }
 
@@ -2386,6 +2525,8 @@ export class StudioEditor {
     if (this.pendingTransformKey) { this.flushPendingChanges(); return; }
     const active = this.canvas.getActiveObject();
     if (active instanceof ActiveSelection) active.set(INTERACTION_STYLE);
+    else if(active)installLineControls(active);
+    if(active)installInteractionControls(active);
     this.options.onSelection?.(this.getSelected());
     this.emit();
   }

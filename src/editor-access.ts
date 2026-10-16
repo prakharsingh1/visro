@@ -4,13 +4,14 @@ import type {EditingMode} from './EditingModeMenu';
 /** View modes gate the editor's mutation entry points as well as pointer editing.
  * Loading, page navigation, selection, zoom, copying and export remain available. */
 export const EDITOR_MUTATIONS=[
-  'convertSelectedShapeToFrame','insertDesign','addImage','insertFrame','replaceSelectedImage','replaceImageById','applyImageMask','duplicate','addPage','addPageAfter','movePage','duplicatePage','deletePage','undo','redo','bulkCreate','paste','cut','distribute','setName','setBrand','addText','addShape','replaceShape','addTable','addChart','setSelectedImageFrame','addFrame','removeFrame','addSVG','addGraphic','setGraphicColor','setGradient','setTextEffect','setPageMetadata','setProjectMetadata','formatSelectedText','updateSelectedTextStyle','continueSelectedTextList','indentSelectedTextList','updateSelected','nudge','rotateSelection','resizeSelection','editSelectedText','pasteStyle','setElementMetadata','insertObjects','remove','group','ungroup','arrange','align','flip','setBackground','resizeDesign','renamePage','applyEffects','cropSelectedImage','cropImage','setSelectedImageAsBackground','resetImageEffects','setDrawing','setLayerVisibility','setLayerLocked','reorderLayer','moveLayer','setCornerRadius',
+  'convertSelectedShapeToFrame','insertDesign','addImage','insertFrame','replaceSelectedImage','replaceImageById','applyImageMask','duplicate','addPage','addPageAfter','movePage','duplicatePage','deletePage','undo','redo','bulkCreate','paste','cut','distribute','setName','setBrand','addText','addShape','replaceShape','addTable','addChart','setSelectedImageFrame','addFrame','removeFrame','addSVG','addGraphic','setGraphicColor','setGradient','setTextEffect','setShapeEffect','setPageMetadata','setProjectMetadata','formatSelectedText','updateSelectedTextStyle','continueSelectedTextList','indentSelectedTextList','updateSelected','nudge','rotateSelection','resizeSelection','editSelectedText','pasteStyle','setElementMetadata','insertObjects','remove','group','ungroup','arrange','align','flip','setBackground','resizeDesign','renamePage','applyEffects','cropSelectedImage','cropImage','setSelectedImageAsBackground','resetImageEffects','setDrawing','setLayerVisibility','setLayerLocked','reorderLayer','moveLayer','setCornerRadius','updateLineStyle','swapSelectedLineEnds',
 ] as const;
-const ASYNC_MUTATIONS=new Set(['convertSelectedShapeToFrame','insertDesign','addImage','insertFrame','replaceSelectedImage','replaceImageById','applyImageMask','duplicate','addPage','addPageAfter','duplicatePage','deletePage','undo','redo','bulkCreate','paste','cut','addSVG','insertObjects']);
+const ASYNC_MUTATIONS=new Set(['resizeDesign','convertSelectedShapeToFrame','setShapeEffect','replaceShape','insertDesign','addImage','insertFrame','replaceSelectedImage','replaceImageById','applyImageMask','duplicate','addPage','addPageAfter','duplicatePage','deletePage','undo','redo','bulkCreate','paste','cut','addSVG','insertObjects']);
 export interface EditorAccess {getMode:()=>EditingMode;setMode:(mode:EditingMode)=>Promise<void>;dispose:()=>void}
 export function installEditorAccess(editor:StudioEditor):EditorAccess {
   let mode:EditingMode='editing',epoch=0,disposed=false;
   const instance=editor as unknown as Record<string,unknown>,originals=new Map<string,Function>();
+  const originalPermission=instance.documentMutationAllowed;instance.documentMutationAllowed=()=>!disposed&&mode==='editing';
   for(const name of EDITOR_MUTATIONS){const original=instance[name];if(typeof original!=='function')continue;originals.set(name,original);instance[name]=function(...args:unknown[]){if(mode!=='editing')return ASYNC_MUTATIONS.has(name)?Promise.resolve():false;return Reflect.apply(original,editor,args);};}
   const enforce=()=>{
     if(disposed||mode==='editing')return;
@@ -39,6 +40,6 @@ export function installEditorAccess(editor:StudioEditor):EditorAccess {
       editor.canvas.defaultCursor='default';editor.canvas.hoverCursor=next==='editing'?'move':'default';
       editor.canvas.requestRenderAll();
     },
-    dispose:()=>{disposed=true;++epoch;off();for(const [name,original] of originals)instance[name]=original;},
+    dispose:()=>{disposed=true;++epoch;off();instance.documentMutationAllowed=originalPermission;for(const [name,original] of originals)instance[name]=original;},
   };
 }

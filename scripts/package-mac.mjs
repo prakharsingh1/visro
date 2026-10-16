@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdir, copyFile, readdir } from "node:fs/promises";
+import { mkdir, copyFile, readdir, readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const stage = join(homedir(), "Library", "Caches", "Visro-build");
 const output = join(root, "release");
+const {version} = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 const directoryOnly = process.argv.includes("--dir");
 const run = (command, args) =>
   new Promise((resolve, reject) => {
@@ -41,6 +42,6 @@ await run("/usr/bin/codesign", [
   app,
 ]);
 for (const file of await readdir(stage))
-  if (/\.(dmg|zip|blockmap)$/.test(file))
+  if (file.startsWith(`Visro-${version}-`) && /\.(dmg|zip|blockmap)$/.test(file))
     await copyFile(join(stage, file), join(output, file));
 console.log(`Visro app: ${app}\nInstallers: ${output}`);

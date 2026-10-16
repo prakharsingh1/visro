@@ -1,4 +1,5 @@
 import type { ElementMetadata, VisroProject } from "./editor-types";
+import {sanitizeLineGeometry} from './line-geometry.ts';
 
 export const PROJECT_VERSION = 1;
 export const MAX_PROJECT_BYTES = 40 * 1024 * 1024;
@@ -152,6 +153,10 @@ export function validateProject(value: unknown): VisroProject {
     for (const object of objects) {
       if (!isRecord(object)) continue;
       if (object.visroMetadata !== undefined) object.visroMetadata = sanitizeElementMetadata(object.visroMetadata);
+      if (object.visroLine !== undefined) {
+        const line=sanitizeLineGeometry(object.visroLine);
+        if(line)object.visroLine=line;else delete object.visroLine;
+      }
       if (Array.isArray(object.objects)) sanitizeLayers(object.objects, depth + 1);
     }
   };

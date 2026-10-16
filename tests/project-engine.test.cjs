@@ -606,7 +606,7 @@ test('group and ungroup preserve the rendered transforms of all child layers', a
 test('export dimensions and transparency are independent from viewport zoom', async () => {
   const editor = studio();
   try {
-    editor.resizeDesign(640, 480);
+    await editor.resizeDesign(640, 480);
     editor.resizeViewport(310, 210);
     editor.setZoom(0.22);
     editor.addShape('rect');
@@ -767,7 +767,7 @@ test('gradients, text effects, metadata, and scaled resizing survive project rou
     editor.setPageMetadata({ notes: 'Speaker notes', duration: 8, animation: 'fade' });
     editor.setProjectMetadata({ kind: 'sheet', content: { cells: [['2', '=A1*2']] } });
     const before = editor.selected;
-    editor.resizeDesign(2160, 2160, { scaleContent: true });
+    await editor.resizeDesign(2160, 2160, { scaleContent: true });
     editor.selectLayer(textId);
     assert.equal(editor.selected.width, before.width * 2);
     await editor.loadProject(editor.serialize());

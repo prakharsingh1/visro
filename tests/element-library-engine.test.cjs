@@ -4,13 +4,13 @@ const fs=require('node:fs/promises');
 const path=require('node:path');
 const {pathToFileURL}=require('node:url');
 const {build}=require('esbuild');
-let StudioEditor,environment,fabric,SHAPE_LIBRARY,getShapeGeometry,GRAPHICS;
+let StudioEditor,environment,fabric,SHAPE_LIBRARY,getShapeGeometry,GRAPHICS,isEditableLine,getLineStyle,getLineEndpoints;
 before(async()=>{
  fabric=await import('fabric');environment=(await import('fabric/node')).getEnv();fabric.setEnv(environment);
  ({SHAPE_LIBRARY,getShapeGeometry}=await import('../src/shapes.ts'));({GRAPHICS}=await import('../src/graphics-library.ts'));
- const output=await build({entryPoints:[path.join(__dirname,'../src/editor.ts')],bundle:true,platform:'node',format:'esm',external:['fabric'],write:false});
+ const output=await build({stdin:{contents:"export{StudioEditor}from'./src/editor.ts';export{isEditableLine,getLineStyle,getLineEndpoints}from'./src/line-editing.ts';",resolveDir:path.join(__dirname,'..')},bundle:true,platform:'node',format:'esm',external:['fabric'],write:false});
  const temporary=path.join(__dirname,`element-library-build-${process.pid}.mjs`);await fs.writeFile(temporary,output.outputFiles[0].text);
- try{({StudioEditor}=await import(pathToFileURL(temporary).href));}finally{await fs.unlink(temporary);}
+ try{({StudioEditor,isEditableLine,getLineStyle,getLineEndpoints}=await import(pathToFileURL(temporary).href));}finally{await fs.unlink(temporary);}
 });
 const editor=options=>new StudioEditor(environment.document.createElement('canvas'),options);
 const near=(actual,expected,label)=>assert.ok(Math.abs(actual-expected)<.00001,`${label}: ${actual} ≈ ${expected}`);
@@ -25,7 +25,21 @@ test('all 56 shape insertions remain finite native vectors centered at the point
    const object=studio.canvas.getActiveObject(),bounds=finiteBounds(object,definition.id),point=object.getCenterPoint();
    near(point.x,center.x,`${definition.id} centerX`);near(point.y,center.y,`${definition.id} centerY`);
    assert.ok(bounds.width<500&&bounds.height<500,`${definition.id} bounded insertion size`);assert.ok(!ids.has(object.id));ids.add(object.id);
-   assert.ok(['rect','circle','ellipse','triangle','polygon','path','line'].includes(object.type.toLowerCase()),`${definition.id} is a native editable vector`);
+   if(object instanceof fabric.Group){
+    assert.ok(['arrow-line','double-arrow-line','elbow-line','curved-line'].includes(definition.id),`${definition.id} must not become an arbitrary group`);
+    assert.ok(isEditableLine(object)&&getLineStyle(object),`${definition.id} retains its editable connector contract`);
+    assert.ok(object.getObjects().every(child=>child instanceof fabric.Path),`${definition.id} retains native vector parts`);
+    for(const endpoint of Object.values(getLineEndpoints(object)))for(const coordinate of [endpoint.x,endpoint.y])assert.ok(Number.isFinite(coordinate),`${definition.id} finite scene endpoint`);
+    assert.doesNotMatch(object.toSVG(),/<image|NaN|Infinity/,`${definition.id} exports native geometry`);
+    const isolated=new fabric.StaticCanvas(environment.document.createElement('canvas'),{width:600,height:600,enableRetinaScaling:false,renderOnAddRemove:false}),copy=await object.clone();
+    try{
+     copy.setPositionByOrigin(new fabric.Point(300,300),'center','center');isolated.add(copy);
+     const stats=()=>{isolated.renderAll();const data=isolated.getContext().getImageData(0,0,600,600).data;let ink=0,left=600,top=600,right=0,bottom=0;for(let index=3;index<data.length;index+=4)if(data[index]){const pixel=(index-3)/4,x=pixel%600,y=Math.floor(pixel/600);ink+=data[index];left=Math.min(left,x);top=Math.min(top,y);right=Math.max(right,x);bottom=Math.max(bottom,y);}return{ink,left,top,right,bottom};};
+     const cached=stats();copy.set('objectCaching',false);const uncached=stats();assert.ok(cached.ink>1000,`${definition.id} actually paints`);assert.ok(Math.abs(cached.ink/uncached.ink-1)<.025,`${definition.id} cache does not clip its connector or markers: cached=${JSON.stringify(cached)} uncached=${JSON.stringify(uncached)}`);
+     for(const side of ['left','top','right','bottom'])assert.ok(Math.abs(cached[side]-uncached[side])<=2,`${definition.id} cached ${side} retains its painted bounds`);
+     assert.ok(cached.left>10&&cached.top>10&&cached.right<590&&cached.bottom<590,`${definition.id} isolated paint remains inside the viewport`);
+    }finally{await isolated.dispose();}
+   }else assert.ok(['rect','circle','ellipse','triangle','polygon','path','line'].includes(object.type.toLowerCase()),`${definition.id} is a native editable vector`);
    if(definition.kind!=='line'){
     const geometry=getShapeGeometry(definition.id),native=geometry.kind==='polygon'?new fabric.Polygon(geometry.points,{strokeWidth:0}):new fabric.Path(geometry.path,{strokeWidth:0});
     if(native.height>0&&geometry.filled){const expected=native.width/native.height*geometry.aspectRatio;near(object.width*object.scaleX/(object.height*object.scaleY),expected,`${definition.id} visible thumbnail ratio`);}

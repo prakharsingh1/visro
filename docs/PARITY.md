@@ -81,3 +81,11 @@ Cloud projects, account synchronization, real-time collaborators, paid stock and
 The 530 bundled layouts are independently authored Visro Originals with separately credited public-domain/CC0 source photographs, not Canva’s ranked or copied template catalog. Canva’s [Content License Agreement, §9.8](https://www.canva.com/policies/content-license-agreement/) restricts competitive use of its licensed content.
 
 The remaining local gaps are recorded explicitly above. No hidden Canva feature is represented as unlocked, and no live AI output is replaced with a successful-looking placeholder.
+
+## Line and shape controls added in 0.7.0
+
+The floating line toolbar includes separately editable start/end markers, swap ends, and Straight/Elbowed/Curved routing in the observed order. The ten marker names and two-row popup layout were checked in the installed reference. Endpoint handles directly change vector geometry; JSON saves and SVG/PNG exports retain the result.
+
+Shape Effects now has four native paint mechanisms and fifteen presets, with the observed left-drawer placement, selected-row controls, bounds and sticky Remove effect action. Advanced fills and strokes remain native gradients, and removal retains the current palette. Shadow/glow rasterization and exact color-copy opacity are approximations. Line labels, automatic shape-attached connectors, the complete marketplace graphics library and universal pixel-identical menus/fonts/icons remain gaps; this release does not establish complete Canva parity.
+
+The common five-action bar prefers above-object placement and the native shape rotation control sits below the object. Exact per-platform glyph rasterization remains unclaimed. During a held nonuniform parent-group scale, line markers use the native affine preview and are corrected on release; Position/keyboard changes correct them immediately.

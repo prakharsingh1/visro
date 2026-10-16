@@ -13,7 +13,7 @@ export function elementMenuPosition(x:number,y:number,width:number,height:number
 }
 function levelButtons(menu:HTMLElement|null){return Array.from(menu?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')||[]).filter(button=>button.closest('[role="menu"]')===menu);}
 
-export function ElementMenu({x,y,type,count,locked,onAction,onClose,canFrame=false}:{x:number;y:number;type?:string;count:number;locked:boolean;canFrame?:boolean;onAction:(action:ElementAction)=>void;onClose:()=>void}){
+export function ElementMenu({x,y,type,count,locked,onAction,onClose,canFrame=false,canUngroup=true}:{x:number;y:number;type?:string;count:number;locked:boolean;canFrame?:boolean;canUngroup?:boolean;onAction:(action:ElementAction)=>void;onClose:()=>void}){
  const ref=useRef<HTMLDivElement>(null),popup=useRef<HTMLDivElement>(null),triggers=useRef<Partial<Record<SubmenuName,HTMLButtonElement>>>({});
  const [submenu,setSubmenu]=useState<SubmenuName|null>(null),[position,setPosition]=useState<MenuPoint>(()=>elementMenuPosition(x,y,272,0,window.innerWidth,window.innerHeight)),[subPosition,setSubPosition]=useState<MenuPoint>({left:8,top:8});
  const submenuState=useRef(submenu),focusSubmenu=useRef(false),leaveTimer=useRef<ReturnType<typeof setTimeout>|null>(null),callbacks=useRef({onClose,onAction}),id=useId();
@@ -63,7 +63,7 @@ export function ElementMenu({x,y,type,count,locked,onAction,onClose,canFrame=fal
  </div>;
  return <div className="element-menu" role="menu" aria-label="Element options" ref={ref} style={position} onContextMenu={event=>event.preventDefault()} onScroll={event=>{if(event.target===event.currentTarget)setSubmenu(null);}}>
   {row(['copy','Copy','copy','⌘C'])}{row(['copy-style','Copy style','paint-roller','⌥⌘C'])}{row(['paste','Paste','clipboard','⌘V'])}{row(['duplicate','Duplicate','duplicate','⌘D'])}{row(['delete','Delete','trash','DELETE'])}<hr role="separator"/>
-  {count>1&&row(['group','Group','components','⌘G'])}{type==='group'&&row(['ungroup','Ungroup','components','⇧⌘G'])}
+  {count>1&&row(['group','Group','components','⌘G'])}{type==='group'&&canUngroup&&row(['ungroup','Ungroup','components','⇧⌘G'])}
   {sub('layer','Layer','layers',[[ 'front','Bring to front','bring-front','⌥⌘]'],['up','Bring forward','bring-forward','⌘]'],['down','Send backward','send-backward','⌘['],['back','Send to back','send-back','⌥⌘['],null,['show-layers','Show layers','layers','⌥1']])}
   {sub('align','Align to page','align-left',[['left','Left','align-left'],['center','Center','align-center'],['right','Right','align-right'],null,['top','Top','align-top'],['middle','Middle','align-middle'],['bottom','Bottom','align-bottom']])}<hr role="separator"/>
   {canFrame&&row(['frame','Change to frame','frames'])}
