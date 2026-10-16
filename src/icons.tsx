@@ -1,6 +1,7 @@
 import type { SVGProps } from 'react';
 
-export type StudioIconName = 'menu'|'create'|'home'|'projects'|'templates'|'brand'|'ai'|'more'|'notifications'|'search'|'presentation'|'social'|'video'|'print'|'document'|'whiteboard'|'sheet'|'website'|'custom'|'upload'|'elements'|'text'|'tools'|'apps'|'components'|'audio'|'background'|'charts'|'comments'|'file'|'resize'|'star'|'trash'|'settings'|'sun'|'moon'|'chevron'|'close'|'check';
+export type StudioIconName = 'menu'|'create'|'home'|'projects'|'templates'|'brand'|'ai'|'more'|'notifications'|'search'|'presentation'|'social'|'video'|'print'|'document'|'whiteboard'|'sheet'|'website'|'custom'|'upload'|'elements'|'text'|'tools'|'apps'|'components'|'audio'|'background'|'charts'|'comments'|'file'|'resize'|'star'|'trash'|'settings'|'sun'|'moon'|'chevron'|'close'|'check'
+ |'edit'|'eye'|'copy'|'duplicate'|'clipboard'|'paint-roller'|'lock'|'unlock'|'link'|'alternative-text'|'layers'|'bring-front'|'bring-forward'|'send-backward'|'send-back'|'align-left'|'align-center'|'align-right'|'align-top'|'align-middle'|'align-bottom'|'timing'|'stroke-style'|'corners'|'transparency'|'spacing'|'line-start'|'line-end'|'swap-ends'|'line-type'|'strikethrough'|'uppercase'|'image'|'frames'|'grid';
 export interface StudioIconProps extends SVGProps<SVGSVGElement> { name: StudioIconName; size?: number; filled?: boolean; }
 
 /** Independently drawn 24 px glyphs measured against the installed editor UI. */
@@ -46,6 +47,31 @@ export function StudioIcon({name,size=24,filled=false,strokeWidth=1.5,...props}:
   case 'chevron':glyph=<><path d="m9 5 7 7-7 7"/></>;break;
   case 'close':glyph=<><path d="m6 6 12 12M18 6 6 18"/></>;break;
   case 'check':glyph=<><path d="m5 12 4.5 4.5L19 7"/></>;break;
+  case 'edit':glyph=<><path d="m4.1 15.2 11.4-11.4a2.5 2.5 0 0 1 3.5 3.5L7.6 18.7l-5 1.5Z"/><path d="m13.8 5.5 3.5 3.5M4.1 15.2l3.5 3.5"/></>;break;
+  case 'eye':glyph=<><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="3.3"/></>;break;
+  case 'copy':case 'duplicate':glyph=<><path d="M7.2 16.8H5a2 2 0 0 1-2-2V4.9a2 2 0 0 1 2-2h9.9a2 2 0 0 1 2 2V7"/><rect x="8" y="8" width="13" height="13" rx="2"/>{name==='duplicate'&&<path d="M14.5 11.8v6M11.5 14.8h6"/>}</>;break;
+  case 'clipboard':glyph=<><path d="M8 5H5.3a1.4 1.4 0 0 0-1.4 1.4v13.1a1.4 1.4 0 0 0 1.4 1.4h13.4a1.4 1.4 0 0 0 1.4-1.4V6.4A1.4 1.4 0 0 0 18.7 5H16"/><path d="M10 4.7a2 2 0 0 1 4 0h2v3H8v-3Z"/></>;break;
+  case 'paint-roller':glyph=<><rect x="3" y="3.5" width="15.5" height="5" rx="1.4"/><path d="M18.5 6H21v5l-9 2.3V16"/><rect x="10" y="16" width="4" height="6" rx="1.1"/></>;break;
+  case 'lock':case 'unlock':glyph=<><rect x="5.1" y="10.1" width="13.8" height="11.1" rx="1.5"/>{name==='lock'?<path d="M7.6 10.1V6.8a4.4 4.4 0 0 1 8.8 0v3.3"/>:<path d="M7.6 10.1V6.8a4.4 4.4 0 0 1 8.8 0"/>}<circle cx="12" cy="14.4" r=".8"/><path d="M12 15.2v2.6"/></>;break;
+  case 'link':glyph=<><path d="M10.3 7.5H7.1a4.5 4.5 0 0 0 0 9h5.2a4.5 4.5 0 0 0 4.2-2.8M13.7 16.5h3.2a4.5 4.5 0 0 0 0-9h-5.2a4.5 4.5 0 0 0-4.2 2.8M8.3 12h7.4"/></>;break;
+  case 'alternative-text':glyph=<><circle cx="12" cy="12" r="9"/><circle cx="12" cy="6.8" r="1" fill="currentColor" stroke="none"/><path d="m7.5 9.3 4.5 1 4.5-1M12 10.3V14m0 0-2.3 4.5M12 14l2.3 4.5"/></>;break;
+  case 'layers':glyph=<><path d="m12 3 10 5.6L12 14.2 2 8.6Zm-7.5 9L2 13.4 12 19l10-5.6-2.5-1.4M4.5 17 12 21l7.5-4"/></>;break;
+  case 'bring-front':case 'bring-forward':case 'send-backward':case 'send-back':glyph=<><path d="M5.5 18.5H3V3h15.5v2.5"/><rect x="8" y="8" width="13" height="13" rx=".7" fill={name==='bring-front'||name==='bring-forward'?'currentColor':'none'}/><path d={name==='bring-front'||name==='bring-forward'?'m11 14.8 3.5-3.5 3.5 3.5M14.5 11.3v7':'m11 14.2 3.5 3.5 3.5-3.5M14.5 17.7v-7'} stroke={name==='bring-front'||name==='bring-forward'?'var(--icon-cutout, #fff)':'currentColor'}/>{(name==='bring-front'||name==='send-back')&&<path d={name==='bring-front'?'M11 10h7':'M11 19h7'} stroke={name==='bring-front'?'var(--icon-cutout, #fff)':'currentColor'}/>}</>;break;
+  case 'align-left':case 'align-center':case 'align-right':glyph=<>{name==='align-left'?<><path d="M3 3v18"/><rect x="6.5" y="5" width="14" height="4.5" rx=".7"/><rect x="6.5" y="14.5" width="9" height="4.5" rx=".7"/></>:name==='align-right'?<><path d="M21 3v18"/><rect x="3.5" y="5" width="14" height="4.5" rx=".7"/><rect x="8.5" y="14.5" width="9" height="4.5" rx=".7"/></>:<><path d="M12 2.5V21.5"/><rect x="3" y="5" width="18" height="4.5" rx=".7" fill="var(--icon-cutout, #fff)"/><rect x="6.5" y="14.5" width="11" height="4.5" rx=".7" fill="var(--icon-cutout, #fff)"/></>}</>;break;
+  case 'align-top':case 'align-middle':case 'align-bottom':glyph=<g transform="rotate(90 12 12)">{name==='align-top'?<><path d="M3 3v18"/><rect x="6.5" y="5" width="14" height="4.5" rx=".7"/><rect x="6.5" y="14.5" width="9" height="4.5" rx=".7"/></>:name==='align-bottom'?<><path d="M21 3v18"/><rect x="3.5" y="5" width="14" height="4.5" rx=".7"/><rect x="8.5" y="14.5" width="9" height="4.5" rx=".7"/></>:<><path d="M12 2.5V21.5"/><rect x="3" y="5" width="18" height="4.5" rx=".7" fill="var(--icon-cutout, #fff)"/><rect x="6.5" y="14.5" width="11" height="4.5" rx=".7" fill="var(--icon-cutout, #fff)"/></>}</g>;break;
+  case 'timing':glyph=<><circle cx="12" cy="12" r="9.2"/><path d="M12 4.9V12l4.7 4.7"/></>;break;
+  case 'stroke-style':glyph=<><path d="M3 5h18M3 10h18"/><path d="M3 17h18" strokeWidth="5" strokeLinecap="butt"/></>;break;
+  case 'corners':glyph=<><path d="M4 19v-6a9 9 0 0 1 9-9h6"/><circle cx="4" cy="20" r="1.5" fill="currentColor"/><circle cx="20" cy="4" r="1.5" fill="currentColor"/></>;break;
+  case 'transparency':glyph=<>{Array.from({length:16},(_,index)=>{const row=Math.floor(index/4),column=index%4;return <rect key={index} x={2+column*5.2} y={2+row*5.2} width="4" height="4" rx=".5" fill="currentColor" stroke="none" opacity={Math.max(.16,1-column*.22-row*.035)}/>;})}</>;break;
+  case 'spacing':glyph=<><path d="M6.3 6V3.5h11.4V6M12 3.5v11M9 14.5h6M3 19h18m-18 0 3-3m-3 3 3 3m15-3-3-3m3 3-3 3"/></>;break;
+  case 'line-start':case 'line-end':glyph=<><path d="M3 12h18"/><path d={name==='line-start'?'m8 7-5 5 5 5':'m16 7 5 5-5 5'}/></>;break;
+  case 'swap-ends':glyph=<><path d="m8.5 7-5 5 5 5m7-10 5 5-5 5"/></>;break;
+  case 'line-type':glyph=<><path d="m5 19 14-14"/><circle cx="4" cy="20" r="1.6"/><circle cx="20" cy="4" r="1.6"/></>;break;
+  case 'strikethrough':glyph=<><path d="M17 6a4 4 0 0 0-4-2H11a3.5 3.5 0 0 0-.9 6.9M7 18a4 4 0 0 0 4 2h2a3.5 3.5 0 0 0 .9-6.9M3 12h18"/></>;break;
+  case 'uppercase':glyph=<><path d="m12 19 5-14 5 14m-8.7-4.5h7.4M9 19v-6.2a2.8 2.8 0 0 0-5.6 0M9 16.2H5.5a2 2 0 1 0 0 4c1.6 0 2.6-.9 3.5-2"/></>;break;
+  case 'image':glyph=<><rect x="2.5" y="3.5" width="19" height="17" rx="2" fill={solid}/><circle cx="8" cy="8.5" r="1.6"/><path d="m3 17 5-5 4 3.5 3-2.5 6 5"/></>;break;
+  case 'frames':glyph=<><path d="M7 3.5h10a3.5 3.5 0 0 1 3.5 3.5v10a3.5 3.5 0 0 1-3.5 3.5H7A3.5 3.5 0 0 1 3.5 17V7A3.5 3.5 0 0 1 7 3.5Z" fill={solid}/><path d="M7 1.5v4M12 1.5v4M17 1.5v4M7 18.5v4M12 18.5v4M17 18.5v4M1.5 7h4M1.5 12h4M1.5 17h4M18.5 7h4M18.5 12h4M18.5 17h4"/><path d="m6.5 15 4-4 3 2.5 2-1.5 2 3.5" stroke={filled?'var(--icon-cutout, #fff)':'currentColor'}/></>;break;
+  case 'grid':glyph=<><rect x="2.5" y="2.5" width="19" height="19" rx="2" fill={solid}/><path d="M11.5 2.5v19M11.5 12h10" stroke={filled?'var(--icon-cutout, #fff)':'currentColor'}/></>;break;
  }
  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" {...props}>{glyph}</svg>;
 }

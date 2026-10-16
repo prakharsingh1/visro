@@ -104,6 +104,50 @@
 }
 .studio-app .context-toolbar .toolbar-button { padding:5px 8px; }
 .studio-app .context-toolbar .icon-button { flex:none; width:32px; height:32px; padding:5px; }
+/* Colour faces are 24px inside 32px pointer targets, as in the reference toolbar.
+ * Explicit dimensions also keep an empty native button from collapsing. */
+.studio-app .context-toolbar .toolbar-color {
+  position:relative;
+  display:block;
+  flex:0 0 32px;
+  width:32px;
+  height:32px;
+  min-width:32px;
+  min-height:32px;
+  max-width:32px;
+  max-height:32px;
+  padding:4px;
+  border:0;
+  border-radius:50%;
+  background-clip:content-box!important;
+}
+.studio-app .context-toolbar .toolbar-color::after {
+  content:"";
+  position:absolute;
+  inset:4px;
+  border:1px solid var(--border-strong);
+  border-radius:50%;
+  pointer-events:none;
+}
+.studio-app .context-toolbar .toolbar-color:hover::after { border-color:var(--muted); }
+.studio-app .context-toolbar .toolbar-text-colour {
+  display:flex;
+  flex:0 0 32px;
+  align-items:center;
+  justify-content:center;
+  width:32px;
+  height:32px;
+  min-width:32px;
+  min-height:32px;
+  padding:4px;
+}
+.studio-app .context-toolbar .toolbar-text-colour > span {
+  width:24px;
+  height:24px;
+  padding:0 2px;
+  font:600 20px/20px var(--ui-font-family);
+  text-align:center;
+}
 .studio-app .context-toolbar .toolbar-select {
   width:122px;
   min-width:122px;
@@ -134,3 +178,103 @@
   .studio-app .topbar .document-title { flex-basis:240px; }
   .studio-app .context-toolbar { max-width:calc(100% - 16px); }
 }
+
+/* The observed right-click menu uses34px rows in a272px surface. */
+.studio-app .element-menu {
+  --reference-menu-surface:var(--surface);
+  --icon-cutout:var(--reference-menu-surface);
+  width:272px;
+  min-width:0;
+  max-width:calc(100vw - 16px);
+  max-height:calc(100vh - 16px);
+  overflow-y:auto;
+  overflow-x:visible;
+  padding:5px 4px;
+  border-radius:16px;
+  background:var(--reference-menu-surface);
+  box-shadow:0 8px 24px #00000033;
+}
+:root[data-theme="dark"] .studio-app .element-menu { --reference-menu-surface:#242830; }
+.studio-app .element-menu > button,
+.studio-app .element-menu .context-submenu > button {
+  height:34px;
+  min-height:34px;
+  padding:5px 12px;
+  gap:12px;
+  border-radius:5px;
+  font-size:14px;
+  font-weight:400;
+  line-height:20px;
+  white-space:nowrap;
+}
+.studio-app .element-menu button > svg { flex:none; }
+.studio-app .element-menu .menu-label { min-width:0; flex:1; }
+.studio-app .element-menu .menu-chevron { margin-left:auto; }
+.studio-app .element-menu kbd {
+  margin-left:auto;
+  padding:4px 8px;
+  border-radius:8px;
+  background:#1018280a;
+  color:var(--text);
+  font:400 12px/16px var(--ui-font-family);
+  letter-spacing:0;
+}
+:root[data-theme="dark"] .studio-app .element-menu kbd { background:#ffffff20; }
+.studio-app .element-menu hr { margin:5px 8px; }
+.studio-app .element-menu .context-submenu > button[aria-expanded="true"] { background:var(--surface-hover); }
+.studio-app .element-menu.submenu {
+  position:fixed;
+  width:272px;
+  min-width:0;
+  right:auto;
+  z-index:91;
+}
+
+.studio-app .editing-mode-control { position:relative; flex:none; }
+.studio-app .editing-mode-trigger {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-width:124px;
+  height:40px;
+  padding:0 12px;
+  border-radius:8px;
+  color:inherit;
+  font:600 14px/20px var(--ui-font-family);
+}
+.studio-app .editing-mode-trigger:hover,
+.studio-app .editing-mode-trigger[aria-expanded="true"] { background:#ffffff20; }
+.studio-app .editing-mode-chevron { transform:rotate(90deg); }
+.studio-app .editing-mode-menu {
+  position:absolute;
+  top:calc(100% + 8px);
+  left:0;
+  z-index:95;
+  width:320px;
+  max-width:calc(100vw - 24px);
+  padding:8px;
+  border:1px solid var(--border);
+  border-radius:16px;
+  background:var(--surface);
+  color:var(--text);
+  box-shadow:0 8px 24px #00000033;
+}
+:root[data-theme="dark"] .studio-app .editing-mode-menu { background:#242830; }
+.studio-app .editing-mode-menu > button {
+  display:flex;
+  align-items:center;
+  gap:12px;
+  width:100%;
+  min-height:52px;
+  padding:6px 8px;
+  text-align:left;
+  border-radius:8px;
+}
+.studio-app .editing-mode-menu > button:hover,
+.studio-app .editing-mode-menu > button:focus-visible { background:var(--surface-hover); outline:none; }
+.studio-app .editing-mode-menu > button > svg { flex:none; }
+.studio-app .editing-mode-menu > button > span { display:flex; flex:1; flex-direction:column; gap:0; }
+.studio-app .editing-mode-menu strong { font-size:14px; font-weight:400; line-height:20px; }
+.studio-app .editing-mode-menu small { color:var(--muted); font-size:12px; line-height:20px; }
+.studio-app .editing-mode-check { margin-left:auto; }

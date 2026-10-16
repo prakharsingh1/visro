@@ -1,0 +1,12 @@
+.elements-browse-categories {display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 12px;margin:8px 0 24px;}
+.elements-browse-categories>button {display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;min-width:0;font:500 12px/16px var(--ui-font-family);color:var(--text);}
+.elements-browse-categories>button>span {display:grid;place-items:center;width:64px;height:56px;background:var(--surface-subtle);border-radius:9px;}
+.elements-browse-categories>button:hover>span {background:var(--surface-hover);}
+.replace-image-hint {display:flex;align-items:center;gap:12px;margin:12px 0;padding:12px;border-radius:8px;background:var(--accent-soft);font-size:12px;}
+.replace-image-hint button {text-decoration:underline;}
+
+.topbar-mode-divider {flex:none;width:1px;height:24px;background:#ffffff3d;margin:0 4px;}
+.font-weight-control {display:flex;align-items:center;justify-content:space-between;gap:12px;margin:12px 0;font-size:14px;}
+.font-weight-control select {max-width:180px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);}
+
+.comments-content {display:contents;border:0;padding:0;margin:0;min-width:0;}

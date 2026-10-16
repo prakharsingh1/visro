@@ -75,8 +75,8 @@ async function nativeClick(renderer, expression) {
   await renderer.command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', buttons: 0, clickCount: 1 });
 }
 
-async function nativeLibraryDrag(renderer, expression) {
-  const points = await renderer.evaluate(`(()=>{const element=${expression};element.scrollIntoView({block:'center'});const source=element.getBoundingClientRect(),target=document.querySelector('.canvas-viewport').getBoundingClientRect();return{from:{x:source.x+source.width/2,y:source.y+source.height/2},to:{x:target.x+target.width/2,y:target.y+target.height/2}};})()`);
+async function nativeLibraryDrag(renderer, expression, targetExpression = "document.querySelector('.canvas-viewport')") {
+  const points = await renderer.evaluate(`(async()=>{const element=${expression};element.scrollIntoView({block:'center'});await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));const source=element.getBoundingClientRect(),target=(${targetExpression}).getBoundingClientRect();return{from:{x:source.x+source.width/2,y:source.y+source.height/2},to:{x:target.x+target.width/2,y:target.y+target.height/2}};})()`);
   await renderer.command('Input.setInterceptDrags', { enabled: true });
   const intercepted = renderer.once('Input.dragIntercepted'); intercepted.catch(() => {});
   try {
@@ -89,6 +89,300 @@ async function nativeLibraryDrag(renderer, expression) {
   } finally {
     await renderer.command('Input.dispatchMouseEvent', { type: 'mouseReleased', ...points.to, button: 'left', buttons: 0, clickCount: 1 });
     await renderer.command('Input.setInterceptDrags', { enabled: false });
+  }
+}
+
+async function nativeKey(renderer, key, code, modifiers = 0) {
+  const number = {Enter:13,Escape:27,Tab:9,Home:36,End:35,ArrowLeft:37,ArrowUp:38,ArrowRight:39,ArrowDown:40,Backspace:8,Delete:46}[key] || (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
+  const data = {key,code,modifiers,windowsVirtualKeyCode:number};
+  await renderer.command('Input.dispatchKeyEvent', {type:'rawKeyDown',...data});
+  await renderer.command('Input.dispatchKeyEvent', {type:'keyUp',...data});
+}
+
+/** Actual DOM controls, Chromium input and autosaved public document data only.
+ * This deliberately avoids private editor instances or React component hooks. */
+async function runNativeControlsRegression(renderer, fixturePath, screenshotPath, onProgress = () => {}) {
+  const originalId = await renderer.evaluate("localStorage.getItem('visro-active-design')"), report = {};
+  renderer.controlsTrace=[];
+  const progress=stage=>{renderer.controlsTrace.push({stage,time:Date.now()});onProgress(stage);};
+  const saved = () => renderer.evaluate(readSavedProject);
+  const sameDisplayBox=(actual,expected)=>{
+    // Fabric serializes each source dimension and scale to four decimals. The
+    // product error is bounded by half a decimal unit for each saved factor;
+    // its runtime geometry is checked independently by the frame engine tests.
+    for(const [dimension,scale] of [['width','scaleX'],['height','scaleY']]){
+      const tolerance=.00005*(Math.abs(actual[dimension])+Math.abs(actual[scale])+Math.abs(expected[dimension])+Math.abs(expected[scale]))+1e-8;
+      assert.ok(Math.abs(actual[dimension]*actual[scale]-expected[dimension]*expected[scale])<=tolerance,`Saved frame ${dimension} changed beyond its four-decimal serialization error bound.`);
+    }
+  };
+  const objects = `(async()=>{const record=await ${readSavedProject};return record?.project.pages.flatMap(page=>page.canvas.objects||[])||[];})()`;
+  const toolbarButton = label => `Array.from(document.querySelectorAll('.context-toolbar button')).find(button=>button.textContent.trim()===${JSON.stringify(label)}||button.getAttribute('aria-label')===${JSON.stringify(label)})`;
+  const history = async redo => {
+    await nativeClick(renderer, `document.querySelector('.topbar button[aria-label="${redo?'Redo (⌘⇧Z)':'Undo (⌘Z)'}"],.topbar button[title="${redo?'Redo (⌘⇧Z)':'Undo (⌘Z)'}"]')`);
+    await waitForRenderer(renderer, "!document.querySelector('.canvas-loading,.busy-toast')", 'The native history operation did not settle.');
+  };
+  const createDesign = async name => {
+    const before = await renderer.evaluate("localStorage.getItem('visro-active-design')");
+    await nativeClick(renderer, "document.querySelector('.desktop-new-tab')");
+    await waitForRenderer(renderer, `localStorage.getItem('visro-active-design')!==${JSON.stringify(before)}&&!document.querySelector('.home-shell,.canvas-loading,.busy-toast')`, 'A fresh control acceptance design did not open.');
+    await renderer.evaluate("(()=>{const input=document.querySelector('input[aria-label=\"Design name\"]');input.focus();input.select();})()");
+    await renderer.command('Input.insertText', {text:name});
+    await renderer.evaluate("document.activeElement.blur()");
+    await waitForRenderer(renderer, `(async()=>{const record=await ${readSavedProject};return record?.name===${JSON.stringify(name)};})()`, 'The control acceptance design name did not autosave.');
+  };
+  const pointOnPage = (x=.5,y=.5) => renderer.evaluate(`(()=>{const page=document.querySelector('.continuous-page.active'),box=page.getBoundingClientRect();return{x:box.x+box.width*${x},y:box.y+box.height*${y}};})()`);
+  const waitForCenteredRectangle=()=>waitForRenderer(renderer,`(()=>{const source=document.querySelector('.lower-canvas'),page=document.querySelector('.continuous-page.active');if(!source?.width||!page)return false;const r=source.getBoundingClientRect(),p=page.getBoundingClientRect(),v=document.querySelector('.canvas-viewport').getBoundingClientRect(),sample=document.createElement('canvas');if(Math.abs(p.left+p.width/2-v.left-v.width/2)>2||Math.abs(p.top+p.height/2-v.top-v.height/2)>2)return false;sample.width=640;sample.height=Math.max(1,Math.round(source.height/source.width*640));const context=sample.getContext('2d',{willReadFrequently:true});context.drawImage(source,0,0,sample.width,sample.height);try{const point=(${rasterPointForFill.toString()})(context.getImageData(0,0,sample.width,sample.height).data,sample.width,sample.height,{left:r.left,top:r.top,width:r.width,height:r.height},'#F26B3A');return Math.abs(point.x-(p.left+p.width/2))<4&&Math.abs(point.y-(p.top+p.height/2))<4;}catch{return false;}})()`,'The page surface and actual centered rectangle paint did not settle after navigation/Fit.');
+  const clickPoint = async point => {
+    await renderer.command('Input.dispatchMouseEvent', {type:'mousePressed',...point,button:'left',buttons:1,clickCount:1});
+    await renderer.command('Input.dispatchMouseEvent', {type:'mouseReleased',...point,button:'left',buttons:0,clickCount:1});
+  };
+  const focusCanvas = () => renderer.evaluate("(()=>{document.activeElement?.blur();const canvas=document.querySelector('.upper-canvas');canvas.tabIndex=0;canvas.focus({preventScroll:true});})()");
+  const chooseRail = async name => {
+    await renderer.evaluate(`(()=>{const button=Array.from(document.querySelectorAll('.rail-button')).find(button=>button.textContent.trim()===${JSON.stringify(name)});if(!button.classList.contains('selected'))button.click();})()`);
+    await waitForRenderer(renderer, "Boolean(document.querySelector('.asset-panel:not(.hidden)'))", 'The requested native library did not open.');
+  };
+  const capture = async suffix => {
+    if(!screenshotPath)return;
+    await renderer.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    const shot=await renderer.command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+    await fs.mkdir(path.dirname(path.resolve(screenshotPath)),{recursive:true});
+    await fs.writeFile(path.resolve(screenshotPath).replace(/\.png$/i,`-${suffix}.png`),Buffer.from(shot.data,'base64'));
+  };
+  const reloadDesign=async name=>{
+    const previousOrigin=await renderer.evaluate('performance.timeOrigin');
+    await renderer.command('Page.reload');
+    // Page.reload acknowledges navigation before the old document disappears.
+    // Wait for a different document instead of accidentally inspecting old IDB
+    // state while Chromium has started painting the new, temporarily blank tab.
+    await waitForRenderer(renderer,`performance.timeOrigin!==${previousOrigin}&&document.readyState==='complete'&&Boolean(document.querySelector('#root')?.textContent?.trim())&&!document.querySelector('.canvas-loading')`,'The reloaded workspace did not finish its new document.');
+    await openHomeDesign(renderer,name);
+    await waitForRenderer(renderer,"Boolean(document.querySelector('.lower-canvas,.continuous-page.active'))&&!document.querySelector('.canvas-loading,.busy-toast,.home-shell')",'The reloaded canvas did not finish opening.');
+  };
+  try {
+    progress('checking native continuous page scrolling and selection');
+    await createDesign('Native continuous page acceptance');
+    await focusCanvas(); await nativeKey(renderer,'r','KeyR');
+    await waitForRenderer(renderer, `(async()=>{const list=await ${objects};return list.length===1&&list[0].visroShapeType==='rect';})()`, 'R must add the native first-page rectangle.');
+    const firstPage = (await saved()).project.pages[0].id;
+    await nativeClick(renderer, "document.querySelector('.continuous-page.active button[aria-label=\"Add page after page 1\"]')");
+    await waitForRenderer(renderer, "document.querySelectorAll('.continuous-page').length===2&&document.querySelector('.continuous-page.active')?.getAttribute('aria-label').startsWith('Page 2:')", 'Adding a page must expose a real two-page document stack.');
+    await focusCanvas(); await nativeKey(renderer,'c','KeyC');
+    await waitForRenderer(renderer, `(async()=>{const list=await ${objects};return list.length===2&&list.some(object=>object.visroShapeType==='circle');})()`, 'C must add the native second-page circle.');
+    await nativeClick(renderer, "document.querySelector('.continuous-page-preview[aria-label=\"Edit page 1\"]')");
+    await waitForRenderer(renderer, `document.querySelector('.continuous-page.active')?.dataset.pageId===${JSON.stringify(firstPage)}`, 'The first page must activate without replacing the stack.');
+    await nativeClick(renderer, "document.querySelector('.zoom-label')");
+    await waitForCenteredRectangle();
+    renderer.controlsTrace.push(await renderer.evaluate("(()=>{const node=document.querySelector('.canvas-viewport'),rect=element=>{if(!element)return null;const r=element.getBoundingClientRect();return{x:r.x,y:r.y,width:r.width,height:r.height};};return{phase:'before-first-page-selection',zoom:document.querySelector('.zoom-label')?.textContent,viewport:{...rect(node),scrollLeft:node.scrollLeft,scrollTop:node.scrollTop,clientWidth:node.clientWidth,clientHeight:node.clientHeight},lower:rect(document.querySelector('.lower-canvas')),plane:rect(document.querySelector('.canvas-interaction-plane')),pages:Array.from(document.querySelectorAll('.continuous-page')).map(page=>({id:page.dataset.pageId,active:page.classList.contains('active'),...rect(page)}))};})()"));
+    await clickPoint(await pointOnPage());
+    await waitForRenderer(renderer, "document.querySelector('.canvas-footer')?.textContent.includes('Element selected')", 'The first-page rectangle must be selected before scrolling.');
+    await waitForRenderer(renderer, `(async()=>{const record=await ${readSavedProject};return record?.project.activePageId===${JSON.stringify(firstPage)};})()`, 'Explicit first-page navigation must finish autosaving before the scroll-only baseline.');
+    const documentBefore = JSON.stringify((await saved()).project);
+    const scrollState = `(()=>{const node=document.querySelector('.canvas-viewport'),r=node.getBoundingClientRect();return{scroll:node.scrollTop,zoom:document.querySelector('.zoom-label').textContent,counter:Array.from(document.querySelectorAll('.zoom-controls>span')).at(-1)?.textContent.trim(),active:document.querySelector('.continuous-page.active')?.dataset.pageId,selected:document.querySelector('.canvas-footer').textContent.includes('Element selected'),undo:document.querySelector('.topbar button[title="Undo (⌘Z)"]')?.disabled,redo:document.querySelector('.topbar button[title="Redo (⌘⇧Z)"]')?.disabled,pages:Array.from(document.querySelectorAll('.continuous-page')).map(page=>{const b=page.getBoundingClientRect();return{id:page.dataset.pageId,top:b.top,bottom:b.bottom,visible:b.bottom>r.top&&b.top<r.bottom};}),point:{x:r.right-24,y:r.top+r.height/2}};})()`;
+    const initial = await renderer.evaluate(scrollState);
+    await renderer.command('Input.dispatchMouseEvent', {type:'mouseWheel',...initial.point,deltaX:0,deltaY:Math.round(initial.pages[0].bottom-initial.point.y-80)});
+    await waitForRenderer(renderer, "(()=>{const node=document.querySelector('.canvas-viewport'),r=node.getBoundingClientRect();return Array.from(document.querySelectorAll('.continuous-page')).filter(page=>{const b=page.getBoundingClientRect();return b.bottom>r.top&&b.top<r.bottom;}).length===2;})()", 'A normal native wheel must expose both adjacent pages together.');
+    const boundary = await renderer.evaluate(scrollState); await capture('continuous-pages');
+    await renderer.command('Input.dispatchMouseEvent', {type:'mouseWheel',...boundary.point,deltaX:0,deltaY:800});
+    await waitForRenderer(renderer, "Array.from(document.querySelectorAll('.zoom-controls>span')).at(-1)?.textContent.trim()==='2 / 2'", 'The footer must follow the page visible after native scrolling.');
+    const scrolled = await renderer.evaluate(scrollState);
+    assert.equal(scrolled.active,firstPage,'Wheel scrolling must preserve the active editing page.');
+    assert.equal(scrolled.selected,true,'Wheel scrolling must preserve its selected element.');
+    assert.equal(scrolled.zoom,initial.zoom,'Ordinary wheel scrolling must not change zoom.');
+    assert.equal(scrolled.undo,initial.undo);assert.equal(scrolled.redo,initial.redo);
+    assert.equal(JSON.stringify((await saved()).project),documentBefore,'Scrolling must not create a document edit.');
+    await renderer.command('Input.dispatchMouseEvent',{type:'mouseWheel',...scrolled.point,deltaX:0,deltaY:-2500});
+    await waitForRenderer(renderer,"Array.from(document.querySelectorAll('.zoom-controls>span')).at(-1)?.textContent.trim()==='1 / 2'",'Scrolling back must reveal the first page.');
+    const beforeZoom=await renderer.evaluate(scrollState);
+    await renderer.command('Input.dispatchMouseEvent',{type:'mouseWheel',...beforeZoom.point,deltaX:0,deltaY:-70,modifiers:2});
+    await waitForRenderer(renderer,`document.querySelector('.zoom-label').textContent!==${JSON.stringify(beforeZoom.zoom)}`,'Control-wheel must zoom the native canvas.');
+    assert.equal(JSON.stringify((await saved()).project),documentBefore,'Modifier-wheel zoom must not create document history.');
+    report.continuous={bothPagesVisible:true,counterFollowsViewport:true,activePagePreserved:true,selectionPreserved:true,historyPreserved:true,controlWheelZoom:true,initialScroll:initial.scroll,boundaryScroll:boundary.scroll,secondPageScroll:scrolled.scroll};
+
+    progress('checking native viewing and commenting edit guards');
+    const setMode=async mode=>{await nativeClick(renderer,"document.querySelector('.editing-mode-trigger')");await nativeClick(renderer,`document.querySelector('.editing-mode-menu button[data-mode="${mode}"]')`);await waitForRenderer(renderer,`document.querySelector('.editing-mode-trigger span').textContent.toLowerCase()===${JSON.stringify(mode)}`,'The editing mode did not change.');};
+    for(const mode of ['viewing','commenting']){
+      await setMode(mode);
+      if(mode==='viewing'){
+        await nativeClick(renderer,"document.querySelector('.topbar button[aria-label=\"View all comments\"]')");
+        await waitForRenderer(renderer,"Boolean(document.querySelector('.comments-panel .comments-content:disabled'))",'Viewing must open readable comments with mutation controls disabled.');
+        await nativeClick(renderer,"document.querySelector('.comments-panel button[aria-label=\"Close comments\"]')");
+        await waitForRenderer(renderer,"!document.querySelector('.comments-panel')",'The comments close button must work in Viewing mode.');
+      }
+      await focusCanvas();
+      const baselineRecord=await saved(),baseline=JSON.stringify(baselineRecord.project);
+      for(const [key,code,modifiers] of [['r','KeyR',0],['t','KeyT',0],['d','KeyD',4],['Delete','Delete',0],['ArrowRight','ArrowRight',0],[' ','Space',0]])await nativeKey(renderer,key,code,modifiers);
+      const point=await pointOnPage();
+      await renderer.command('Input.dispatchMouseEvent',{type:'mousePressed',...point,button:'left',buttons:1,clickCount:1});
+      await renderer.command('Input.dispatchMouseEvent',{type:'mouseMoved',x:point.x+40,y:point.y+30,button:'left',buttons:1});
+      await renderer.command('Input.dispatchMouseEvent',{type:'mouseReleased',x:point.x+40,y:point.y+30,button:'left',buttons:0,clickCount:1});
+      // App's document autosave is debounced by800ms. A shorter wait could read
+      // the old record even if an edit leaked through a mode's guards.
+      await delay(1400);
+      const after=await saved();
+      assert.equal(JSON.stringify(after.project),baseline,`${mode} mode must prevent native object shortcuts and drags from mutating the project.`);
+      assert.equal(after.updated,baselineRecord.updated,`${mode} mode must not schedule a document autosave.`);
+      assert.equal(await renderer.evaluate("document.querySelector('.tool-rail').inert&&document.querySelector('input[aria-label=\"Design name\"]').readOnly"),true);
+      assert.equal(await renderer.evaluate("document.querySelector('.topbar button[title=\"Undo (⌘Z)\"]').disabled"),true);
+    }
+    await setMode('editing');await focusCanvas();await nativeKey(renderer,'r','KeyR');
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===3;})()`,'Restoring Editing must allow a real object insertion.');
+    await history(false);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===2;})()`,'A single Undo must remove the edit made after restoring Editing.');
+    report.modes={viewingBlocksEdits:true,commentingBlocksEdits:true,viewingCommentsReadableAndClosable:true,editingRestored:true,undoAfterRestore:true};
+
+    progress('checking native frame insertion, photo drag fill, crop and reopen');
+    await createDesign('Native frame crop acceptance');
+    await chooseRail('Elements');
+    const search="document.querySelector('.elements-panel .search-box input')";
+    await renderer.evaluate(`(()=>{const input=${search};input.focus();input.select();})()`);await renderer.command('Input.insertText',{text:'Circle'});
+    await renderer.evaluate("Array.from(document.querySelectorAll('.elements-filter-tabs button')).find(button=>button.textContent==='Frames').click()");
+    await waitForRenderer(renderer,"Boolean(document.querySelector('.frame-library-add[aria-label=\"Add Circle frame\"]'))",'The Frames destination must expose the Circle frame.');
+    await nativeClick(renderer,"document.querySelector('.frame-library-add[aria-label=\"Add Circle frame\"]')");
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===1&&list[0].visroFrame==='circle'&&list[0].visroEmptyFrame===true;})()`,'A frame click must create one editable, empty native frame.');
+    const empty=(await saved()).project.pages[0].canvas.objects[0];
+    const fixture=path.resolve(fixturePath);await fs.access(fixture);
+    const {root:documentNode}=await renderer.command('DOM.getDocument'),{nodeId}=await renderer.command('DOM.querySelector',{nodeId:documentNode.nodeId,selector:'input[type="file"][accept^="image/"]'});
+    assert.ok(nodeId);await renderer.command('DOM.setFileInputFiles',{nodeId,files:[fixture]});
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===2;})()`,'The isolated photo fixture must upload successfully.');
+    await history(false);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===1&&list[0].visroEmptyFrame;})()`,'Undo must remove the loose uploaded photo while retaining its reusable upload tile.');
+    await chooseRail('Uploads');
+    await waitForRenderer(renderer,"Boolean(document.querySelector('.upload-grid button img'))",'The uploaded local image must appear in Uploads.');
+    const drag=await nativeLibraryDrag(renderer,"document.querySelector('.upload-grid button')","document.querySelector('.continuous-page.active')");
+    assert.ok(drag.some(item=>item.mimeType==='text/visro-asset'&&JSON.parse(item.data).kind==='image'),'The photo fill must use an actual uploaded-image drag payload.');
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===1&&list[0].id===${JSON.stringify(empty.id)}&&list[0].visroEmptyFrame===false&&list[0].src!==${JSON.stringify(empty.src)};})()`,'Dropping a photo inside a frame must fill that same frame rather than adding a loose image.');
+    const filled=(await saved()).project.pages[0].canvas.objects[0];
+    renderer.controlsTrace.push({frameFill:{before:{width:empty.width,height:empty.height,scaleX:empty.scaleX,scaleY:empty.scaleY},after:{width:filled.width,height:filled.height,scaleX:filled.scaleX,scaleY:filled.scaleY}}});
+    for(const key of ['left','top'])assert.ok(Math.abs(filled[key]-empty[key])<.01,'Photo fill must preserve frame placement.');
+    sameDisplayBox(filled,empty);
+    assert.ok(filled.clipPath);assert.match(filled.src,/^data:image\//);
+    await history(false);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===1&&list[0].visroEmptyFrame===true;})()`,'One Undo must restore the empty frame.');
+    await history(true);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list.length===1&&list[0].visroEmptyFrame===false;})()`,'One Redo must restore the photo inside its frame.');
+    await clickPoint(await pointOnPage());await nativeClick(renderer,toolbarButton('Crop'));
+    await waitForRenderer(renderer,"Boolean(document.querySelector('.crop-editor [aria-label=\"Resize crop se\"]'))",'The actual crop editor must open for a filled frame.');
+    const handle=await renderer.evaluate("(()=>{const r=document.querySelector('.crop-handle.se').getBoundingClientRect();return{x:r.x+r.width/2,y:r.y+r.height/2};})()");
+    await renderer.command('Input.dispatchMouseEvent',{type:'mousePressed',...handle,button:'left',buttons:1,clickCount:1});
+    for(let step=1;step<=6;step++)await renderer.command('Input.dispatchMouseEvent',{type:'mouseMoved',x:handle.x-step*6,y:handle.y-step*6,button:'left',buttons:1});
+    await renderer.command('Input.dispatchMouseEvent',{type:'mouseReleased',x:handle.x-36,y:handle.y-36,button:'left',buttons:0,clickCount:1});
+    await nativeClick(renderer,"Array.from(document.querySelectorAll('.crop-editor-footer button')).find(button=>button.textContent==='Done')");
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return !document.querySelector('.crop-editor')&&list[0].width<${filled.width}&&list[0].visroFrame==='circle';})()`,'A real crop handle gesture must change source pixels while retaining the frame.');
+    const cropped=(await saved()).project.pages[0].canvas.objects[0];
+    sameDisplayBox(cropped,filled);
+    await history(false);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return Math.abs(list[0].width-${filled.width})<.01;})()`,'One Undo must restore the preceding frame crop.');
+    await history(true);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return Math.abs(list[0].width-${cropped.width})<.01;})()`,'One Redo must restore the adjusted frame crop.');
+    await reloadDesign('Native frame crop acceptance');
+    const reopened=(await saved()).project.pages[0].canvas.objects[0];
+    assert.equal(reopened.id,cropped.id);assert.equal(reopened.src,cropped.src);assert.deepEqual(reopened.clipPath,cropped.clipPath);assert.equal(reopened.cropX,cropped.cropX);assert.equal(reopened.width,cropped.width);
+    const photoPaint=`(()=>{const source=document.querySelector('.lower-canvas'),page=document.querySelector('.continuous-page.active');if(!source?.width||!page)return null;const bounds=source.getBoundingClientRect(),p=page.getBoundingClientRect(),object=${JSON.stringify({left:reopened.left,top:reopened.top,width:reopened.width,height:reopened.height,scaleX:reopened.scaleX,scaleY:reopened.scaleY,originX:reopened.originX,originY:reopened.originY})},zoom=p.width/Number(page.dataset.pageWidth),width=object.width*object.scaleX,height=object.height*object.scaleY,left=object.left-(object.originX==='center'?width/2:0),top=object.top-(object.originY==='center'?height/2:0),ratio=source.width/bounds.width;const sample=document.createElement('canvas');sample.width=sample.height=128;const context=sample.getContext('2d',{willReadFrequently:true});context.drawImage(source,(p.left+left*zoom-bounds.left)*ratio,(p.top+top*zoom-bounds.top)*ratio,width*zoom*ratio,height*zoom*ratio,0,0,128,128);const data=context.getImageData(0,0,128,128).data,colors=new Set();for(let index=0;index<data.length;index+=4)if(data[index+3]>200)colors.add((data[index]>>4)*256+(data[index+1]>>4)*16+(data[index+2]>>4));const pixel=(x,y)=>Array.from(data.slice((y*128+x)*4,(y*128+x)*4+4)),corners=[[4,4],[123,4],[4,123],[123,123]].map(([x,y])=>pixel(x,y));return{colors:colors.size,center:pixel(64,64),corners,whiteCorners:corners.every(value=>value[3]>240&&value.slice(0,3).every(channel=>channel>245))};})()`;
+    await waitForRenderer(renderer,`(()=>{const pixels=${photoPaint};return pixels?.colors>40&&pixels.whiteCorners;})()`,'The reloaded native canvas must actually paint the embedded photo through its circle clip.');
+    const paint=await renderer.evaluate(photoPaint);assert.ok(paint.colors>40&&paint.whiteCorners);
+    const thumbnailPaint=`(()=>{const image=document.querySelector('.page-mini img');if(!image?.complete||!image.naturalWidth)return null;const canvas=document.createElement('canvas');canvas.width=canvas.height=128;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,128,128);const data=context.getImageData(0,0,128,128).data,colors=new Set();let nonWhite=0;for(let index=0;index<data.length;index+=4)if(data[index+3]>200){colors.add((data[index]>>4)*256+(data[index+1]>>4)*16+(data[index+2]>>4));if(data[index]<240||data[index+1]<240||data[index+2]<240)nonWhite++;}return{complete:image.complete,width:image.naturalWidth,height:image.naturalHeight,embedded:image.src.startsWith('data:image/'),colors:colors.size,nonWhite,interacting:document.querySelector('.canvas-viewport').classList.contains('interacting')};})()`;
+    await waitForRenderer(renderer,`(()=>{const pixels=${thumbnailPaint};return pixels?.embedded&&pixels.colors>40&&pixels.nonWhite>300&&!pixels.interacting;})()`,'The idle bottom page thumbnail must paint the reopened photo without a stuck interaction state.');
+    const thumbnail=await renderer.evaluate(thumbnailPaint);
+    await capture('frame-crop');
+    report.frame={nativeInsert:true,realPhotoDrag:true,sameObjectFilled:true,fillUndoRedo:true,realCropGesture:true,cropUndoRedo:true,displayBoxPreserved:true,embeddedPhotoReopened:true,reloadedCanvasPaint:paint,idlePageThumbnail:thumbnail};
+
+    progress('checking native selected-text formatting, casing and list typing');
+    await createDesign('Native text formatting acceptance');
+    await focusCanvas();await nativeKey(renderer,'t','KeyT');await nativeKey(renderer,'Enter','Enter');
+    await waitForRenderer(renderer,"document.activeElement?.tagName==='TEXTAREA'&&document.activeElement.getAttribute('data-fabric')==='textarea'",'Enter must begin genuine Fabric text editing.');
+    await renderer.command('Input.insertText',{text:'alpha beta\ngamma'});
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list[0]?.text===${JSON.stringify('alpha beta\ngamma')};})()`,'The native text fixture must autosave typed paragraphs.');
+    for(let i=0;i<16;i++)await nativeKey(renderer,'ArrowLeft','ArrowLeft');
+    for(let i=0;i<5;i++)await nativeKey(renderer,'ArrowRight','ArrowRight',8);
+    await nativeClick(renderer,toolbarButton('Bold'));await nativeClick(renderer,toolbarButton('Strikethrough'));
+    await nativeClick(renderer,toolbarButton('Uppercase'));
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list[0]?.text===${JSON.stringify('ALPHA beta\ngamma')};})()`,'Uppercase must affect only the genuinely selected text range.');
+    const styled=(await saved()).project.pages[0].canvas.objects[0];
+    const styleAt=index=>Array.isArray(styled.styles)?styled.styles.find(run=>run.start<=index&&run.end>index)?.style:styled.styles?.[0]?.[index];
+    for(let index=0;index<5;index++){assert.equal(styleAt(index)?.fontWeight,400);assert.equal(styleAt(index)?.linethrough,true);}
+    assert.notEqual(styleAt(5)?.linethrough,true,'Characters outside the selected range must retain their style.');
+    await history(false);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list[0]?.text===${JSON.stringify('alpha beta\ngamma')};})()`,'One Undo must revert just the case change.');
+    await history(true);await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list[0]?.text===${JSON.stringify('ALPHA beta\ngamma')};})()`,'One Redo must restore the selected case change.');
+    await nativeClick(renderer,toolbarButton('List'));
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list[0]?.text===${JSON.stringify('• ALPHA beta\n• gamma')}&&list[0].textAlign==='left';})()`,'The List control must create real bullets and left-align the paragraphs.');
+    await focusCanvas();await nativeKey(renderer,'Enter','Enter');await nativeKey(renderer,'ArrowRight','ArrowRight');await nativeKey(renderer,'Enter','Enter');
+    await renderer.command('Input.insertText',{text:'delta'});await nativeKey(renderer,'Tab','Tab');await renderer.command('Input.insertText',{text:' extra'});
+    await waitForRenderer(renderer,`(async()=>{const list=await ${objects};return list[0]?.text===${JSON.stringify('• ALPHA beta\n• gamma\n  • delta extra')};})()`,'Enter must continue the list and Tab must indent its item without leaving text editing.');
+    assert.equal(await renderer.evaluate("document.activeElement?.getAttribute('data-fabric')==='textarea'"),true);
+    await nativeKey(renderer,'Escape','Escape');
+    const typed=(await saved()).project.pages[0].canvas.objects[0];assert.equal((await saved()).project.pages[0].canvas.objects.length,1);
+    await reloadDesign('Native text formatting acceptance');
+    const restored=(await saved()).project.pages[0].canvas.objects[0];assert.equal(restored.text,typed.text);assert.deepEqual(restored.styles,typed.styles);
+    await capture('text-formatting');
+    report.text={nativeRangeFormatting:true,unselectedStylePreserved:true,selectedCaseUndoRedo:true,listControl:true,enterContinuesList:true,tabIndentsWithoutFocusLoss:true,textAndStylesReopened:true};
+
+    progress('checking cold three-page footer previews without visiting inactive pages');
+    await createDesign('Native twelve-page zoom acceptance');
+    const record=await saved(),prototype=JSON.parse(documentBefore).pages[0];
+    const fixturePages=count=>Array.from({length:count},(_,index)=>({
+      ...JSON.parse(JSON.stringify(prototype)),id:`native-stack-page-${index+1}`,name:`Page ${index+1}`,
+      canvas:{...JSON.parse(JSON.stringify(prototype.canvas)),objects:[{...JSON.parse(JSON.stringify(prototype.canvas.objects[0])),id:`native-stack-object-${index+1}`,fill:index%2?'#F6BED0':'#F26B3A'}]},
+    }));
+    const storeFixture=()=>renderer.evaluate(`(async()=>{const request=indexedDB.open('visro-studio'),db=await new Promise((resolve,reject)=>{request.onsuccess=()=>resolve(request.result);request.onerror=()=>reject(request.error);});try{await new Promise((resolve,reject)=>{const transaction=db.transaction('projects','readwrite');transaction.objectStore('projects').put(${JSON.stringify(record)});transaction.oncomplete=resolve;transaction.onerror=()=>reject(transaction.error);});}finally{db.close();}})()`);
+    record.project.pages=fixturePages(3);record.project.activePageId=record.project.pages[2].id;record.updated=Date.now();
+    await storeFixture();await reloadDesign('Native twelve-page zoom acceptance');
+    await waitForRenderer(renderer,"document.querySelector('.continuous-page.active')?.dataset.pageId==='native-stack-page-3'",'The cold footer fixture must open directly on its saved third page.');
+    await waitForCenteredRectangle();
+    const footerState=`(()=>{const node=document.querySelector('.canvas-viewport');return{active:document.querySelector('.continuous-page.active')?.dataset.pageId,selected:document.querySelector('.canvas-footer').textContent.includes('Element selected'),undo:document.querySelector('.topbar button[title="Undo (⌘Z)"]').disabled,redo:document.querySelector('.topbar button[title="Redo (⌘⇧Z)"]').disabled,scrollLeft:node.scrollLeft,scrollTop:node.scrollTop};})()`;
+    const coldBefore={state:await renderer.evaluate(footerState),document:JSON.stringify((await saved()).project)};
+    const footerPaint=`(()=>{return ${JSON.stringify(record.project.pages.map(page=>page.id))}.map((id,index)=>{const button=document.querySelector('[data-preview-page-id="'+id+'"]'),image=button?.querySelector('.page-mini img');let colored=0;if(image?.complete&&image.naturalWidth){const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,32,32);const pixels=context.getImageData(0,0,32,32).data;for(let i=0;i<pixels.length;i+=4)if(pixels[i+3]>200&&pixels[i]>180&&(index%2?pixels[i+1]>120&&pixels[i+1]<230&&pixels[i+2]>150&&pixels[i+2]<240:pixels[i+1]>40&&pixels[i+1]<180&&pixels[i+2]<140))colored++;}return{id,complete:Boolean(image?.complete&&image.naturalWidth),width:image?.naturalWidth||0,height:image?.naturalHeight||0,embedded:Boolean(image?.src.startsWith('data:image/')),colored};});})()`;
+    await waitForRenderer(renderer,`(${footerPaint}).every(page=>page.complete&&page.embedded&&page.width>=128&&page.height>=128&&page.colored>20)`,'Every cold footer thumbnail, including unvisited page1, must decode and paint its own colored artwork.');
+    const coldFooter=await renderer.evaluate(footerPaint);
+    assert.deepEqual(await renderer.evaluate(footerState),coldBefore.state,'Background footer previews must preserve the active page, selection, history and artboard scroll.');
+    assert.equal(JSON.stringify((await saved()).project),coldBefore.document,'Background footer preview generation must preserve the exact saved document.');
+    await capture('cold-footer-previews');
+    report.coldFooter={initialActivePage:3,pages:coldFooter,noPageVisitsOrArtboardScroll:true,activeSelectionAndHistoryPreserved:true,documentPreserved:true};
+
+    progress('checking native twelve-page low-zoom range and inactive-page zoom anchor');
+    record.project.pages=fixturePages(12);record.project.activePageId=record.project.pages[0].id;record.updated=Date.now();
+    await storeFixture();
+    await reloadDesign('Native twelve-page zoom acceptance');
+    await waitForCenteredRectangle();
+    await clickPoint(await pointOnPage());
+    await waitForRenderer(renderer,"document.querySelector('.canvas-footer')?.textContent.includes('Element selected')",'The first-page rectangle must be selected in the twelve-page fixture.');
+    await renderer.evaluate("document.querySelector('input[aria-label=\"Canvas zoom\"]').focus()");await nativeKey(renderer,'Home','Home');
+    await waitForRenderer(renderer,"document.querySelector('.zoom-label').textContent==='10%'",'The actual zoom slider Home key must select10%.');
+    const viewport=()=>renderer.evaluate("(()=>{const node=document.querySelector('.canvas-viewport'),r=node.getBoundingClientRect(),page=document.querySelector('.continuous-page.active'),p=page.getBoundingClientRect(),point={x:r.right-24,y:r.top+r.height/2};return{top:node.scrollTop,left:node.scrollLeft,height:node.clientHeight,scrollHeight:node.scrollHeight,zoom:document.querySelector('.zoom-label').textContent,pageHeight:p.height,pageTop:p.top,hit:document.elementFromPoint(point.x,point.y)?.className,point};})()");
+    const settleZoom=async zoom=>{
+      // The label updates before Fabric's next after:render and the page stack's
+      // React layout. Reading the old scroll offset here would send a delta for
+      // the previous zoom, even though Chromium applies it to the new geometry.
+      await waitForRenderer(renderer,`(()=>{const page=document.querySelector('.continuous-page.active')?.getBoundingClientRect();return page&&Math.abs(page.width-${record.project.width*zoom})<.1&&Math.abs(page.height-${record.project.height*zoom})<.1;})()`,'The twelve-page stack must finish laying out the requested zoom before native scrolling.');
+      await renderer.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+      renderer.controlsTrace.push({stage:'twelve-page settled zoom',zoom,state:await viewport()});
+    };
+    const scrollTo=async top=>{const view=await viewport(),trace={stage:'twelve-page wheel position',target:top,before:view};renderer.controlsTrace.push(trace);await renderer.command('Input.dispatchMouseEvent',{type:'mouseWheel',...view.point,deltaX:0,deltaY:top-view.top});try{await waitForRenderer(renderer,`Math.abs(document.querySelector('.canvas-viewport').scrollTop-${top})<1`,'The native wheel did not reach its twelve-page viewport fixture.');}finally{trace.after=await viewport();}};
+    const rangePaint=`(()=>{const node=document.querySelector('.canvas-viewport'),viewport=node.getBoundingClientRect(),pages=${JSON.stringify(record.project.pages.map(page=>page.id))},first=document.querySelector('[data-page-id="native-stack-page-1"]');if(!first)return null;const origin=first.getBoundingClientRect(),neighbour=Array.from(document.querySelectorAll('.continuous-page')).find(page=>page.dataset.pageId!==pages[0]);if(!neighbour)return null;const neighbourIndex=pages.indexOf(neighbour.dataset.pageId),pitch=(neighbour.getBoundingClientRect().top-origin.top)/neighbourIndex;const expected=pages.filter((_,index)=>origin.top+index*pitch<viewport.bottom-.5&&origin.top+index*pitch+origin.height>viewport.top+.5),missing=[],previews=[];for(const id of expected){const page=document.querySelector('[data-page-id="'+id+'"]');if(!page){missing.push(id);continue;}if(page.classList.contains('active'))continue;const image=page.querySelector('.continuous-page-preview img');let ink=0;if(image?.complete&&image.naturalWidth){const canvas=document.createElement('canvas');canvas.width=canvas.height=32;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,32,32);const data=context.getImageData(0,0,32,32).data;for(let index=0;index<data.length;index+=4)if(data[index+3]>200&&(data[index]<240||data[index+1]<240||data[index+2]<240))ink++;}previews.push({id,complete:Boolean(image?.complete&&image.naturalWidth),ink});}return{expected,missing,previews,pageHeight:origin.height,pitch,active:first.dataset.pageId,selection:document.querySelector('.canvas-footer').textContent.includes('Element selected')};})()`;
+    await settleZoom(.1);await scrollTo(1000);
+    await waitForRenderer(renderer,`(()=>{const range=${rangePaint};return range?.expected.length>=4&&!range.missing.length&&range.previews.every(item=>item.complete&&item.ink>5);})()`,'Every intersecting low-zoom page must exist and paint its real inactive preview.');
+    const tenPercent=await renderer.evaluate(rangePaint),baseline=JSON.stringify((await saved()).project);
+    const anchorBefore=await renderer.evaluate("(()=>{const page=document.querySelector('[data-page-id=\"native-stack-page-8\"]'),r=page.getBoundingClientRect(),v=document.querySelector('.canvas-viewport').getBoundingClientRect();return{x:r.left+r.width*.75,y:r.top+r.height*.5,inside:r.left+r.width*.75>v.left&&r.left+r.width*.75<v.right&&r.top+r.height*.5>v.top&&r.top+r.height*.5<v.bottom,inactive:!page.classList.contains('active')};})()");
+    assert.equal(anchorBefore.inside,true);assert.equal(anchorBefore.inactive,true);
+    await renderer.command('Input.dispatchMouseEvent',{type:'mouseWheel',x:anchorBefore.x,y:anchorBefore.y,deltaX:0,deltaY:-80,modifiers:2});
+    await waitForRenderer(renderer,"document.querySelector('.zoom-label').textContent!=='10%'",'Control-wheel over inactive page8 must zoom the entire stack.');
+    await renderer.evaluate('new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)))');
+    const anchorAfter=await renderer.evaluate("(()=>{const r=document.querySelector('[data-page-id=\"native-stack-page-8\"]').getBoundingClientRect();return{x:r.left+r.width*.75,y:r.top+r.height*.5};})()");
+    const anchorError={x:Math.abs(anchorAfter.x-anchorBefore.x),y:Math.abs(anchorAfter.y-anchorBefore.y)};
+    assert.ok(anchorError.x<=1.5&&anchorError.y<=1.5,`Native zoom must preserve the document point under the inactive-page pointer: ${JSON.stringify(anchorError)}.`);
+    const view=await viewport();await renderer.command('Input.dispatchMouseEvent',{type:'mouseWheel',...view.point,deltaX:0,deltaY:2000,modifiers:2});
+    await waitForRenderer(renderer,"document.querySelector('.zoom-label').textContent==='2%'",'Control-wheel must reach the supported2% minimum.');
+    await settleZoom(.02);await scrollTo(450);
+    await waitForRenderer(renderer,`(()=>{const range=${rangePaint};return range?.expected.length>=7&&!range.missing.length&&range.previews.every(item=>item.complete&&item.ink>5);})()`,'The native2% document must render every visible page, including all decoded photo/shape previews.');
+    const twoPercent=await renderer.evaluate(rangePaint);
+    assert.equal(twoPercent.active,record.project.pages[0].id);assert.equal(twoPercent.selection,true);
+    assert.equal(JSON.stringify((await saved()).project),baseline,'Twelve-page wheel/zoom must preserve the exact saved document.');
+    assert.equal(await renderer.evaluate("document.querySelector('.topbar button[title=\"Undo (⌘Z)\"]').disabled"),true,'Twelve-page view navigation must not add undo history.');
+    await capture('low-zoom-pages');
+    report.longDocument={pages:12,tenPercent:{visible:tenPercent.expected.length,decodedInactive:tenPercent.previews.length,missing:tenPercent.missing},twoPercent:{visible:twoPercent.expected.length,decodedInactive:twoPercent.previews.length,missing:twoPercent.missing},inactivePage8AnchorError:anchorError,selectionAndActivePagePreserved:true,documentAndHistoryPreserved:true};
+    return report;
+  } catch(error) {
+    renderer.controlsTrace.push(await renderer.evaluate(`(async()=>{const record=await ${readSavedProject};return{failure:${JSON.stringify('Control workflow failed')},active:record?.name,mode:document.querySelector('.editing-mode-trigger')?.textContent,selection:document.querySelector('.selected-label')?.textContent,focused:{tag:document.activeElement?.tagName,label:document.activeElement?.getAttribute('aria-label'),fabric:document.activeElement?.getAttribute('data-fabric')},objects:record?.project.pages.map(page=>({id:page.id,objects:page.canvas.objects.map(object=>({id:object.id,type:object.type,text:object.text,styles:object.styles,width:object.width,height:object.height,frame:object.visroFrame,empty:object.visroEmptyFrame}))}))};})()`));
+    await capture('controls-failure');
+    throw error;
+  } finally {
+    // All fixtures are confined to the smoke profile. Restore the starting tab
+    // for the existing local-cutout acceptance phase and its original checks.
+    await renderer.evaluate(`(()=>{const index=JSON.parse(localStorage.getItem('visro-workspace-tabs')||'[]').findIndex(tab=>tab.id===${JSON.stringify(originalId)});document.querySelectorAll('.desktop-tab[role="tab"]')[index]?.click();})()`);
+    await waitForRenderer(renderer,`localStorage.getItem('visro-active-design')===${JSON.stringify(originalId)}&&!document.querySelector('.canvas-loading,.busy-toast,.home-shell')`,'Control acceptance must restore the original design.');
   }
 }
 
@@ -117,7 +411,7 @@ async function waitForPaint(cdp, expression, message, timeoutMs = 15000) {
 }
 
 async function openHomeDesign(cdp, name) {
-  await waitForRenderer(cdp, "document.readyState === 'complete' && Boolean(window.visro) && !document.querySelector('.canvas-loading')", 'The native workspace did not finish loading.');
+  await waitForRenderer(cdp, "document.readyState === 'complete' && (location.protocol!=='visro:'||Boolean(window.visro)) && !document.querySelector('.canvas-loading')", 'The workspace did not finish loading.');
   if (await cdp.evaluate("Boolean(document.querySelector('.home-shell'))")) {
     await waitForRenderer(cdp, name ? `Array.from(document.querySelectorAll('.recent-open')).some(button=>button.querySelector('strong')?.textContent===${JSON.stringify(name)})` : "Boolean(document.querySelector('.recent-open,.home-template-teaser button.recent-card'))", 'The native Home screen did not expose a design.');
     await cdp.evaluate(name ? `Array.from(document.querySelectorAll('.recent-open')).find(button=>button.querySelector('strong')?.textContent===${JSON.stringify(name)}).click()` : "document.querySelector('.recent-open,.home-template-teaser button.recent-card').click()");
@@ -514,8 +808,6 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   })()`);
   await cdp.command('Page.reload');
   await openHomeDesign(cdp, project.name);
-  await cdp.evaluate("Array.from(document.querySelectorAll('.toolbar-button')).find(button=>button.textContent.trim()==='Position')?.click()");
-  await delay(200);
   const canvasPixels = `(()=>{
     const canvas=document.querySelector('.lower-canvas'),pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
     let ink=0,pink=0,nonBackground=0;
@@ -544,8 +836,18 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
     await cdp.command('Input.dispatchMouseEvent', { type: 'mousePressed', x: point.x, y: point.y, button: 'left', buttons: 1, clickCount: 1 });
     await cdp.command('Input.dispatchMouseEvent', { type: 'mouseReleased', x: point.x, y: point.y, button: 'left', buttons: 0, clickCount: 1 });
   };
+  const ensurePositionInspector=async()=>{
+    const field="document.querySelector('.inspector input[aria-label=\"Position X\"],.inspector input[aria-label=\"X\"]')";
+    if(!await cdp.evaluate(`Boolean(${field})`)){
+      const button="Array.from(document.querySelectorAll('.context-toolbar .toolbar-button')).find(button=>button.textContent.trim()==='Position')";
+      await waitForRenderer(cdp,`Boolean(${button})`,'Selecting an element must expose the actual Position control.');
+      await nativeClick(cdp,button);
+    }
+    await waitForRenderer(cdp,`Boolean(${field})`,'The real Position control did not open its numeric inspector.');
+    await waitForPaint(cdp,canvasPixels,'The selected project must remain painted after the Position drawer opens.');
+  };
   await click(await paintedPoint(target.fill));
-  await waitForRenderer(cdp, "Boolean(document.querySelector('.inspector input[aria-label=\"Position X\"],.inspector input[aria-label=\"X\"]'))", 'Pointer selection did not update the native position inspector.');
+  await ensurePositionInspector();
   const firstSelection = await cdp.evaluate(selection);
   assert.ok(Math.abs(firstSelection.x - target.left) < 1 && Math.abs(firstSelection.y - target.top) < 1, 'The real pointer must select the reproduction circle.');
   let changedGestures = 0, maxGestureMs = 0, maxSceneRoundingError = 0, thumbnailIdleWindows = 0;
@@ -595,9 +897,9 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   assert.ok(maxGestureMs < 2000, `A native movement gesture must not stall the renderer: ${maxGestureMs} ms.`);
   await cdp.command('Page.reload');
   await openHomeDesign(cdp, project.name);
-  await cdp.evaluate("Array.from(document.querySelectorAll('.toolbar-button')).find(button=>button.textContent.trim()==='Position')?.click()");
   const restoredPixels = await waitForPaint(cdp, canvasPixels, 'The autosaved project did not visibly render after reload.');
   await click(await paintedPoint(target.fill));
+  await ensurePositionInspector();
   const restoredSelection = await cdp.evaluate(selection);
   assert.ok(Math.abs(restoredSelection.x - persistedObject.left) < .51 && Math.abs(restoredSelection.y - persistedObject.top) < .51, 'Cold reload must restore the actual moved element position.');
   const pressArrow = async (key, shift = false) => {
@@ -645,7 +947,7 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, paintProbe, firstSelection, finalSelection, restoredSelection, keyboardNudgedSelection, arrowNudge: 1, shiftArrowNudge: 10, hoverHighlight: true, contextMenu, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
 }
 
-async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, publicImages = false, elements = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
+async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, publicImages = false, elements = false, controls = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
   const root = path.resolve(__dirname, '..');
   let executable, args;
   if (appPath) {
@@ -660,7 +962,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
   delete environment.ELECTRON_RUN_AS_NODE;
   delete environment.VISRO_DEV_URL;
   args.push('--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', `--user-data-dir=${profile}`);
-  if (clipboard || captions || publicImages || elements) args.push('--inspect=0');
+  if (clipboard || captions || publicImages || elements || controls) args.push('--inspect=0');
   const child = spawn(executable, args, { cwd: root, env: environment, stdio: ['ignore', 'ignore', 'pipe'] });
   let debuggerURL;
   let mainInspectorURL;
@@ -777,7 +1079,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
     assert.equal(result.mediaEngine.available, true, 'Packaged FFmpeg must be available without user PATH.');
     assert.equal(result.mediaEngine.bundled, true);
     assert.match(result.mediaEngine.version, /^9\.0\.2/);
-    if (clipboard || captions || publicImages || elements) {
+    if (clipboard || captions || publicImages || elements || controls) {
       progress('checking native runtime version and asynchronous storage');
       if (mainInspectorURL) mainCDP = await connectCDP(mainInspectorURL);
       if (mainCDP) {
@@ -827,6 +1129,10 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
     if (elements) {
       progress('checking native shape clicks, real graphic dragging, palette Undo and vector ungroup');
       result.elements = await runNativeElementLibraryRegression(cdp, mainCDP, screenshotPath);
+    }
+    if (controls) {
+      progress('checking native continuous pages, frames, text and editing modes');
+      result.controls = await runNativeControlsRegression(cdp, cutoutPath || path.join(root, 'output/fixtures/cutout-person.jpeg'), screenshotPath, progress);
     }
     if (cutoutPath) {
       progress('uploading local cutout fixture');
@@ -898,7 +1204,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
         const file = path.resolve(screenshotPath).replace(/\.png$/i, '-failure.png');
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(file, Buffer.from(screenshot.data, 'base64'));
-        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},gestureTrace:${JSON.stringify(error.smokeGestureTrace || cdp.gestureTrace || [])},gestureSummary:${JSON.stringify(cdp.gestureSummary || null)},nativeTabsTrace:${JSON.stringify(cdp.nativeTabsTrace || [])},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
+        const state = await cdp.evaluate(`(async()=>{const record=await ${readSavedProject};return {message:${JSON.stringify(error.message)},gestureTrace:${JSON.stringify(error.smokeGestureTrace || cdp.gestureTrace || [])},gestureSummary:${JSON.stringify(cdp.gestureSummary || null)},nativeTabsTrace:${JSON.stringify(cdp.nativeTabsTrace || [])},controlsTrace:${JSON.stringify(cdp.controlsTrace || [])},home:Boolean(document.querySelector('.home-shell')),selected:Array.from(document.querySelectorAll('.inspector input')).map(input=>({label:input.getAttribute('aria-label'),value:input.value})),activeId:localStorage.getItem('visro-active-design'),saved:record?{id:record.id,name:record.name,updated:record.updated,objects:record.project.pages.flatMap(page=>(page.canvas.objects||[]).map(object=>({id:object.id,type:object.type,left:object.left,top:object.top})))}:null};})()`);
         await fs.writeFile(file.replace(/\.png$/i, '.json'), `${JSON.stringify(state, null, 2)}\n`);
       } catch { /* Preserve the actual assertion if the renderer is stalled. */ }
     }
@@ -930,7 +1236,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
 
 if (require.main === module) {
   const argument = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; };
-  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), publicImages: process.argv.includes('--public-images'), elements: process.argv.includes('--elements'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
+  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), publicImages: process.argv.includes('--public-images'), elements: process.argv.includes('--elements'), controls: process.argv.includes('--controls'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
     if (error.validation) process.stdout.write(`${JSON.stringify({ ...error.validation, cleanup: { ok: false, error: error.message } }, null, 2)}\n`);
     if (error.validationError) process.stderr.write(`Native validation failed: ${error.validationError}\n`);
     process.stderr.write(`Native smoke failed: ${error.message}\n`);
@@ -938,4 +1244,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runNativeSmoke, removeSmokeProfile, runClipboardRegression, runNativeEditingRegression, rasterPointForFill };
+module.exports = { runNativeControlsRegression, connectCDP, runNativeSmoke, removeSmokeProfile, runClipboardRegression, runNativeEditingRegression, rasterPointForFill };

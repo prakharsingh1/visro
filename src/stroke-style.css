@@ -1,0 +1,21 @@
+.studio-app .stroke-popover {
+ position:fixed;z-index:90;width:320px;max-width:calc(100vw - 16px);max-height:calc(100vh - 16px);overflow-y:auto;
+ display:flex;flex-direction:column;gap:16px;padding:16px;border:1px solid var(--border);border-radius:16px;
+ background:var(--surface);color:var(--text);box-shadow:0 8px 24px #00000033;font-family:var(--ui-font-family);
+}
+:root[data-theme="dark"] .studio-app .stroke-popover { background:#242830; }
+.studio-app .stroke-patterns { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px; }
+.studio-app .stroke-patterns > button { height:40px;min-width:0;padding:0;display:grid;place-items:center;border:1px solid var(--border-strong,var(--border));border-radius:12px;color:var(--text); }
+.studio-app .stroke-patterns > button[aria-checked="true"] { outline:2px solid var(--accent,#8b3dff);outline-offset:0;border-color:transparent; }
+.studio-app .stroke-patterns > button:hover { background:var(--surface-hover); }
+.studio-app .stroke-rounded { display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:14px;line-height:20px; }
+.studio-app .stroke-rounded input { appearance:none;position:relative;width:40px;height:24px;border:0;border-radius:12px;background:var(--border-strong,#626670);cursor:pointer; }
+.studio-app .stroke-rounded input:checked { background:var(--accent,#8b3dff); }
+.studio-app .stroke-rounded input::after { content:'';position:absolute;left:2px;top:2px;width:20px;height:20px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #00000026; }
+.studio-app .stroke-rounded input:checked::after { transform:translateX(16px); }
+.studio-app .stroke-rounded input:focus-visible { outline:2px solid var(--accent,#8b3dff);outline-offset:3px; }
+.studio-app .stroke-range { display:flex;flex-direction:column;gap:8px;font-size:14px;line-height:20px; }
+.studio-app .stroke-range > div { display:flex;align-items:center;gap:16px; }
+.studio-app .stroke-range input[type="range"] { min-width:0;flex:1;width:100%;accent-color:var(--accent,#8b3dff); }
+.studio-app .stroke-range input[type="number"] { flex:none;width:40px;height:40px;padding:4px;text-align:center;font:400 14px/20px var(--ui-font-family);border:1px solid var(--border);border-radius:12px;background:var(--surface);color:var(--text);appearance:textfield;-moz-appearance:textfield; }
+.studio-app .stroke-range input[type="number"]::-webkit-inner-spin-button,.studio-app .stroke-range input[type="number"]::-webkit-outer-spin-button { -webkit-appearance:none;margin:0; }

@@ -1,7 +1,9 @@
 export type {ShapeId} from './shapes';
 export type ShapeType = import('./shapes').ShapeId;
 export type TextEffect = 'none' | 'shadow' | 'outline' | 'neon' | 'lift' | 'hollow' | 'splice';
-export type FrameShape = 'circle' | 'rounded' | 'arch' | 'diamond';
+export type FrameShape = import('./frames').FrameDefinition['id'];
+export interface ElementPlacement {center?:{x:number;y:number};pageId?:string;signal?:AbortSignal}
+export interface ImagePlacement extends ElementPlacement {source?:ElementMetadata['source'];targetFrameId?:string}
 export interface PageMetadata { notes?: string; duration?: number; animation?: string; guides?: {x:number[];y:number[]} }
 export interface ElementMetadata { link?: string; altText?: string; duration?: number; source?: {id:string;title:string;artist:string;license:string;licenseUrl:string;sourceUrl:string} }
 export interface ImageEffects { brightness: number; contrast: number; saturation: number; blur: number; grayscale: boolean }
@@ -113,7 +115,13 @@ export interface SelectedObject {
   linethrough: boolean;
   stroke: string;
   strokeWidth: number;
+  strokeDashArray?:number[]|null;
+  strokeLineCap?:'butt'|'round'|'square';
+  cornerRadius?:number;
   strokeOnly?: boolean;
+  frameId?: string;
+  emptyFrame?: boolean;
+  shapeType?: ShapeType;
   textEffect: TextEffect;
   gradient?: { colors: string[]; angle: number };
   vectorColors?: string[];
@@ -128,6 +136,8 @@ export interface SelectionUpdate {
   fill?: string;
   stroke?: string;
   strokeWidth?: number;
+  strokeDashArray?:number[]|null;
+  strokeLineCap?:'butt'|'round'|'square';
   fontSize?: number;
   fontFamily?: string;
   fontWeight?: number | string;

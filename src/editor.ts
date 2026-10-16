@@ -1,9 +1,16 @@
+import {convertShapeToFrameObject} from './shape-frame';
+import {formatTextSelection} from './text-formatting';
 import {inlineBundledImage} from './bundled-images';
 import {getGraphic} from './graphics-library';
 import {getShapeGeometry} from './shapes';
+import {getFrameDefinition,getFrameLibraryItem,resolveGridSlots,type FrameDefinition} from './frames';
+import {formatTextObject,applyTextObjectStyle,continueTextObjectList,indentTextObjectList,getTextObjectSelectionStyle} from './editor-text';
+import type {TextFormatAction} from './text-formatting';
 import {
   ActiveSelection,
+  type IText,
   Canvas,
+  StaticCanvas,
   Circle,
   FabricImage,
   FabricObject,
@@ -44,6 +51,8 @@ import type {
   ElementMetadata,
   ImageEffects,
   ImageCropRect,
+  ElementPlacement,
+  ImagePlacement,
 } from "./editor-types";
 import {
   cloneProject,
@@ -69,6 +78,9 @@ type StudioObject = FabricObject & {
   visroOriginalSrc?: string;
   visroMetadata?: ElementMetadata;
   visroGraphicId?: string;
+  visroEmptyFrame?: boolean;
+  visroGridId?: string;
+  visroShapeType?: ShapeType;
 };
 type OptionDrag = {
   target: FabricObject;
@@ -80,7 +92,7 @@ type OptionDrag = {
   failed: boolean;
   finish: () => void;
 };
-const CUSTOM_PROPS = ["id", "visroName", "visroLocked", "visroTextEffect", "visroGradient", "visroFrame", "visroTextBaseFill", "visroOriginalSrc", "visroMetadata", "visroGraphicId"];
+const CUSTOM_PROPS = ["id", "visroName", "visroLocked", "visroTextEffect", "visroGradient", "visroFrame", "visroTextBaseFill", "visroOriginalSrc", "visroMetadata", "visroGraphicId", "visroEmptyFrame", "visroGridId", "visroShapeType"];
 const SELECTION_COLOR = '#8B3DFF';
 const INTERACTION_STYLE = {
   cornerColor: '#ffffff', cornerStrokeColor: SELECTION_COLOR,
@@ -98,6 +110,8 @@ function label(object: StudioObject, name: string): StudioObject {
   object.set(INTERACTION_STYLE);
   return object;
 }
+
+function isStudioImage(object:StudioObject|undefined):object is FabricImage&StudioObject {return object instanceof FabricImage;}
 
 function objectName(object: StudioObject): string {
   if (object.visroName) return object.visroName;
@@ -139,6 +153,17 @@ function starPoints(size: number): { x: number; y: number }[] {
       y: size / 2 + Math.sin(angle) * radius,
     };
   });
+}
+
+let placeholderData:string|undefined;
+function framePlaceholderData():string {
+  if(placeholderData)return placeholderData;
+  const canvas=util.createCanvasElement();canvas.width=1000;canvas.height=1000;
+  const context=canvas.getContext('2d')!;context.scale(10,10);
+  context.fillStyle='#bed9ec';context.fillRect(0,0,100,100);context.fillStyle='#fff7d6';context.beginPath();context.arc(74,25,10,0,Math.PI*2);context.fill();
+  context.fillStyle='#8fb899';context.beginPath();context.moveTo(0,68);context.quadraticCurveTo(17,40,40,67);context.quadraticCurveTo(60,88,100,49);context.lineTo(100,100);context.lineTo(0,100);context.closePath();context.fill();
+  context.fillStyle='#567d65';context.beginPath();context.moveTo(0,83);context.quadraticCurveTo(27,62,52,81);context.quadraticCurveTo(77,101,100,74);context.lineTo(100,100);context.lineTo(0,100);context.closePath();context.fill();
+  placeholderData=canvas.toDataURL('image/png');return placeholderData;
 }
 
 /** A logical-pixel document independent from the screen viewport. */
@@ -209,6 +234,8 @@ export class StudioEditor {
     this.canvas.on("selection:created", () => this.selectionChanged());
     this.canvas.on("selection:updated", () => this.selectionChanged());
     this.canvas.on("selection:cleared", () => this.selectionChanged());
+    this.canvas.on('text:selection:changed',()=>this.selectionChanged());
+    this.canvas.on('text:editing:entered',()=>this.selectionChanged());
     this.canvas.on("object:modified", ({ target }) => {
       this.snapGuides = {}; this.hoverTarget = undefined;
       if (this.optionDrag?.moved && this.optionDrag.target === target) return;
@@ -325,11 +352,45 @@ export class StudioEditor {
   loadProject(project: VisroProject): Promise<void> { return this.runQueued(() => this.loadProjectInternal(project)); }
   loadTemplate(id: string): Promise<void> { return this.runQueued(() => this.loadTemplateInternal(id)); }
   insertDesign(spec: DesignSpec, preserveHistory = true): Promise<void> { return this.runQueued(() => this.insertDesignInternal(spec, preserveHistory)); }
-  addImage(url: string, name = 'Image', placement?: {center?:{x:number;y:number};pageId?:string;source?:ElementMetadata['source'];signal?:AbortSignal}): Promise<void> { return this.runQueued(() => this.addImageInternal(url, name, placement)); }
-  replaceSelectedImage(url: string): Promise<void> { return this.runQueued(() => this.replaceSelectedImageInternal(url)); }
+  addImage(url: string, name = 'Image', placement?: ImagePlacement): Promise<void> {
+    const captured={...placement,pageId:placement?.pageId??this.document.activePageId};
+    const target=captured.targetFrameId?this.findObject(captured.targetFrameId):undefined;
+    return this.runQueued(() => this.addImageInternal(url,name,captured,target));
+  }
+  insertFrame(id:string,placement?:ElementPlacement):Promise<void> {
+    const captured={...placement,pageId:placement?.pageId??this.document.activePageId};
+    return this.runQueued(()=>this.insertFrameInternal(id,captured));
+  }
+  convertSelectedShapeToFrame():Promise<void> {
+    const previous=this.canvas.getActiveObject() as StudioObject|undefined,pageId=this.document.activePageId;
+    return this.runQueued(async()=>{
+      this.assertOriginPage(pageId);
+      if(!previous?.id||this.findObject(previous.id)!==previous||this.objectLocked(previous))throw new Error('Select an unlocked filled shape first.');
+      const frame=await convertShapeToFrameObject(previous,{signal:this.lifecycle.signal}) as StudioObject;
+      try{this.assertOriginPage(pageId);if(this.findObject(previous.id)!==previous||this.objectLocked(previous))throw new Error('The shape was removed or locked while the frame was preparing.');}catch(error){frame.dispose();throw error;}
+      frame.set(INTERACTION_STYLE);
+      const parent=previous.group instanceof Group&&!(previous.group instanceof ActiveSelection)?previous.group:undefined,index=(parent?parent.getObjects():this.canvas.getObjects()).indexOf(previous);
+      this.canvas.discardActiveObject();
+      if(parent){parent.insertAt(index,frame);parent.remove(previous);parent.set('dirty',true);}else{this.canvas.insertAt(index,frame);this.canvas.remove(previous);}
+      this.canvas.setActiveObject(frame);frame.setCoords();this.commit();
+    });
+  }
+  replaceSelectedImage(url:string):Promise<void> {
+    const image=this.canvas.getActiveObject() as StudioObject|undefined,pageId=this.document.activePageId;
+    return this.runQueued(()=>this.replaceImageInternal(image,url,pageId,'mask'));
+  }
+  replaceImageById(id:string,url:string,source?:ElementMetadata['source'],options?:{signal?:AbortSignal}):Promise<void> {
+    const image=this.findObject(id),pageId=this.document.activePageId;
+    return this.runQueued(()=>this.replaceImageInternal(image,url,pageId,'replace',source,options?.signal));
+  }
   applyImageMask(url: string): Promise<void> { return this.replaceSelectedImage(url); }
   duplicate(): Promise<void> { return this.runQueued(() => this.duplicateInternal()); }
   addPage(): Promise<void> { return this.runQueued(() => this.addPageInternal()); }
+  addPageAfter(id:string):Promise<void> {return this.runQueued(()=>this.addPageInternal(id));}
+  movePage(id:string,direction:1|-1):void {
+    if(this.destroyed||this.restoring)return;this.syncPage();const index=this.document.pages.findIndex(page=>page.id===id),target=index+direction;
+    if(index<0||target<0||target>=this.document.pages.length)return;const [page]=this.document.pages.splice(index,1);this.document.pages.splice(target,0,page);this.commit();
+  }
   duplicatePage(id?: string): Promise<void> { return this.runQueued(() => this.duplicatePageInternal(id)); }
   deletePage(id?: string): Promise<void> { return this.runQueued(() => this.deletePageInternal(id)); }
   setPage(id: string): Promise<void> { return this.runQueued(() => this.setPageInternal(id)); }
@@ -446,6 +507,8 @@ export class StudioEditor {
     this.canvas.requestRenderAll();
   }
 
+  get activePageId():string {return this.document.activePageId;}
+
   getState(): EditorState {
     const selectedIds = new Set(
       this.canvas
@@ -497,12 +560,7 @@ export class StudioEditor {
       fill: typeof object.fill === "string" ? object.fill : "#292620",
       fontSize: text?.fontSize ?? 32,
       fontFamily: text?.fontFamily ?? "Arial",
-      fontWeight:
-        typeof text?.fontWeight === "number"
-          ? text.fontWeight >= 600
-            ? "bold"
-            : "normal"
-          : (text?.fontWeight ?? "normal"),
+      fontWeight:text?.fontWeight??'normal',
       fontStyle: text?.fontStyle ?? "normal",
       align: text?.textAlign ?? "left",
       lineHeight: text?.lineHeight ?? 1.16,
@@ -521,11 +579,18 @@ export class StudioEditor {
       linethrough: text?.linethrough ?? false,
       stroke: typeof object.stroke === 'string' ? object.stroke : '',
       strokeWidth: object.strokeWidth,
+      strokeDashArray:object.strokeDashArray?[...object.strokeDashArray]:null,
+      strokeLineCap:object.strokeLineCap,
+      cornerRadius:object instanceof Rect?object.rx*Math.abs(object.scaleX):object instanceof FabricImage&&object.clipPath instanceof Rect?object.clipPath.rx*Math.abs(object.clipPath.scaleX*object.scaleX):0,
+      frameId:object.visroFrame,
+      emptyFrame:object.visroEmptyFrame,
+      shapeType:object.visroShapeType,
       strokeOnly: Boolean(object.stroke) && (!object.fill || object.fill === 'transparent' || object.fill === 'none'),
       textEffect: object.visroTextEffect ?? 'none',
       gradient: cloneProject(object.visroGradient),
       vectorColors: object.visroGraphicId ? this.graphicColors(object) : undefined,
       metadata: cloneProject(object.visroMetadata),
+      ...(text?getTextObjectSelectionStyle(text as unknown as IText):{}),
     };
   }
 
@@ -675,12 +740,30 @@ export class StudioEditor {
     }
     const center=placement?.center??{x:this.width/2,y:this.height/2};
     object.setPositionByOrigin(new Point(center.x,center.y),'center','center');
-    this.addAndSelect(
-      label(
-        object,
-        definition.name,
-      ),
-    );
+    const named=label(object,definition.name);named.visroShapeType=type;
+    this.addAndSelect(named);
+  }
+
+  replaceShape(type:ShapeType):void {
+    if(this.destroyed||this.restoring)return;
+    const previous=this.canvas.getActiveObject() as StudioObject|undefined;
+    if(!previous||previous instanceof FabricImage||isText(previous)||previous instanceof Group||this.objectLocked(previous))throw new Error('Select an unlocked vector shape first.');
+    const definition=getShapeGeometry(type),common={originX:previous.originX,originY:previous.originY,strokeWidth:0};
+    let replacement:FabricObject;
+    if(definition.kind==='polygon')replacement=new Polygon(definition.points,common);
+    else if(definition.kind==='line')replacement=new Line(definition.points,common);
+    else replacement=new Path(definition.path,common);
+    const object=replacement as StudioObject,oldFilled=Boolean(previous.fill&&previous.fill!=='none'&&previous.fill!=='transparent');
+    object.set({...INTERACTION_STYLE,originX:previous.originX,originY:previous.originY,opacity:previous.opacity,visible:previous.visible,shadow:previous.shadow,strokeUniform:previous.strokeUniform,strokeLineCap:definition.lineCap??previous.strokeLineCap,strokeLineJoin:previous.strokeLineJoin,strokeDashArray:definition.dash?[...definition.dash]:previous.strokeDashArray,strokeWidth:definition.filled?previous.strokeWidth:Math.max(1,previous.strokeWidth||definition.strokeWidth),fill:definition.filled?(oldFilled?previous.fill:previous.stroke||'#292620'):'transparent',stroke:definition.filled?previous.stroke:(oldFilled?previous.fill:previous.stroke)||'#292620'});
+    object.id=previous.id;object.visroName=definition.name;object.visroShapeType=type;object.visroMetadata=cloneProject(previous.visroMetadata);object.visroGradient=cloneProject(previous.visroGradient);
+    if(object.visroGradient&&definition.filled)object.set('fill',this.makeGradient(object.visroGradient.colors,object.visroGradient.angle,object.width,object.height));
+    const matrix=util.multiplyTransformMatrices(previous.calcTransformMatrix(),[object.width>0?Math.max(previous.width,previous.strokeWidth||1)/object.width:1,0,0,object.height>0?Math.max(previous.height,previous.strokeWidth||1)/object.height:1,0,0]);
+    const parent=previous.group instanceof Group&&!(previous.group instanceof ActiveSelection)?previous.group:undefined,index=(parent?parent.getObjects():this.canvas.getObjects()).indexOf(previous);
+    this.canvas.discardActiveObject();
+    if(parent){parent.remove(previous);util.applyTransformToObject(object,matrix);parent.insertAt(index,object);parent.set('dirty',true);}
+    else{this.canvas.remove(previous);util.applyTransformToObject(object,matrix);this.canvas.insertAt(index,object);}
+    if(object.flipX!==previous.flipX){const center=object.getCenterPoint();object.set({flipX:!object.flipX,flipY:!object.flipY,angle:object.angle+180});object.setPositionByOrigin(center,'center','center');}
+    object.setCoords();this.canvas.setActiveObject(object);this.commit();
   }
 
   addTable(options: TableOptions): void {
@@ -761,24 +844,49 @@ export class StudioEditor {
     this.addCenteredGroup(objects, `${options.type[0].toUpperCase() + options.type.slice(1)} chart`);
   }
 
-  addFrame(shape: FrameShape): void {
-    const image = this.canvas.getActiveObject();
-    if (!(image instanceof FabricImage) || (image as StudioObject).visroLocked) throw new Error('Select an unlocked image to add a frame.');
-    const width = image.width, height = image.height;
-    let mask: FabricObject;
-    if (shape === 'circle') {
-      const radius = Math.min(image.getScaledWidth(), image.getScaledHeight()) / 2;
-      mask = new Ellipse({ originX: 'center', originY: 'center', rx: radius / Math.abs(image.scaleX), ry: radius / Math.abs(image.scaleY) });
-    }
-    else if (shape === 'diamond') mask = new Polygon([{x:0,y:-height/2},{x:width/2,y:0},{x:0,y:height/2},{x:-width/2,y:0}], { originX: 'center', originY: 'center' });
-    else if (shape === 'arch') {
-      const radius = Math.min(width / 2, height * .5);
-      mask = new Path(`M ${-width/2} ${height/2} L ${-width/2} ${-height/2+radius} Q ${-width/2} ${-height/2} 0 ${-height/2} Q ${width/2} ${-height/2} ${width/2} ${-height/2+radius} L ${width/2} ${height/2} Z`, { originX: 'center', originY: 'center' });
-    } else mask = new Rect({ originX: 'center', originY: 'center', width, height, rx: Math.min(width, height) * .15, ry: Math.min(width, height) * .15 });
-    mask.set({ left: 0, top: 0, fill: '#000000', strokeWidth: 0 });
-    image.set('clipPath', mask);
-    (image as StudioObject).visroFrame = shape;
-    this.commit();
+  /** Apply a catalog mask to the selected image without replacing its pixels. */
+  setSelectedImageFrame(id:FrameShape):void {
+    const image=this.canvas.getActiveObject() as StudioObject|undefined;
+    if(!isStudioImage(image)||this.objectLocked(image))throw new Error('Select an unlocked image to add a frame.');
+    const definition=getFrameDefinition(id);if(!definition)throw new Error('Choose a frame from Elements.');
+    image.set('clipPath',this.createFrameMask(definition,image.width,image.height));
+    image.visroFrame=id;image.set('dirty',true);this.commit();
+  }
+  addFrame(shape:FrameShape):void {
+    if(!['circle','rounded','arch','diamond'].includes(shape)){this.setSelectedImageFrame(shape);return;}
+    const image=this.canvas.getActiveObject();if(!(image instanceof FabricImage)||this.objectLocked(image))throw new Error('Select an unlocked image to add a frame.');
+    const width=image.width,height=image.height;let mask:FabricObject;
+    if(shape==='circle'){const radius=Math.min(image.getScaledWidth(),image.getScaledHeight())/2;mask=new Ellipse({originX:'center',originY:'center',rx:radius/Math.abs(image.scaleX),ry:radius/Math.abs(image.scaleY)});}
+    else if(shape==='diamond')mask=new Polygon([{x:0,y:-height/2},{x:width/2,y:0},{x:0,y:height/2},{x:-width/2,y:0}],{originX:'center',originY:'center'});
+    else if(shape==='arch'){const radius=Math.min(width/2,height*.5);mask=new Path(`M ${-width/2} ${height/2} L ${-width/2} ${-height/2+radius} Q ${-width/2} ${-height/2} 0 ${-height/2} Q ${width/2} ${-height/2} ${width/2} ${-height/2+radius} L ${width/2} ${height/2} Z`,{originX:'center',originY:'center'});}
+    else mask=new Rect({originX:'center',originY:'center',width,height,rx:Math.min(width,height)*.15,ry:Math.min(width,height)*.15});
+    mask.set({left:0,top:0,fill:'#000000',strokeWidth:0});image.set('clipPath',mask);(image as StudioObject).visroFrame=shape;this.commit();
+  }
+
+  setCornerRadius(radius:number):void {
+    const object=this.canvas.getActiveObject() as StudioObject|undefined;
+    if(this.destroyed||this.restoring||!object||this.objectLocked(object)||!(object instanceof Rect||object instanceof FabricImage))return;
+    if(!Number.isFinite(radius)||radius<0)throw new Error('Use a nonnegative corner radius.');
+    const value=Math.min(radius,Math.min(object.width*Math.abs(object.scaleX),object.height*Math.abs(object.scaleY))/2),rx=value/Math.max(.000001,Math.abs(object.scaleX)),ry=value/Math.max(.000001,Math.abs(object.scaleY));
+    if(object instanceof Rect)object.set({rx,ry});
+    else if(value===0){if(object.clipPath instanceof Rect){object.set('clipPath',undefined);delete (object as StudioObject).visroFrame;}else return;}
+    else{object.set('clipPath',new Rect({originX:'center',originY:'center',left:0,top:0,width:object.width,height:object.height,rx,ry,fill:'#000000',strokeWidth:0}));(object as StudioObject).visroFrame='rounded';}
+    object.set('dirty',true);this.commit();
+  }
+
+  /** Hit-test a visible frame using scene/document coordinates, including nested grid slots. */
+  frameAt(point:{x:number;y:number}):string|null {
+    if(this.destroyed||!Number.isFinite(point.x)||!Number.isFinite(point.y))return null;
+    const viewport=new Point(point.x,point.y).transform(this.canvas.viewportTransform);
+    const visit=(objects:FabricObject[]):string|null=>{
+      for(const raw of [...objects].reverse()){
+        const object=raw as StudioObject;if(!object.visible||this.objectLocked(object))continue;
+        if(object instanceof Group){const child=visit(object.getObjects());if(child)return child;}
+        if(isStudioImage(object)&&object.visroFrame&&object.id&&object.containsPoint(new Point(point.x,point.y))&&!this.canvas.isTargetTransparent(object,viewport.x,viewport.y))return object.id;
+      }
+      return null;
+    };
+    return visit(this.canvas.getObjects());
   }
 
   removeFrame(): void {
@@ -786,6 +894,7 @@ export class StudioEditor {
     if (!(image instanceof FabricImage) || (image as StudioObject).visroLocked) return;
     image.set('clipPath', undefined);
     delete (image as StudioObject).visroFrame;
+    delete (image as StudioObject).visroEmptyFrame;
     this.commit();
   }
 
@@ -906,31 +1015,76 @@ export class StudioEditor {
     this.commit('project-content');
   }
 
-  private async addImageInternal(url: string, name = "Image", placement?: {center?:{x:number;y:number};pageId?:string;source?:ElementMetadata['source'];signal?:AbortSignal}): Promise<void> {
-    if(placement?.pageId&&placement.pageId!==this.document.activePageId)throw new Error("The page changed while this photo was loading. It is saved in Uploads.");
-    placement?.signal?.throwIfAborted();
+  private async addImageInternal(url:string,name='Image',placement?:ImagePlacement,target?:StudioObject):Promise<void> {
+    const pageId=placement?.pageId??this.document.activePageId;
+    this.assertOriginPage(pageId);placement?.signal?.throwIfAborted();
+    if(placement?.targetFrameId){
+      if(!isStudioImage(target)||!target.visroFrame)throw new Error('This frame is no longer available.');
+      await this.replaceImageInternal(target,url,pageId,'fill',placement.source,placement.signal,name);return;
+    }
     const signal=placement?.signal?AbortSignal.any([this.lifecycle.signal,placement.signal]):this.lifecycle.signal;
-    const image = await FabricImage.fromURL(url, { crossOrigin: "anonymous", signal });
-    placement?.signal?.throwIfAborted();
-    this.assertAlive();
-    const scale = Math.min(
-      (this.width * 0.72) / image.width,
-      (this.height * 0.72) / image.height,
-      1,
-    );
-    image.set({
-      originX: "left",
-      originY: "top",
-      scaleX: scale,
-      scaleY: scale,
-      left: (this.width - image.width * scale) / 2,
-      top: (this.height - image.height * scale) / 2,
-    });
-    if(placement?.pageId&&placement.pageId!==this.document.activePageId)throw new Error("The page changed while this photo was loading. It is saved in Uploads.");
+    const image=await FabricImage.fromURL(url,{crossOrigin:'anonymous',signal});
+    this.assertOriginPage(pageId);placement?.signal?.throwIfAborted();
+    const scale=Math.min(this.width*.72/image.width,this.height*.72/image.height,1);
+    image.set({originX:'left',originY:'top',scaleX:scale,scaleY:scale,left:(this.width-image.width*scale)/2,top:(this.height-image.height*scale)/2});
     if(placement?.center)image.set({left:placement.center.x-image.width*scale/2,top:placement.center.y-image.height*scale/2});
-    const object = label(image, name);
-    if(placement?.source)object.visroMetadata=sanitizeElementMetadata({source:placement.source,altText:name});
+    const object=label(image,name);if(placement?.source)object.visroMetadata=sanitizeElementMetadata({source:placement.source,altText:name});
     this.addAndSelect(object);
+  }
+
+  private assertOriginPage(pageId:string):void {
+    this.assertAlive();if(pageId!==this.document.activePageId||!this.document.pages.some(page=>page.id===pageId))throw new Error('The page changed while this image was loading. Choose it again.');
+  }
+  private findObject(id:string):StudioObject|undefined {
+    const visit=(objects:FabricObject[]):StudioObject|undefined=>{for(const object of objects){if((object as StudioObject).id===id)return object as StudioObject;if(object instanceof Group){const nested=visit(object.getObjects());if(nested)return nested;}}return undefined;};
+    return visit(this.canvas.getObjects());
+  }
+  private objectLocked(object:FabricObject):boolean {
+    let current:FabricObject|undefined=object;while(current){if((current as StudioObject).visroLocked)return true;current=current.group;}return false;
+  }
+  private createFrameMask(definition:FrameDefinition,width:number,height:number):Path {
+    const mask=new Path(definition.path,{originX:'center',originY:'center',fill:'#000000',strokeWidth:0,fillRule:definition.fillRule});
+    mask.set({left:(mask.pathOffset.x-50)*width/100,top:(mask.pathOffset.y-50)*height/100,scaleX:width/100,scaleY:height/100});
+    return mask;
+  }
+  private async insertFrameInternal(id:string,placement:ElementPlacement):Promise<void> {
+    const item=getFrameLibraryItem(id);if(!item)throw new Error('Choose a frame or grid from Elements.');
+    const pageId=placement.pageId??this.document.activePageId;this.assertOriginPage(pageId);placement.signal?.throwIfAborted();
+    const signal=placement.signal?AbortSignal.any([this.lifecycle.signal,placement.signal]):this.lifecycle.signal;
+    const width=item.kind==='grid'?Math.min(this.width*.8,this.height*.8*item.aspectRatio):Math.min(this.width*.72,Math.min(this.width,this.height)*.46*Math.sqrt(item.aspectRatio));
+    const height=width/item.aspectRatio,center=placement.center??{x:this.width/2,y:this.height/2};
+    const create=async(frameId:string,w:number,h:number,x:number,y:number):Promise<StudioObject>=>{
+      const image=await FabricImage.fromURL(framePlaceholderData(),{signal});
+      const ratio=w/h,cropWidth=Math.min(image.width,image.height*ratio),cropHeight=cropWidth/ratio;
+      image.set({originX:'center',originY:'center',left:x,top:y,width:cropWidth,height:cropHeight,cropX:(1000-cropWidth)/2,cropY:(1000-cropHeight)/2,scaleX:w/cropWidth,scaleY:h/cropHeight,strokeWidth:0});
+      const definition=getFrameDefinition(frameId)!;image.set('clipPath',this.createFrameMask(definition,cropWidth,cropHeight));
+      const object=label(image,`${definition.name} frame`);object.visroFrame=frameId;object.visroEmptyFrame=true;return object;
+    };
+    let object:StudioObject;
+    if(item.kind==='frame')object=await create(item.id,width,height,center.x,center.y);
+    else{
+      const slots=resolveGridSlots(item,width,height,Math.min(12,Math.min(width,height)*.025));
+      const images=await Promise.all(slots.map(slot=>create('square',slot.width,slot.height,slot.x+slot.width/2,slot.y+slot.height/2)));
+      object=label(new Group(images,{originX:'center',originY:'center',left:center.x,top:center.y,subTargetCheck:true,interactive:true}),item.name);object.visroGridId=item.id;
+    }
+    try{this.assertOriginPage(pageId);placement.signal?.throwIfAborted();}catch(error){object.dispose();throw error;}
+    this.addAndSelect(object);
+  }
+
+  /** Render an isolated page thumbnail without disturbing the live canvas or history. */
+  async previewPage(id:string,scale=.5,signal?:AbortSignal):Promise<string> {
+    this.assertAlive();signal?.throwIfAborted();if(this.restoring)throw new Error('The page is changing. Retry its preview.');this.syncPage();
+    const page=this.document.pages.find(page=>page.id===id);if(!page)throw new Error('This page is no longer available.');
+    const content=cloneProject(page.canvas);delete content.clipPath;
+    const width=this.width,height=this.height,factor=Math.min(bounded(scale,.01,2),Math.sqrt(1_000_000/(width*height))),previewWidth=Math.max(1,Math.floor(width*factor)),previewHeight=Math.max(1,Math.floor(height*factor));
+    const background=page.background,gradient=cloneProject(page.backgroundGradient),surface=new StaticCanvas(util.createCanvasElement(),{width:previewWidth,height:previewHeight,enableRetinaScaling:false,renderOnAddRemove:false});
+    try{
+      await surface.loadFromJSON(content,undefined,{signal:signal?AbortSignal.any([this.lifecycle.signal,signal]):this.lifecycle.signal});
+      this.assertAlive();signal?.throwIfAborted();
+      surface.backgroundColor=gradient?this.makeGradient(gradient.colors,gradient.angle,width,height):background;
+      surface.setViewportTransform([previewWidth/width,0,0,previewHeight/height,0,0]);surface.renderAll();
+      return surface.toDataURL({format:'png',multiplier:1});
+    }finally{await surface.dispose();}
   }
 
   getSelectedImageDataURL(): string | null {
@@ -969,54 +1123,57 @@ export class StudioEditor {
     return data;
   }
 
-  private async replaceSelectedImageInternal(url: string): Promise<void> {
-    const previous = this.canvas.getActiveObject() as StudioObject | undefined;
-    if (
-      !(previous instanceof FabricImage) ||
-      (previous as StudioObject).visroLocked
-    )
-      throw new Error("Select an unlocked image first.");
-    const image = await FabricImage.fromURL(url, { crossOrigin: "anonymous", signal: this.lifecycle.signal });
-    this.assertAlive();
-    const index = this.canvas.getObjects().indexOf(previous);
-    if (index < 0)
-      throw new Error("The selected image is no longer on this page.");
-    const source = previous._originalElement as HTMLImageElement;
-    const sourceWidth = source.naturalWidth || source.width, sourceHeight = source.naturalHeight || source.height;
-    const ratioX = image.width / sourceWidth, ratioY = image.height / sourceHeight;
-    const clipWidth = previous.width * ratioX, clipHeight = previous.height * ratioY;
-    image.set({
-      left: previous.left,
-      top: previous.top,
-      angle: previous.angle,
-      originX: previous.originX,
-      originY: previous.originY,
-      width: clipWidth, height: clipHeight,
-      cropX: previous.cropX * ratioX, cropY: previous.cropY * ratioY,
-      scaleX: previous.scaleX / ratioX,
-      scaleY: previous.scaleY / ratioY,
-      flipX: previous.flipX,
-      flipY: previous.flipY,
-      opacity: previous.opacity,
-    });
-    image.filters = [...previous.filters];
-    image.applyFilters();
-    if (previous.clipPath) {
-      const mask = await previous.clipPath.clone();
-      this.assertAlive();
-      mask.set({ scaleX: mask.scaleX * image.width / previous.width, scaleY: mask.scaleY * image.height / previous.height });
-      image.set('clipPath', mask);
+  private async replaceImageInternal(previous:StudioObject|undefined,url:string,pageId:string,mode:'mask'|'replace'|'fill',source?:ElementMetadata['source'],signal?:AbortSignal,name?:string):Promise<void> {
+    this.assertOriginPage(pageId);signal?.throwIfAborted();
+    if(!isStudioImage(previous)||!previous.id||this.findObject(previous.id)!==previous||this.objectLocked(previous))throw new Error('The image is no longer available or is locked.');
+    const decoded=await FabricImage.fromURL(url,{crossOrigin:'anonymous',signal:signal?AbortSignal.any([this.lifecycle.signal,signal]):this.lifecycle.signal});
+    this.assertOriginPage(pageId);signal?.throwIfAborted();
+    if(this.findObject(previous.id)!==previous||this.objectLocked(previous))throw new Error('The image was removed or locked while its replacement was loading.');
+    const oldWidth=previous.width,oldHeight=previous.height,original=previous.getOriginalSize(),oldSource=previous.getSrc();
+    let width:number,height:number,cropX:number,cropY:number;
+    if(mode==='mask'){
+      const rx=decoded.width/original.width,ry=decoded.height/original.height;
+      width=oldWidth*rx;height=oldHeight*ry;cropX=previous.cropX*rx;cropY=previous.cropY*ry;
+    }else{
+      const ratio=oldWidth/oldHeight;
+      width=Math.min(decoded.width,decoded.height*ratio);height=width/ratio;
+      cropX=(decoded.width-width)/2;cropY=(decoded.height-height)/2;
     }
-    const replacement = label(image, objectName(previous));
-    replacement.id = (previous as StudioObject).id;
-    replacement.visroFrame = (previous as StudioObject).visroFrame;
-    replacement.visroOriginalSrc = (previous as StudioObject).visroOriginalSrc ?? previous.getSrc();
-    replacement.visroMetadata = cloneProject((previous as StudioObject).visroMetadata);
-    this.canvas.discardActiveObject();
-    this.canvas.remove(previous);
-    this.canvas.insertAt(index, replacement);
-    this.canvas.setActiveObject(replacement);
-    this.commit();
+    const rx=width/oldWidth,ry=height/oldHeight,oldElement=previous._originalElement;
+    // Work on the existing image, so nested-group transforms, IDs and z-order stay exact.
+    try{previous.setElement(decoded.getElement(),{width,height});}catch(error){previous.setElement(oldElement,{width:oldWidth,height:oldHeight});throw error;}
+    previous.set({cropX,cropY,width,height,scaleX:previous.scaleX/rx,scaleY:previous.scaleY/ry});
+    if(previous.clipPath&&!previous.clipPath.absolutePositioned){
+      const matrix=util.multiplyTransformMatrices([rx,0,0,ry,0,0],previous.clipPath.calcOwnMatrix());
+      util.applyTransformToObject(previous.clipPath,matrix);previous.clipPath.setCoords();
+    }
+    previous.visroEmptyFrame=false;
+    if(mode==='mask')previous.visroOriginalSrc??=oldSource;
+    else{delete previous.visroOriginalSrc;previous.visroMetadata=sanitizeElementMetadata({...previous.visroMetadata,source,altText:name??previous.visroMetadata?.altText});}
+    if(name)previous.visroName=name;
+    previous.setCoords();let parent=previous.group;while(parent){parent.set('dirty',true);parent=parent.group;}
+    this.canvas.setActiveObject(previous);this.commit();
+  }
+
+  formatSelectedText(action:TextFormatAction):boolean {
+    const object=this.canvas.getActiveObject();if(this.destroyed||this.restoring||!object||!isText(object)||this.objectLocked(object))return false;
+    if(typeof (object as unknown as IText).insertChars!=='function'){const result=formatTextSelection(object.text,{start:0,end:object.text.length},action);if(result.text===object.text)return false;this.updateSelected({text:result.text});return true;}
+    const changed=formatTextObject(object as unknown as IText,action);if(changed)this.commit();return changed;
+  }
+  updateSelectedTextStyle(changes:SelectionUpdate):boolean {
+    const object=this.canvas.getActiveObject();if(this.destroyed||this.restoring||!object||!isText(object)||this.objectLocked(object))return false;
+    if(typeof (object as unknown as IText).insertChars!=='function'){this.updateSelected(changes);return true;}
+    const changed=applyTextObjectStyle(object as unknown as IText,changes);if(changed)this.commit();return changed;
+  }
+  continueSelectedTextList():boolean {
+    const object=this.canvas.getActiveObject();if(this.destroyed||this.restoring||!object||!isText(object)||this.objectLocked(object))return false;
+    if(typeof (object as unknown as IText).insertChars!=='function')return false;
+    const changed=continueTextObjectList(object as unknown as IText);if(changed)this.commit();return changed;
+  }
+  indentSelectedTextList(direction:1|-1):boolean {
+    const object=this.canvas.getActiveObject();if(this.destroyed||this.restoring||!object||!isText(object)||this.objectLocked(object))return false;
+    if(typeof (object as unknown as IText).insertChars!=='function')return false;
+    const handled=indentTextObjectList(object as unknown as IText,direction);if(handled)this.commit();return handled;
   }
 
   updateSelected(update: SelectionUpdate): void {
@@ -1057,6 +1214,11 @@ export class StudioEditor {
           if (update[key] !== undefined) values[key] = update[key];
         }
       }
+      if(update.strokeDashArray!==undefined){
+        if(update.strokeDashArray!==null&&(!Array.isArray(update.strokeDashArray)||update.strokeDashArray.length>8||update.strokeDashArray.some(value=>!Number.isFinite(value)||value<0||value>1000)))throw new Error('Choose up to eight nonnegative finite dash lengths.');
+        values.strokeDashArray=update.strokeDashArray?.length?[...update.strokeDashArray]:null;
+      }
+      if(update.strokeLineCap!==undefined){if(!['butt','round','square'].includes(update.strokeLineCap))throw new Error('Choose a supported line cap.');values.strokeLineCap=update.strokeLineCap;}
       if (update.opacity !== undefined)
         values.opacity = bounded(update.opacity, 0, 1);
       if (update.name !== undefined) object.visroName = update.name;
@@ -1190,7 +1352,7 @@ export class StudioEditor {
 
   editSelectedText(): boolean {
     const object = this.canvas.getActiveObject();
-    if (!object || !isText(object) || (object as StudioObject).visroLocked) return false;
+    if (!object || !isText(object) || (object as StudioObject).visroLocked || typeof object.enterEditing!=='function' || typeof object.selectAll!=='function') return false;
     this.flushPendingChanges();
     object.enterEditing(); object.selectAll(); object.hiddenTextarea?.focus();
     this.hoverTarget = undefined; this.canvas.requestRenderAll();
@@ -1321,12 +1483,10 @@ export class StudioEditor {
     });
   }
 
-  remove(): void {
-    const objects = this.canvas
-      .getActiveObjects()
-      .filter((object) => !(object as StudioObject).visroLocked);
+  remove():void {
+    const targets=this.canvas.getActiveObjects().filter(object=>!this.objectLocked(object)).map(object=>({object,parent:object.group instanceof Group&&!(object.group instanceof ActiveSelection)?object.group:undefined}));
     this.canvas.discardActiveObject();
-    this.canvas.remove(...objects);
+    for(const {object,parent} of targets){if(parent){parent.remove(object);parent.set('dirty',true);if(!parent.getObjects().length){if(parent.group)parent.group.remove(parent);else this.canvas.remove(parent);}}else this.canvas.remove(object);}
     this.commit();
   }
 
@@ -1606,18 +1766,19 @@ export class StudioEditor {
     this.canvas.requestRenderAll();
   }
 
-  private async addPageInternal(): Promise<void> {
+  private async addPageInternal(afterId?:string): Promise<void> {
     if (this.document.pages.length >= 100)
       throw new Error("A project can contain up to 100 pages.");
     this.syncPage();
+    const after=afterId?this.document.pages.find(page=>page.id===afterId):undefined;if(afterId&&!after)throw new Error('This page is no longer available.');
     const blank = createProject(
       "Page",
       this.width,
       this.height,
-      String(this.canvas.backgroundColor || "#ffffff"),
+      after?.background??(typeof this.canvas.backgroundColor==='string'?this.canvas.backgroundColor:'#ffffff'),
     ).pages[0];
     blank.name = `Page ${this.document.pages.length + 1}`;
-    this.document.pages.push(blank);
+    if(after)this.document.pages.splice(this.document.pages.indexOf(after)+1,0,blank);else this.document.pages.push(blank);
     await this.activatePage(blank.id);
     this.commit();
   }
@@ -1668,31 +1829,19 @@ export class StudioEditor {
     }
   }
 
-  private async undoInternal(): Promise<void> {
-    if (this.historyIndex <= 0 || this.restoring) return;
-    this.historyIndex -= 1;
-    await this.restore(
-      this.snapshots[this.historyIndex],
-    );
-    this.dirty = !projectsEqual(this.snapshots[this.historyIndex], this.lastSaved);
-    this.revision += 1;
-    this.lastHistoryKey = "";
-    this.fit();
-    this.emit();
+  private async restoreHistory(index:number):Promise<void> {
+    const viewport=[...this.canvas.viewportTransform] as [number,number,number,number,number,number],width=this.width,height=this.height,pageId=this.document.activePageId,selected=this.canvas.getActiveObjects().map(object=>(object as StudioObject).id).filter((id):id is string=>!!id);
+    await this.restore(this.snapshots[index]);this.historyIndex=index;
+    if(this.width===width&&this.height===height&&this.document.activePageId===pageId)this.canvas.setViewportTransform(viewport);else this.fit();
+    const surviving=selected.map(id=>this.findObject(id)).filter((object):object is StudioObject=>!!object&&object.visible);
+    if(surviving.length)this.canvas.setActiveObject(surviving.length===1?surviving[0]:new ActiveSelection(surviving,{canvas:this.canvas}));
+    this.dirty=!projectsEqual(this.snapshots[index],this.lastSaved);this.revision+=1;this.lastHistoryKey='';this.canvas.requestRenderAll();this.emit();
   }
-
-  private async redoInternal(): Promise<void> {
-    if (this.historyIndex >= this.snapshots.length - 1 || this.restoring)
-      return;
-    this.historyIndex += 1;
-    await this.restore(
-      this.snapshots[this.historyIndex],
-    );
-    this.dirty = !projectsEqual(this.snapshots[this.historyIndex], this.lastSaved);
-    this.revision += 1;
-    this.lastHistoryKey = "";
-    this.fit();
-    this.emit();
+  private async undoInternal():Promise<void> {
+    if(this.historyIndex<=0||this.restoring)return;await this.restoreHistory(this.historyIndex-1);
+  }
+  private async redoInternal():Promise<void> {
+    if(this.historyIndex>=this.snapshots.length-1||this.restoring)return;await this.restoreHistory(this.historyIndex+1);
   }
 
   private async exportImageInternal(options: ExportOptions = {}): Promise<string> {
@@ -1857,7 +2006,7 @@ export class StudioEditor {
     const width = bounded(rect.width, 1, source.width - left), height = bounded(rect.height, 1, source.height - top);
     const oldWidth = image.width, oldHeight = image.height;
     if (image.clipPath && !image.clipPath.absolutePositioned) {
-      image.clipPath.set({ scaleX: image.clipPath.scaleX * width / oldWidth, scaleY: image.clipPath.scaleY * height / oldHeight });
+      util.applyTransformToObject(image.clipPath,util.multiplyTransformMatrices([width/oldWidth,0,0,height/oldHeight,0,0],image.clipPath.calcOwnMatrix()));
       image.clipPath.setCoords();
     }
     image.set({ cropX: left, cropY: top, width, height, scaleX: image.scaleX * oldWidth / width, scaleY: image.scaleY * oldHeight / height });
@@ -1926,9 +2075,7 @@ export class StudioEditor {
   }
 
   selectLayer(id: string): void {
-    const object = this.canvas
-      .getObjects()
-      .find((candidate) => (candidate as StudioObject).id === id);
+    const object=this.findObject(id);
     if (object?.visible) {
       this.canvas.setActiveObject(object);
       this.canvas.requestRenderAll();
@@ -2162,13 +2309,9 @@ export class StudioEditor {
     this.emit();
   }
 
-  private normalizeObjects(): void {
-    for (const raw of this.canvas.getObjects()) {
-      const object = raw as StudioObject;
-      object.id ??= newId();
-      object.visroName ??= objectName(object);
-      object.set({ ...INTERACTION_STYLE, evented: !object.visroLocked, selectable: !object.visroLocked });
-    }
+  private normalizeObjects():void {
+    const visit=(raw:FabricObject):void=>{const object=raw as StudioObject;object.id??=newId();object.visroName??=objectName(object);object.set({...INTERACTION_STYLE,evented:!object.visroLocked,selectable:!object.visroLocked});if(object instanceof Group)object.getObjects().forEach(visit);};
+    this.canvas.getObjects().forEach(visit);
   }
 
   private updateClip(): void {

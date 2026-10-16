@@ -12,6 +12,12 @@ Canva Sans is read from the user's installed Canva desktop package at runtime wh
 
 Canva's [Visual Suite](https://www.canva.com/visual-suite/) describes the broader product areas. Its [appearance help](https://www.canva.com/help/light-and-dark-mode-settings/) documents light, dark and system modes and gradual navigation changes. The [official editor image](https://content-management-files.canva.com/913decc8-a00e-4381-aa37-26774f7c3149/LOC_MarTechB2C_VisualSuite_LandingPage_WorkWithInteractivity_en.png) provided an additional light-theme reference. [Canva AI](https://www.canva.com/canva-ai/) also includes announced capabilities; announcements are not treated as proof that a workflow is universally available.
 
+The 16 October follow-up inspected selected text, native shapes, plain lines, photos and multiple-page scrolling in the owned reference design. The header order is File → Resize → Editing → separator → Undo/Redo. Its Editing popup is 320px at x≈143/y=96, with Editing/Commenting/Viewing rows. Element menus use 272px width, 14px type and shortcut keycaps. Layer ordering is front/forward/backward/back; page alignment groups horizontal Left/Center/Right before Top/Middle/Bottom.
+
+Text controls put strike and uppercase after underline, then alignment/list/spacing/transparency/effects/animate/position/copy style. Images place Edit/Replace/BG Remover/Eraser before stroke/corners/crop/flip/transparency/animate/position. Native shape Edit opens the left shape pane and replaces geometry. Frames and Grids are separate Elements destinations; supported category cards follow the observed three-column order. No selection leaves the context toolbar hidden. Lines still lack the complete ten-marker and elbow/curve endpoint UI, and shape effects remain a separate known gap; controls are not exposed without working behavior.
+
+Ordinary scrolling reveals adjacent pages in one continuous vertical stack with a measured ≈54px screen gap and a title/control row above each page. Selection persists even when its page scrolls out of view; the visible-page footer counter is independent. The official [page management help](https://www.canva.com/help/manage-pages/) also describes vertical desktop scrolling view.
+
 ## Local workflow map
 
 “Implemented” means the current source contains the workflow. Browser regressions, earlier native results and final packaged acceptance are distinguished in [VALIDATION.md](VALIDATION.md). Every Gemini row remains **live model verification pending** until a supplied key produces real content.
@@ -26,20 +32,21 @@ Canva's [Visual Suite](https://www.canva.com/visual-suite/) describes the broade
 | Templates and common formats | Implemented; 530 original editable layouts | 46 existing originals, 454 vector/type additions and 30 detailed photographic originals. Twelve bundled CC0/public-domain photos, original copy and editable objects; no copied Canva library. |
 | Public photo search | Implemented; keyless Commons service | Elements → Photos, public-domain/CC0 filters, preview/source details, 24-result pages and lazy thumbnails. Click or drag to add; locally cached bytes and source provenance persist in portable projects. Queries and uncached image downloads contact Commons; no Canva stock service. |
 | Text, shapes, photos, SVGs and drawing | Implemented | Supported editable local object types, including 56 native shapes across six categories, with lines, dashes, arrows, callouts, polygons and stars. |
-| Typography and text effects | Implemented | Font drawer, formatting, spacing and listed effects; no entire Canva effect catalog. |
+| Typography and text effects | Implemented | Font drawer, selected-character styles, Unicode-safe cases, paragraph list cycling/continuation/indentation, spacing and listed effects; no entire Canva effect catalog. |
 | Drag, transform, groups, keyboard nudges and undo | Implemented; real browser interaction checked | Pointer commits, Option-drag duplication, Tab layer cycling, click-behind selection and fractional-coordinate undo; 1px/10px movement and ⌘+Arrow resize preserve expected geometry. Exact packaged evidence is in VALIDATION.md. |
 | Copy/paste, duplicate, copy style and context menus | Implemented; real UI copy/paste persisted | In-app object handling and native clipboard integration; exact packaged evidence is recorded in VALIDATION.md. |
+| Header editing modes | Implemented | Editing/Commenting/Viewing menu in the observed header position; local mutation gating, not cloud access control. |
 | Quick actions and focus shortcuts | Implemented | `/` or ⌘E, sidebar toggle, canvas/toolbar/sidebar focus and keyboard context menu. Text inputs retain their own shortcuts. |
 | Position, layers, snapping and distribution | Implemented | Left Position drawer, ordering, page alignment, geometry, visibility and locks. |
 | Rulers and guides | Implemented; browser pointer/reopen checked | File Settings / Shift+R, guide grids, locks, snapping, page persistence and view-only safe margins. |
 | Original graphics library | Implemented; all 192 insertions validated in the editor engine | Ten categories of independently drawn static artwork; search, categories, stars, recent use and 24-result pages. Click or drag to add native path groups, recolor palette colors and ungroup parts. Decorative infographic motifs and frames have no linked-data or photo-mask behavior. |
 | Emoji, components and QR | Implemented | Local collections and generated elements; no paid stock marketplace. |
-| Gradients and image frames | Implemented | Linear gradients and circle/rounded/arch/diamond masks. |
+| Gradients, Frames and Grids | Implemented | Linear gradients, 36 original masks and 24 grids with 1–9 slots. Native editable images, photo drop/fill, cropped replacement, persistent provenance and one Undo; no copied Canva frame catalog. |
 | Crop, flip, replace and photo adjustments | Implemented; crop pointer/engine tests passed | Interactive crop preserves frame proportions; supported cumulative filters. |
 | Photo background remover | Implemented; earlier packaged photo verified | Bundled local IS-Net model and real transparent PNG output. |
 | Background erase/restore | Implemented; actual alpha brush checked | Original-source pixel recovery, preview and PNG application; latest packaged acceptance passed. |
 | Video background remover/layer reconstruction | Not included | Still-image segmentation and mask refinement only. |
-| Pages, notes, timer and presentation | Implemented | Real thumbnails, grid, page timing, basic animations/playback; no live audience or recording service. |
+| Pages, notes, timer and presentation | Implemented | Continuous page scrolling preserving selection/history, real thumbnails, grid, move/insert-after controls, page timing, basic animations/playback; no live audience or recording service. |
 | Rich documents | Implemented; browser edit/save/reopen checked | Find/Replace, native Undo/Redo, HTML export and text-to-design; no complete DOCX import/pagination engine. |
 | Sheets | Implemented; formulas/undo/save/reopen checked | Limited formulas, row/column structure, record-preserving sort, Find/Replace, CSV and paste; no complete Excel-compatible engine. |
 | Charts and tables | Implemented; undo and editable objects checked | Editable groups; no linked external datasets. |

@@ -1,0 +1,13 @@
+.text-format-button {flex:0 0 auto;}
+.text-case-icon {font-size:16px;letter-spacing:-1px;line-height:1;}
+.text-format-menu {position:fixed;z-index:160;width:264px;max-height:calc(100vh - 16px);overflow:auto;padding:8px;border:1px solid var(--border,#d9d9df);border-radius:12px;background:var(--surface-raised,#fff);color:var(--text,#18191b);box-shadow:var(--shadow-float,0 8px 28px #0003);font-family:var(--ui-font-family,inherit);font-size:14px;}
+.text-format-menu button {display:flex;align-items:center;gap:10px;width:100%;min-height:34px;border:0;border-radius:6px;padding:7px 10px;background:transparent;color:inherit;text-align:left;font-family:inherit;font-size:13px;cursor:pointer;}
+.text-format-menu button:hover,.text-format-menu button:focus-visible {background:var(--surface-hover,#f1f0f7);outline:2px solid transparent;}
+.text-format-menu button:focus-visible {outline-color:var(--accent,#8b3dff);outline-offset:-2px;}
+.text-format-menu button[aria-checked=true] {background:var(--surface-hover,#f1f0f7);}
+.text-format-section-label {display:flex;align-items:center;justify-content:space-between;padding:10px 10px 5px;color:var(--muted,#63656b);font-size:11px;font-weight:600;}
+.text-format-section-label:not(:first-child) {border-top:1px solid var(--border,#d9d9df);margin-top:7px;}
+.text-weight-options {display:grid;grid-template-columns:1fr 1fr;}
+.text-weight-options button {gap:5px;min-height:32px;padding:6px 7px;font-size:12px;}
+.text-weight-options button small {margin-left:auto;color:var(--muted,#63656b);font-size:10px;font-weight:400;}
+.text-list-options button {gap:10px;}

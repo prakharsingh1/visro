@@ -1,0 +1,34 @@
+.frame-library{min-width:0;color:var(--text)}
+.frame-library-search{display:flex;align-items:center;gap:9px;border:1px solid var(--border);background:var(--surface);padding:10px 12px;border-radius:8px;margin-bottom:12px}
+.frame-library-search input{min-width:0;width:100%;border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:14px}
+.frame-library-filters{display:flex;align-items:flex-end;gap:8px;margin:4px 0 14px}
+.frame-library-filters label{display:flex;flex:1;min-width:0;flex-direction:column;gap:5px;color:var(--muted);font-size:11px;font-weight:600}
+.frame-library-filters select{height:35px;min-width:0;width:100%;padding:0 9px;background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--text);font:inherit;font-size:12px}
+.frame-library-filters .quiet-button{height:35px;gap:5px;padding:0 10px;font-size:12px}
+.frame-library-filters .active{color:var(--accent);background:var(--accent-soft)}
+.frame-library-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.frame-library-card{position:relative;min-width:0;overflow:hidden;border:1px solid transparent;border-radius:8px}
+.frame-library-card:hover,.frame-library-card:focus-within{border-color:var(--border)}
+.frame-library-add{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;min-width:0;border:0;background:transparent;padding:3px;color:var(--text);cursor:grab;text-align:center}
+.frame-library-add:active{cursor:grabbing}
+.frame-library-add:disabled{cursor:wait;opacity:.5}
+.frame-library-add:focus-visible{outline:2px solid var(--accent);outline-offset:-2px;border-radius:7px}
+.frame-library-art{display:flex;align-items:center;justify-content:center;aspect-ratio:1;width:100%;background:var(--surface-2,#f7f5fa);border-radius:7px;padding:8px;box-sizing:border-box;pointer-events:none}
+.frame-library-preview{display:block;width:100%;height:100%;overflow:visible;pointer-events:none}
+.frame-library-name{width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;line-height:15px;color:var(--muted)}
+.frame-library-slots{font-size:9px;line-height:11px;color:var(--muted)}
+.frame-library-star{position:absolute;top:7px;right:7px;display:flex;align-items:center;justify-content:center;width:24px;height:24px;padding:0;border:0;border-radius:50%;background:#ffffffeb;color:#6f697a;cursor:pointer;opacity:0;transition:opacity .1s}
+.frame-library-card:hover .frame-library-star,.frame-library-card:focus-within .frame-library-star,.frame-library-star.active{opacity:1}
+.frame-library-star.active{color:#7350b9}
+.frame-library-pagination{display:flex;align-items:center;justify-content:center;gap:14px;margin:16px 0 4px;font-size:12px;color:var(--muted)}
+.frame-library-pagination .quiet-button{width:32px;height:32px;padding:0;justify-content:center}
+.frame-library-empty{display:flex;flex-direction:column;align-items:center;gap:10px;padding:30px 12px;text-align:center;color:var(--muted);font-size:13px}
+.frame-library-empty p{margin:0 0 6px}
+.frame-library-recent{margin-bottom:16px}
+.frame-library-recent-row{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px}
+.frame-library-card.small .frame-library-add{padding:1px;gap:4px}
+.frame-library-card.small .frame-library-art{padding:4px}
+.frame-library-card.small .frame-library-name{font-size:9px;line-height:12px}
+.frame-library-see-all{border:0;background:none;padding:3px 0;color:var(--text);font:inherit;font-size:12px;cursor:pointer}
+.frame-library-see-all:hover{text-decoration:underline}
+.frame-library.compact .frame-library-grid{gap:8px}

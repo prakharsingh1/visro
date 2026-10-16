@@ -566,8 +566,9 @@ test('undo and redo restore complete documents across page creation and page edi
     await editor.addPage();
     editor.addShape('circle');
     editor.updateSelected({ fill: '#112244' });
+    const survivingCircleId=editor.selected.id;
     await editor.undo();
-    assert.equal(editor.selected, null);
+    assert.equal(editor.selected.id,survivingCircleId,'style Undo preserves a surviving selection');
     assert.equal(editor.state.pages.length, 2);
     await editor.undo();
     assert.equal(editor.state.layers.length, 0);

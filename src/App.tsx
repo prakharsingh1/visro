@@ -73,12 +73,20 @@ import { StudioEditor } from "./editor";
 import { Home } from "./Home";
 import {PublicImageLibrary} from './PublicImageLibrary';
 import {GraphicsLibrary} from './GraphicsLibrary';
+import {EditingModeMenu,type EditingMode} from './EditingModeMenu';
+import {installEditorAccess,type EditorAccess} from './editor-access';
+import './editor-layout.css';
+import {FrameLibrary} from './FrameLibrary';
+import {TEXT_FONT_WEIGHTS} from './text-formatting';
+import {TextFormatting} from './TextFormatting';
+import {ContinuousPages} from './ContinuousPages';
 import {ShapeLibrary} from './ShapeLibrary';
 import {getPublicImage as fetchPublicImage} from './public-images';
 import { TemplateBrowser } from "./TemplateBrowser";
 import { QuickActions, type QuickAction } from "./QuickActions";
 import {normalizeWorkspaceTabs,upsertWorkspaceTab,type WorkspaceTab} from './workspace-tabs';
 import {PositionPanel} from "./PositionPanel";
+import {StrokeStyle,CornerRounding} from './StrokeStyle';
 import {ImageControls} from "./ImageControls";
 import {ElementMenu,type ElementAction} from "./ElementMenu";
 import {CanvasGuides} from "./CanvasGuides";
@@ -116,7 +124,7 @@ import {
 } from "./storage";
 
 type Panel =
-  "templates" | "elements" | "text" | "uploads" | "ai" | "brand" | "draw" | "tools" | "video" | "documents" | "sheets" | "projects" | "apps" | "components" | "audio" | "background" | "charts" | "image" | "color" | "font";
+  "templates" | "elements" | "text" | "uploads" | "ai" | "brand" | "draw" | "tools" | "video" | "documents" | "sheets" | "projects" | "apps" | "components" | "audio" | "background" | "charts" | "image" | "color" | "font" | "shape-edit";
 type AIKind = "design" | "image" | "edit" | "copy" | "translate" | "rewrite" | "summarize" | "remix" | "resize" | "voice" | "video";
 type Modal = "settings" | "export" | "resize" | "library" | "present" | null;
 const COLORS = [
@@ -266,7 +274,7 @@ export default function App() {
     [mode, setMode] = useState<"design"|"document"|"sheet"|"video">("design"),
     [customFonts, setCustomFonts] = useState<string[]>([]),
     [fileMenu, setFileMenu] = useState(false), [presentAuto, setPresentAuto] = useState(false);
-  const [elementsTab,setElementsTab]=useState<'all'|'shapes'|'graphics'|'photos'>('all'),[publicImagePreviewOpen,setPublicImagePreviewOpen]=useState(false);
+  const [elementsTab,setElementsTab]=useState<'all'|'shapes'|'graphics'|'photos'|'frames'|'grids'>('all'),[publicImagePreviewOpen,setPublicImagePreviewOpen]=useState(false);
   const photoSources=useRef(new Map<string,NonNullable<import('./editor-types').ElementMetadata['source']>>());
   const [maskSources,setMaskSources]=useState<{original:string;current:string}|null>(null);
   const [quickActionsOpen,setQuickActionsOpen]=useState(false);
@@ -281,11 +289,17 @@ export default function App() {
   const [contextMenu,setContextMenu]=useState<{x:number;y:number}|null>(null),[elementDialog,setElementDialog]=useState<{kind:'link'|'alt'|'component';value:string}|null>(null),[components,setComponents]=useState<Awaited<ReturnType<typeof listAssets>>>([]);
   const getEditor=useCallback(()=>engine.current,[]);
   const closeContext=useCallback(()=>setContextMenu(null),[]);
-  const interactionRef=useRef(false),replaceImageRef=useRef(false);
+  const interactionRef=useRef(false),replaceImageRef=useRef<string|null>(null);
+  const accessRef=useRef<EditorAccess|null>(null);
+  const [editingMode,setEditingMode]=useState<EditingMode>('editing');
+  const pageNavigator=useRef<((id:string)=>Promise<void>)|null>(null);
+  const [visiblePageIndex,setVisiblePageIndex]=useState(0),[textMenuOpen,setTextMenuOpen]=useState(false),[replaceTarget,setReplaceTarget]=useState<{id:string;pageId:string}|null>(null);
   const stylePaintRef=useRef(false),browserClipboardRef=useRef<Record<string,unknown>[]>([]);
+  useEffect(()=>{const input=uploadRef.current;if(!input)return;const cancel=()=>{replaceImageRef.current=null;};input.addEventListener('cancel',cancel);return()=>input.removeEventListener('cancel',cancel);},[]);
   const [positionTab,setPositionTab]=useState<"arrange"|"layers">("arrange"),[colorHex,setColorHex]=useState("#000000"),[graphicColorTarget,setGraphicColorTarget]=useState<string|null>(null);
   useEffect(()=>setGraphicColorTarget(null),[selected?.id]);
-  const [toolbarPopover,setToolbarPopover]=useState<"spacing"|"transparency"|null>(null),[timerOpen,setTimerOpen]=useState(false),[timerSeconds,setTimerSeconds]=useState(0),[timerRunning,setTimerRunning]=useState(false);
+  useEffect(()=>{if(replaceTarget&&(replaceTarget.pageId!==state.activePageId||selected?.id!==replaceTarget.id))setReplaceTarget(null);},[replaceTarget,state.activePageId,selected?.id]);
+  const [toolbarPopover,setToolbarPopover]=useState<"spacing"|"transparency"|"flip"|null>(null),[timerOpen,setTimerOpen]=useState(false),[timerSeconds,setTimerSeconds]=useState(0),[timerRunning,setTimerRunning]=useState(false);
   const [cropSource,setCropSource]=useState<ReturnType<StudioEditor["getImageCropSource"]>>(null);
   const [viewSettings,setViewSettings]=useState(()=>{try{const value=JSON.parse(localStorage.getItem('visro-view-settings')||'{}');return value&&typeof value==='object'?value as {rulers?:boolean;margins?:boolean;snapping?:boolean;locked?:boolean}:{};}catch{return {};}});
   const [viewMenu,setViewMenu]=useState(false),[guidesDialog,setGuidesDialog]=useState(false),[guideGrid,setGuideGrid]=useState({columns:3,rows:0,gap:0,margin:0});
@@ -308,6 +322,10 @@ export default function App() {
     nativeSavedId = useRef<string | null>(null),
     errorTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const projectGeneration = useRef(0), switchingProject = useRef(false), initializedProject = useRef(false);
+  const publishPagePreview=useCallback((id:string,data:string,projectKey:string)=>{
+    if(projectKey!==activeId.current||switchingProject.current)return;
+    setPageThumbnails(previous=>previous[id]===data?previous:{...previous,[id]:data});
+  },[]);
   const projectSwitchQueue = useRef<Promise<unknown>>(Promise.resolve());
   const startupPreparation = useRef<Promise<void>>(Promise.resolve());
   const stableProject = useRef<{id:string;name:string;project:Parameters<StudioEditor['loadProject']>[0]}|null>(null);
@@ -380,6 +398,7 @@ export default function App() {
         const target=await prepare();
         if(generation!==projectGeneration.current||engine.current!==studio)return false;
         activeId.current=target.id;
+        setPageThumbnails({});
         if(target.load)await target.load(studio);
         else if(target.project)await studio.loadProject(target.project);
         if(generation!==projectGeneration.current||engine.current!==studio)return false;
@@ -397,7 +416,7 @@ export default function App() {
           else await studio.loadTemplate(TEMPLATES[0].id);
           if(generation===projectGeneration.current&&engine.current===studio){
             const restored=previous??{id:previousId,name:TEMPLATES[0].name,project:studio.serialize(TEMPLATES[0].name)};
-            stableProject.current=restored;activeId.current=restored.id;nameRef.current=restored.name;setName(restored.name);restoreMode(restored.project);
+            stableProject.current=restored;activeId.current=restored.id;setPageThumbnails({});nameRef.current=restored.name;setName(restored.name);restoreMode(restored.project);
             initializedProject.current=true;switchingProject.current=false;setReady(true);
           }
         }
@@ -440,12 +459,13 @@ export default function App() {
       },
     });
     engine.current = studio;
+    accessRef.current=installEditorAccess(studio);
     const resize = () => {
-      const r = viewportRef.current!.getBoundingClientRect();
-      studio.resizeViewport(r.width, r.height);
+      const node = viewportRef.current!;
+      studio.resizeViewport(node.clientWidth, node.clientHeight);
     };
     const observer = new ResizeObserver(resize);
-    observer.observe(viewportRef.current);
+    observer.observe(viewportRef.current,{box:'border-box'});
     const preparation=(async () => {
       try {
         const [current, assets, localTypeface] = await Promise.all([getDesign(startupId), listAssets(["font"]), desktop?.getLocalTypeface?.().catch(()=>null) ?? fetch("/local-typeface?v=2",{cache:"no-store"}).then(r=>r.ok?r.json():null).catch(()=>null),loadDesignFonts()]);
@@ -493,7 +513,7 @@ export default function App() {
       if(initializedProject.current&&!switchingProject.current){try{studio.flushPendingChanges();stableProject.current={id:activeId.current,name:nameRef.current,project:studio.serialize(nameRef.current)};}catch{/* Preserve the last complete snapshot during a cancelled load. */}}
       alive = false;
       observer.disconnect();
-      studio.destroy();
+      accessRef.current?.dispose();accessRef.current=null;studio.destroy();
       if (engine.current === studio) engine.current = null;
       clearTimeout(errorTimer.current);
     };
@@ -545,8 +565,42 @@ export default function App() {
         .catch((e) => notify(e.message));
   }, [notify]);
   useEffect(()=>{if(!timerRunning)return;const t=setInterval(()=>setTimerSeconds(v=>v+1),1000);return()=>clearInterval(t);},[timerRunning]);
-  useEffect(()=>{if(!ready||home||mode!=="design")return;let cancelled=false;const task=setTimeout(()=>{const run=async()=>{if(cancelled||interactionRef.current)return;const studio=engine.current;if(!studio)return;try{const id=studio.getState().activePageId;const data=await studio.exportImage({format:'jpeg',scale:.12,quality:.6});if(!cancelled)setPageThumbnails(v=>v[id]===data?v:{...v,[id]:data});}catch{/* The page remains usable without a thumbnail. */}};if('requestIdleCallback'in window)(window as Window&{requestIdleCallback:(fn:()=>void)=>number}).requestIdleCallback(()=>void run());else void run();},1100);return()=>{cancelled=true;clearTimeout(task);};},[state.revision,state.activePageId,ready,home,mode]);
-  useEffect(()=>{const node=viewportRef.current;if(!node)return;const wheel=(e:WheelEvent)=>{if(!ready||switchingProject.current||home||mode!=='design')return;e.preventDefault();const studio=engine.current;if(!studio)return;if(e.ctrlKey||e.metaKey){const r=node.getBoundingClientRect();studio.zoomAt(studio.getState().zoom*Math.exp(-e.deltaY*.003),{x:e.clientX-r.left,y:e.clientY-r.top});}else studio.pan(-e.deltaX,-e.deltaY);};node.addEventListener('wheel',wheel,{passive:false});return()=>node.removeEventListener('wheel',wheel);},[home,mode,ready]);
+  useEffect(()=>{
+    if(!ready||home||mode!=="design")return;
+    let cancelled=false,idle:number|undefined;
+    const origin=activeId.current,generation=projectGeneration.current;
+    const task=setTimeout(()=>{
+      const run=async()=>{
+        if(cancelled||interactionRef.current)return;
+        const studio=engine.current;if(!studio)return;
+        try{
+          const {activePageId:id,revision}=studio.getState();
+          const data=await studio.exportImage({format:'jpeg',scale:.12,quality:.6});
+          if(!cancelled&&engine.current===studio&&generation===projectGeneration.current&&revision===studio.getState().revision)publishPagePreview(id,data,origin);
+        }catch{/* The page remains usable without a thumbnail. */}
+      };
+      if('requestIdleCallback'in window)idle=window.requestIdleCallback(()=>void run());else void run();
+    },1100);
+    return()=>{cancelled=true;clearTimeout(task);if(idle!==undefined&&'cancelIdleCallback'in window)window.cancelIdleCallback(idle);};
+  },[state.revision,state.activePageId,ready,home,mode,publishPagePreview]);
+  useEffect(()=>{
+    const key=(event:KeyboardEvent)=>{
+      const studio=engine.current;if(!ready||home||mode!=='design'||switchingProject.current||!studio?.isTextEditing()||event.isComposing)return;
+      const target=event.target as HTMLElement;if(target!==(studio.canvas.getActiveObject() as unknown as {hiddenTextarea?:HTMLTextAreaElement}|undefined)?.hiddenTextarea)return;
+      let handled=false;
+      if(!event.metaKey&&!event.ctrlKey&&!event.altKey){
+        if(event.key==='Enter'&&!event.shiftKey)handled=studio.continueSelectedTextList();
+        else if(event.key==='Tab')handled=studio.indentSelectedTextList(event.shiftKey?-1:1);
+      }else if((event.metaKey||event.ctrlKey)&&!event.altKey){
+        const selected=studio.getSelected();if(!selected||selected.type!=='text')return;
+        const key=event.key.toLowerCase();
+        if(['b','i','u'].includes(key)){studio.updateSelectedTextStyle(key==='b'?{fontWeight:Number(selected.fontWeight)>=600||selected.fontWeight==='bold'?400:700}:key==='i'?{fontStyle:selected.fontStyle==='italic'?'normal':'italic'}:{underline:!selected.underline});handled=true;}
+      }
+      if(handled){event.preventDefault();event.stopImmediatePropagation();}
+    };
+    window.addEventListener('keydown',key,true);return()=>window.removeEventListener('keydown',key,true);
+  },[ready,home,mode]);
+  useEffect(()=>{if(mode!=='design'&&editingMode!=='editing'){setEditingMode('editing');void accessRef.current?.setMode('editing');}},[mode,editingMode]);
   const save = useCallback(async () => {
     if (!engine.current || saving.current) return;
     saving.current = true;
@@ -601,7 +655,7 @@ export default function App() {
       if(e.key==='Escape'){if(cropSource){setCropSource(null);return;}if(maskSources){setMaskSources(null);return;}if(guidesDialog){setGuidesDialog(false);return;}if(elementDialog){setElementDialog(null);return;}if(contextMenu){setContextMenu(null);return;}if(modal){setModal(null);return;}if(toolbarPopover){setToolbarPopover(null);return;}if(fileMenu){setFileMenu(false);return;}}
       if(quickActionsOpen)return;
       if(cropSource||maskSources)return;
-      if(contextMenu&&e.key.startsWith('Arrow'))return;
+      if(textMenuOpen||contextMenu&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown','Home','End'].includes(e.key))return;
       const target = e.target as HTMLElement;
       if (target.closest('input,textarea,select,[contenteditable="true"]'))
         return;
@@ -694,7 +748,7 @@ export default function App() {
     const blur=()=>{engine.current?.setPanMode(false);engine.current?.flushPendingChanges();};
     window.addEventListener("keydown",key);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
     return()=>{window.removeEventListener('keydown',key);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
-  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit,quickActionsOpen,mode,publicImagePreviewOpen]);
+  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit,quickActionsOpen,mode,publicImagePreviewOpen,textMenuOpen]);
   useEffect(() => {
     if (!desktop) return;
     return desktop.onMenu((action) => {
@@ -734,9 +788,9 @@ export default function App() {
       engine.current?.setDrawing(false);
     }
   };
-  const importPublicImage=async(image:Pick<PublicImage,'id'>,options?:{signal?:AbortSignal;prepared?:PublicImageResult},center?:{x:number;y:number})=>{
+  const importPublicImage=async(image:Pick<PublicImage,'id'>,options?:{signal?:AbortSignal;prepared?:PublicImageResult;targetFrameId?:string},center?:{x:number;y:number})=>{
     const studio=engine.current;if(!studio||!ready||switchingProject.current)return;
-    const id=activeId.current,generation=projectGeneration.current,pageId=studio.getState().activePageId;
+    const id=activeId.current,generation=projectGeneration.current,pageId=studio.getState().activePageId,target=replaceTarget?.pageId===studio.getState().activePageId?replaceTarget:null;
     const result=options?.prepared?.id===image.id?options.prepared:await fetchPublicImage({id:image.id,size:'image'},options?.signal);
     if(options?.signal?.aborted)throw new DOMException('Adding this photo was cancelled.','AbortError');
     const source={id:result.id,title:result.title,artist:result.artist,license:result.license,licenseUrl:result.licenseUrl,sourceUrl:result.sourceUrl};
@@ -744,20 +798,24 @@ export default function App() {
     photoSources.current.set(result.data,source);setUploads(previous=>[result.data,...previous.filter(data=>data!==result.data)]);
     if(options?.signal?.aborted)throw new DOMException('Adding this photo was cancelled.','AbortError');
     if(engine.current!==studio||activeId.current!==id||projectGeneration.current!==generation||switchingProject.current||studio.getState().activePageId!==pageId){notify('Photo saved in Uploads. The design changed while it was loading.');return;}
-    await studio.addImage(result.data,result.name,{center,pageId,source,signal:options?.signal});
+    if(target&&!center&&!options?.targetFrameId){await studio.replaceImageById(target.id,result.data,source,{signal:options?.signal});setReplaceTarget(null);}else await studio.addImage(result.data,result.name,{center,pageId,source,signal:options?.signal,targetFrameId:options?.targetFrameId});
   };
   const useTemplate = useCallback((id:string,templateName:string)=>void work('Applying template',async()=>{
     if(home){if(!await switchProject(async()=>({id:crypto.randomUUID(),name:templateName,load:studio=>studio.loadTemplate(id)})))return;}else{const template=TEMPLATES.find(t=>t.id===id);if(template){const w=state.width,h=state.height;await engine.current!.insertDesign({...template,width:w,height:h,elements:template.elements.map(e=>({...e,x:e.x*w/template.width,y:e.y*h/template.height,width:(e.width||200)*w/template.width,height:(e.height||200)*h/template.height,fontSize:e.fontSize?e.fontSize*Math.min(w/template.width,h/template.height):undefined}))});}}
     setMode('design');contentRef.current=undefined;setHome(false);
   }),[work,home,state.width,state.height,switchProject]);
-  const uploadFiles = async (files: FileList | File[] | null) => {
+  const uploadFiles = async (files: FileList | File[] | null,placement?:{center:{x:number;y:number};pageId:string;targetFrameId?:string}) => {
     if (!files) return;
+    const studio=engine.current,id=activeId.current,generation=projectGeneration.current,pageId=studio?.getState().activePageId,replacementId=placement?null:replaceImageRef.current||(replaceTarget&&replaceTarget.pageId===pageId?replaceTarget.id:null);
+    replaceImageRef.current=null;
+    const stillHere=()=>studio&&engine.current===studio&&activeId.current===id&&projectGeneration.current===generation&&!switchingProject.current&&studio.getState().activePageId===pageId;
     await work("Adding your images", async () => {
+      let firstImage=true;
       for (const file of Array.from(files)) {
         if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf")){if(await switchProject(async()=>({id:crypto.randomUUID(),name:file.name.replace(/\.pdf$/i,""),load:studio=>importPDF(file,studio,setBusy)})))notify("PDF pages imported for annotation.");continue;}
         if (file.type === "image/svg+xml" || file.name.endsWith(".svg")) {
           if (file.size > 5 * 1024 * 1024) throw new Error("Choose an SVG smaller than 5 MB.");
-          await engine.current!.addSVG(await file.text()); continue;
+          const svg=await file.text();if(stillHere())await studio!.addSVG(svg);continue;
         }
         if (
           !["image/png", "image/jpeg", "image/webp", "image/gif"].includes(
@@ -777,21 +835,24 @@ export default function App() {
         });
         setUploads((s) => [data, ...s]);
         await storeAsset({id:crypto.randomUUID(),name:file.name,data,kind:"image",updated:Date.now()});
-        if(replaceImageRef.current&&engine.current?.getSelected()?.type==="image"){await engine.current.replaceSelectedImage(data);replaceImageRef.current=false;}else await engine.current!.addImage(data);
+        if(!stillHere()){notify("Image saved in Uploads. The design changed while it was loading.");continue;}
+        if(firstImage&&replacementId){await studio!.replaceImageById(replacementId,data);setReplaceTarget(null);}else await studio!.addImage(data,file.name,{...placement,pageId,targetFrameId:firstImage?placement?.targetFrameId:undefined});firstImage=false;
       }
     });
   };
   const removeBackground = () =>
     void work("Preparing background removal", async () => {
-      const current = engine.current?.getSelected();
+      const studio=engine.current,generation=projectGeneration.current,pageId=studio?.getState().activePageId;
+      const current = studio?.getSelected();
       if (!current || current.type !== "image")
         throw new Error("Select an image first.");
-      const original = await engine.current!.selectedImageDataURL();
+      const original = await studio!.selectedImageDataURL();
       const data = await removeImageBackground(original, (label, percent) => {
         setBusy(label);
         setBusyPercent(percent);
       });
-      await engine.current!.replaceSelectedImage(data);
+      if(engine.current!==studio||projectGeneration.current!==generation||studio?.getState().activePageId!==pageId||studio?.getSelected()?.id!==current.id||accessRef.current?.getMode()!=='editing'){notify('Background removal finished. Select the original photo and run it again to apply it.');return;}
+      await studio!.replaceSelectedImage(data);
       notify("Background removed. Your image now has true transparency.");
     });
   const exportDesign = () =>
@@ -911,10 +972,14 @@ export default function App() {
     await switchProject(async()=>({id:crypto.randomUUID(),name:doc.name,project:doc}));
   });
   const importFonts = async (files:FileList|null) => void work("Loading font", async () => {
-    for(const file of Array.from(files||[])){if(file.size>15*1024*1024)throw new Error("Choose a font smaller than 15 MB.");const family=file.name.replace(/\.[^.]+$/,"").replace(/[^a-zA-Z0-9 _-]/g,"");const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(new Error("Could not read font."));r.readAsDataURL(file);});const font=new FontFace(family,`url(${data})`);await font.load();document.fonts.add(font);await storeAsset({id:crypto.randomUUID(),name:family,data,kind:"font",updated:Date.now()});setCustomFonts(f=>[...new Set([...f,family])]);if(selected?.type==="text")update({fontFamily:family});notify(`${family} is ready to use.`);}
+    const studio=engine.current,generation=projectGeneration.current,targetId=studio?.getSelected()?.id;
+    for(const file of Array.from(files||[])){if(file.size>15*1024*1024)throw new Error("Choose a font smaller than 15 MB.");const family=file.name.replace(/\.[^.]+$/,"").replace(/[^a-zA-Z0-9 _-]/g,"");const data=await new Promise<string>((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result));r.onerror=()=>reject(new Error("Could not read font."));r.readAsDataURL(file);});const font=new FontFace(family,`url(${data})`);await font.load();document.fonts.add(font);await storeAsset({id:crypto.randomUUID(),name:family,data,kind:"font",updated:Date.now()});setCustomFonts(f=>[...new Set([...f,family])]);if(studio&&engine.current===studio&&generation===projectGeneration.current&&targetId&&studio.getSelected()?.id===targetId)studio.updateSelectedTextStyle({fontFamily:family});notify(`${family} is ready to use.`);}
   });
-  const update = (changes: Parameters<StudioEditor["updateSelected"]>[0]) =>
-    engine.current?.updateSelected(changes);
+  const update = (changes: Parameters<StudioEditor["updateSelected"]>[0]) => {
+    const textStyleKeys=['fill','stroke','strokeWidth','fontSize','fontFamily','fontWeight','fontStyle','underline','linethrough','align','lineHeight','letterSpacing','charSpacing'];
+    if(selected?.type==='text'&&Object.keys(changes).every(key=>textStyleKeys.includes(key)))engine.current?.updateSelectedTextStyle(changes);
+    else engine.current?.updateSelected(changes);
+  };
   const openWorkspaceTab=(id:string)=>void work('Opening design',async()=>{
     forgetClosedTab(id);
     if(id===activeId.current&&ready){setHome(false);setWorkspaceTabs(tabs=>upsertWorkspaceTab(tabs,{id,name:nameRef.current}));return;}
@@ -1006,6 +1071,7 @@ export default function App() {
     else if(action==='alt')setElementDialog({kind:'alt',value:cur?.metadata?.altText||''});
     else if(action==='timing'){choosePanel('tools');setToolTab('animate');}
     else if(action==='write'||action==='translate'){setAiKind(action==='write'?'rewrite':'translate');choosePanel('ai');}
+    else if(action==='frame')void work('Changing shape to frame',()=>studio.convertSelectedShapeToFrame());
     else if(action==='crop')openCrop();
     else if(action==='background'&&cur?.type==='image')studio.setSelectedImageAsBackground();
   };
@@ -1020,12 +1086,15 @@ export default function App() {
             <button onClick={()=>{setGuidesDialog(true);setFileMenu(false);}}>Add guides</button><button disabled={!state.pageMetadata?.guides?.x.length&&!state.pageMetadata?.guides?.y.length} onClick={()=>engine.current?.setPageMetadata({guides:{x:[],y:[]}})}>Clear guides</button>
           </div>}</div><button onClick={()=>{setFileMenu(false);setModal('settings');}}>Visro settings…</button>
         </div>}</div>
-        <button className="quiet-button top-menu" onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>Resize <ChevronDown size={13}/></button>
-        <IconButton title="Undo (⌘Z)" disabled={mode==='design'&&!state.canUndo} onClick={()=>historyEdit()}><Undo2 size={18}/></IconButton>
-        <IconButton title="Redo (⌘⇧Z)" disabled={mode==='design'&&!state.canRedo} onClick={()=>historyEdit(true)}><Redo2 size={18}/></IconButton>
+        <button className="quiet-button top-menu" disabled={editingMode!=='editing'} onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>Resize <ChevronDown size={13}/></button>
+        <EditingModeMenu mode={editingMode} disabled={mode!=='design'} onChange={next=>{setEditingMode(next);setPanelOpen(false);setInspectorOpen(false);setToolbarPopover(null);setContextMenu(null);setDrawing(false);setCropSource(null);setMaskSources(null);setElementDialog(null);if(next==='viewing')setCommentsOpen(false);void accessRef.current?.setMode(next);}}/>
+        <span className="topbar-mode-divider"/>
+        <IconButton title="Undo (⌘Z)" disabled={editingMode!=='editing'||mode==='design'&&!state.canUndo} onClick={()=>historyEdit()}><Undo2 size={18}/></IconButton>
+        <IconButton title="Redo (⌘⇧Z)" disabled={editingMode!=='editing'||mode==='design'&&!state.canRedo} onClick={()=>historyEdit(true)}><Redo2 size={18}/></IconButton>
         <div className="document-title">
           <input
             aria-label="Design name"
+            readOnly={editingMode!=='editing'}
             value={name}
             onChange={(e) => {
               setName(e.target.value);
@@ -1049,7 +1118,7 @@ export default function App() {
         <div className="top-actions"><button className="avatar" title="Settings" aria-label="Settings" onClick={()=>setModal("settings")}>PS</button><IconButton title="View all comments" active={commentsOpen} onClick={()=>setCommentsOpen(!commentsOpen)}><StudioIcon name="comments" size={24}/></IconButton><button className="quiet-button share-button" onClick={()=>setModal('export')}>Share</button><button className="primary-button" onClick={()=>void showPresent()}><Presentation size={19}/>Present</button></div>
       </header>
       <div className="workspace">
-        <nav className="tool-rail" aria-label="Editor tools">
+        <nav className="tool-rail" aria-label="Editor tools" inert={editingMode!=='editing'}>
           {nav.map(({ id, label, Icon }) => (
             <button
               key={id}
@@ -1070,7 +1139,7 @@ export default function App() {
             </IconButton>
           </div>
         </nav>
-        <aside className={`asset-panel ${panel==='elements'?'elements-panel':''} ${!panelOpen||inspectorOpen?"hidden":""}`}>
+        <aside inert={editingMode!=='editing'} className={`asset-panel ${panel==='elements'?'elements-panel':''} ${!panelOpen||inspectorOpen?"hidden":""}`} onPointerDownCapture={event=>{if(['font','color'].includes(panel)&&engine.current?.isTextEditing()&&(event.target as HTMLElement).closest('button'))event.preventDefault();}}>
           <div className="panel-heading">
             <div>
 
@@ -1087,7 +1156,7 @@ export default function App() {
                           ? "Visro AI"
                           : panel === "brand"
                             ? "Brand"
-                            : panel === "projects" ? "Projects" : panel === "apps" ? "Apps" : panel === "components" ? "Components" : panel === "audio" ? "Audio" : panel === "background" ? "Background" : panel === "charts" ? "Charts" : panel === "image" ? "Edit image" : panel === "color" ? "Colour" : panel === "font" ? "Font" : panel === "tools" ? toolTab[0].toUpperCase()+toolTab.slice(1) : panel === "video" ? "Video" : panel === "documents" ? "Documents" : panel === "sheets" ? "Sheets" : "Draw"}
+                            : panel === "projects" ? "Projects" : panel === "apps" ? "Apps" : panel === "components" ? "Components" : panel === "audio" ? "Audio" : panel === "background" ? "Background" : panel === "charts" ? "Charts" : panel === "shape-edit" ? "Edit" : panel === "image" ? "Edit image" : panel === "color" ? "Colour" : panel === "font" ? "Font" : panel === "tools" ? toolTab[0].toUpperCase()+toolTab.slice(1) : panel === "video" ? "Video" : panel === "documents" ? "Documents" : panel === "sheets" ? "Sheets" : "Draw"}
               </h2>
             </div>
             <button className="icon-button" aria-label="Close side panel" onClick={()=>setPanelOpen(false)}><X size={20}/></button>
@@ -1142,17 +1211,24 @@ export default function App() {
           )}
           {panel === "elements" && (
             <>
-              <div className="elements-filter-tabs" role="tablist" aria-label="Element categories">{(['all','shapes','graphics','photos'] as const).map(tab=><button key={tab} role="tab" aria-selected={elementsTab===tab} tabIndex={elementsTab===tab?0:-1} onClick={()=>setElementsTab(tab)}>{tab[0].toUpperCase()+tab.slice(1)}</button>)}</div>
-              {elementsTab==='photos'?<PublicImageLibrary query={search} onQueryChange={setSearch} showSearch={false} onInsert={importPublicImage} onNotify={notify} onPreviewChange={setPublicImagePreviewOpen}/>:elementsTab==='graphics'?<GraphicsLibrary query={search} onQueryChange={setSearch} onInsert={graphic=>engine.current?.addGraphic(graphic.id)} onNotify={notify}/>:elementsTab==='shapes'?<ShapeLibrary query={search} onInsert={type=>engine.current?.addShape(type)}/>:<>
-                <div className="element-section-heading"><h3>Shapes</h3><button onClick={()=>setElementsTab('shapes')}>See all</button></div>
-                <ShapeLibrary query={search} compact onInsert={type=>engine.current?.addShape(type)}/>
+              {elementsTab!=='all'&&<button className="element-library-back" onClick={()=>{setElementsTab('all');setSearch('');}}><ChevronLeft size={18}/>Elements</button>}
+              {search.trim()&&<div className="elements-filter-tabs" role="tablist" aria-label="Element categories">{(['all','shapes','graphics','photos','frames','grids'] as const).map(tab=><button key={tab} role="tab" aria-selected={elementsTab===tab} tabIndex={elementsTab===tab?0:-1} onClick={()=>setElementsTab(tab)}>{tab[0].toUpperCase()+tab.slice(1)}</button>)}</div>}
+              {elementsTab==='photos'?<PublicImageLibrary query={search} onQueryChange={setSearch} showSearch={false} onInsert={importPublicImage} onNotify={notify} onPreviewChange={setPublicImagePreviewOpen}/>:elementsTab==='graphics'?<GraphicsLibrary query={search} onQueryChange={setSearch} onInsert={graphic=>engine.current?.addGraphic(graphic.id)} onNotify={notify}/>:elementsTab==='shapes'?<ShapeLibrary query={search} onInsert={type=>engine.current?.addShape(type)}/>:elementsTab==='frames'||elementsTab==='grids'?<FrameLibrary kind={elementsTab==='grids'?'grid':'frame'} query={search} onQueryChange={setSearch} onInsert={item=>engine.current!.insertFrame(item.id)} onNotify={notify}/>:<>
+                {!search.trim()&&<><div className="element-section-heading"><h3>Browse categories</h3></div><div className="elements-browse-categories">{[
+                  {name:'Shapes',icon:'elements',run:()=>setElementsTab('shapes')},{name:'Graphics',icon:'components',run:()=>setElementsTab('graphics')},{name:'Photos',icon:'image',run:()=>setElementsTab('photos')},
+                  {name:'Videos',icon:'video',run:()=>choosePanel('video')},{name:'Audio',icon:'audio',run:()=>choosePanel('audio')},{name:'Charts',icon:'charts',run:()=>choosePanel('charts')},
+                  {name:'Sheets',icon:'sheet',run:()=>choosePanel('sheets')},{name:'Tables',icon:'sheet',run:()=>{choosePanel('tools');setToolTab('tables');}},{name:'Frames',icon:'frames',run:()=>setElementsTab('frames')},
+                  {name:'Grids',icon:'grid',run:()=>setElementsTab('grids')},
+                ].map(item=><button key={item.name} onClick={item.run}><span><StudioIcon name={item.icon as Parameters<typeof StudioIcon>[0]["name"]} size={28}/></span>{item.name}</button>)}</div></>}
+                <div className="element-section-heading"><h3>Shapes</h3><button onClick={()=>setElementsTab('shapes')}>See all</button></div><ShapeLibrary query={search} compact onInsert={type=>engine.current?.addShape(type)}/>
                 <GraphicsLibrary query={search} onQueryChange={setSearch} compact onBrowse={()=>setElementsTab('graphics')} onInsert={graphic=>engine.current?.addGraphic(graphic.id)} onNotify={notify}/>
-                <div className="element-category-grid">{(['frames','charts','tables'] as ToolTab[]).map(t=><button className="composition-card" key={t} onClick={()=>{choosePanel('tools');setToolTab(t);}}><StudioIcon name={t==='charts'?'charts':t==='tables'?'sheet':'background'} size={24}/>{t[0].toUpperCase()+t.slice(1)}<ChevronRight size={18}/></button>)}</div>
-                <button className="full-button" onClick={()=>setElementsTab('photos')}><ImageIcon size={20}/>Photos<ChevronRight size={18}/></button>
+                <FrameLibrary kind="frame" query={search} compact onBrowse={()=>setElementsTab('frames')} onInsert={item=>engine.current!.insertFrame(item.id)} onNotify={notify}/>
+                <FrameLibrary kind="grid" query={search} compact onBrowse={()=>setElementsTab('grids')} onInsert={item=>engine.current!.insertFrame(item.id)} onNotify={notify}/>
               </>}
 
             </>
           )}
+          {panel==='shape-edit'&&<ShapeLibrary onInsert={type=>engine.current?.replaceShape(type)}/>}
           {panel === "text" && (
             <>
               <button
@@ -1265,13 +1341,14 @@ export default function App() {
               </div>
               {uploads.length > 0 && (
                 <>
-                  <div className="section-label">Images</div>
+                  {replaceTarget&&<div className="replace-image-hint"><span>Choose an image to replace this photo.</span><button onClick={()=>setReplaceTarget(null)}>Cancel</button></div>}
+                  <button className="full-button" onClick={()=>{choosePanel('elements');setElementsTab('photos');}}>Browse photos</button><div className="section-label">Images</div>
                   <div className="upload-grid">
                     {uploads.map((src, i) => (
                       <button
                         key={i}
                         draggable onDragStart={e=>e.dataTransfer.setData("text/visro-asset",JSON.stringify({kind:"image",src}))}
-                        onClick={() => void work("Adding image",async()=>{await engine.current?.addImage(src,"Image",{source:photoSources.current.get(src)});})}
+                        onClick={() => void work("Adding image",async()=>{const studio=engine.current;if(!studio)return;if(replaceTarget?.pageId===studio.getState().activePageId){await studio.replaceImageById(replaceTarget.id,src,photoSources.current.get(src));setReplaceTarget(null);}else await studio.addImage(src,"Image",{source:photoSources.current.get(src)});})}
                       >
                         <img src={src} alt={`Uploaded image ${i + 1}`} />
                         <span>
@@ -1366,10 +1443,10 @@ export default function App() {
               </div>
             </>
           )}
-          {panel==='font'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search fonts" placeholder="Search fonts" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="full-button" onClick={()=>fontRef.current?.click()}><Upload size={18}/>Upload a font</button><div className="font-list">{fontOptions.filter(f=>f.toLowerCase().includes(search.toLowerCase())).map(f=><button key={f} style={{fontFamily:f}} className={selected?.fontFamily===f?'active':''} onClick={()=>update({fontFamily:f})}>{f}{selected?.fontFamily===f&&<Check size={18}/>}</button>)}</div></div>}
+          {panel==='font'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search fonts" placeholder="Search fonts" value={search} onChange={e=>setSearch(e.target.value)}/></label><button className="full-button" onClick={()=>fontRef.current?.click()}><Upload size={18}/>Upload a font</button>{selected?.type==='text'&&<label className="font-weight-control">Style<select aria-label="Font weight" value={Number(selected.fontWeight)||({bold:700,normal:400}[String(selected.fontWeight) as 'bold'|'normal']||400)} onChange={event=>update({fontWeight:Number(event.target.value)})}>{TEXT_FONT_WEIGHTS.map(weight=><option key={weight.value} value={weight.value}>{weight.label}</option>)}</select></label>}<div className="font-list">{fontOptions.filter(f=>f.toLowerCase().includes(search.toLowerCase())).map(f=><button key={f} style={{fontFamily:f}} className={selected?.fontFamily===f?'active':''} onClick={()=>update({fontFamily:f})}>{f}{selected?.fontFamily===f&&<Check size={18}/>}</button>)}</div></div>}
           {panel==='color'&&<div className="feature-panel"><h3>Document colours</h3><div className="swatches">{[...new Set([...brand.colors,...COLORS])].map(c=><button key={c} title={c} aria-label={`Apply ${c}`} style={{background:c}} onClick={()=>applyColour(c)}/>)}</div><label className="field-label">Hex colour<input aria-label="Hex colour" placeholder="#000000" value={colorHex} onChange={e=>{setColorHex(e.target.value);if(/^#[0-9a-f]{6}$/i.test(e.target.value))applyColour(e.target.value);}}/></label><label className="field-label">Add a new colour<input aria-label="Custom colour" type="color" value={/^#[0-9a-f]{6}$/i.test(activeColour)?activeColour:'#000000'} onChange={e=>applyColour(e.target.value)}/></label>{!selected?.vectorColors?.length&&!selected?.strokeOnly&&<><h3>Gradients</h3><ToolsPanel tab="gradients" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></>}</div>}
 
-          {panel==='image'&&<ImageControls getEditor={getEditor} selected={selected} onRemove={removeBackground} onMask={()=>void work('Opening mask editor',async()=>setMaskSources(await engine.current!.getImageMaskSources()))} onAI={()=>{setAiKind('edit');choosePanel('ai');}} onReplace={()=>{replaceImageRef.current=true;uploadRef.current?.click();}}/>}
+          {panel==='image'&&<ImageControls getEditor={getEditor} selected={selected} onRemove={removeBackground} onMask={()=>void work('Opening mask editor',async()=>setMaskSources(await engine.current!.getImageMaskSources()))} onAI={()=>{setAiKind('edit');choosePanel('ai');}} onReplace={()=>{replaceImageRef.current=selected?.id||null;uploadRef.current?.click();}}/>}
           {panel==='projects'&&<div className="project-panel"><div className="chip-row"><button className="chip active">All</button><button className="chip" onClick={goHome}>Folders</button></div>{library.map(d=><button key={d.id} className="project-panel-card" onClick={()=>openDesign(d)}>{d.thumbnail?<img src={d.thumbnail} alt=""/>:<FileText size={32}/>}<span>{d.name}</span></button>)}<button className="full-button" onClick={()=>void open()}>Open project file</button></div>}
           {panel==='apps'&&<div className="feature-panel"><label className="search-box"><Search size={18}/><input aria-label="Search apps" placeholder="Search apps" value={search} onChange={e=>setSearch(e.target.value)}/></label><h3>Discover</h3><div className="apps-grid">{[{name:'Magic Media',icon:'ai',action:()=>{setAiKind('image');choosePanel('ai');}},{name:'Magic Write',icon:'document',action:()=>{setAiKind('copy');choosePanel('ai');}},{name:'Bulk create',icon:'sheet',action:()=>{choosePanel('tools');setToolTab('bulk');}},{name:'QR code',icon:'apps',action:()=>{choosePanel('tools');setToolTab('qr');}},{name:'Video',icon:'video',action:()=>{setMode('video');setPanelOpen(false);}},{name:'Translate',icon:'text',action:()=>{setAiKind('translate');choosePanel('ai');}}].filter(a=>a.name.toLowerCase().includes(search.toLowerCase())).map(a=><button key={a.name} onClick={a.action}><StudioIcon name={a.icon as Parameters<typeof StudioIcon>[0]['name']} size={32}/><span>{a.name}</span></button>)}</div></div>}
           {panel==='components'&&<div className="feature-panel"><p className="small-hint">Your reusable elements. Right-click an element and choose Create component to add one.</p>{components.map(c=><button className="full-button" key={c.id} onClick={()=>void work('Adding component',()=>engine.current!.insertObjects(JSON.parse(c.data)))}><StudioIcon name="components" size={24}/>{c.name}</button>)}</div>}
@@ -1379,74 +1456,74 @@ export default function App() {
           {["video","documents","sheets"].includes(panel) && <div className="feature-panel"><h3>{panel==="video"?"Video studio":panel==="documents"?"Document editor":"Spreadsheet editor"}</h3><p className="small-hint">Create and edit in the workspace.</p><button className="full-button" onClick={()=>setMode("design")}>Return to design canvas</button><button className="full-button coral" onClick={()=>setMode(panel==="documents"?"document":panel==="sheets"?"sheet":"video")}>Open {panel}</button><button className="full-button" onClick={()=>{choosePanel("ai");setAiKind("copy");}}>Write with Visro AI</button></div>}
         </aside>
         <main className="canvas-workspace">
-          <div className="canvas-toolbar context-toolbar">
+          {(selected||mode!=='design')&&<div className="canvas-toolbar context-toolbar" onPointerDownCapture={event=>{if(engine.current?.isTextEditing()&&(event.target as HTMLElement).closest('button'))event.preventDefault();}}>
             <div className="toolbar-left">
               {selected?.type === "text" ? <>
                 <button className="toolbar-select" aria-label="Text font" onClick={()=>choosePanel("font")}>{selected.fontFamily}<ChevronDown size={14}/></button>
-                <div className="font-size-control"><IconButton title="Decrease font size" onClick={()=>update({fontSize:Math.max(1,selected.fontSize-1)})}><Minus size={16}/></IconButton><input className="toolbar-number" aria-label="Text size" type="number" min={1} max={600} value={Math.round(selected.fontSize)} onChange={e=>update({fontSize:Number(e.target.value)})}/><IconButton title="Increase font size" onClick={()=>update({fontSize:selected.fontSize+1})}><Plus size={16}/></IconButton></div>
+                <div className="font-size-control"><IconButton title="Decrease font size" onClick={()=>update({fontSize:Math.max(1,selected.fontSize-1)})}><Minus size={16}/></IconButton><input className="toolbar-number" aria-label="Text size" type="number" min={1} max={600} value={Number(selected.fontSize.toFixed(2))} onChange={e=>update({fontSize:Number(e.target.value)})}/><IconButton title="Increase font size" onClick={()=>update({fontSize:selected.fontSize+1})}><Plus size={16}/></IconButton></div>
                 <button className="toolbar-text-colour" aria-label="Text colour" title="Text colour" onClick={()=>openColour()}><span style={{borderBottom:`3px solid ${selected.fill}`}}>A</span></button>
-                <IconButton title="Bold" active={selected.fontWeight===700||selected.fontWeight==="bold"} onClick={()=>update({fontWeight:selected.fontWeight===700||selected.fontWeight==="bold"?400:700})}><Bold size={17}/></IconButton>
-                <IconButton title="Italic" active={selected.fontStyle==="italic"} onClick={()=>update({fontStyle:selected.fontStyle==="italic"?"normal":"italic"})}><Italic size={17}/></IconButton>
-                <IconButton title="Underline (⌘U)" active={selected.underline} onClick={()=>update({underline:!selected.underline})}><Underline size={17}/></IconButton>
-                <IconButton title="Strikethrough" active={selected.linethrough} onClick={()=>update({linethrough:!selected.linethrough})}><span className="font-strike">S</span></IconButton>
-                <IconButton title="Uppercase" onClick={()=>update({text:selected.text===selected.text?.toUpperCase()?selected.text?.toLowerCase():selected.text?.toUpperCase()})}><span>aA</span></IconButton>
-                <IconButton title={`Text alignment: ${selected.align}`} onClick={()=>{const align=['left','center','right','justify'];update({align:align[(align.indexOf(selected.align)+1)%align.length]});}}>{selected.align==='center'?<AlignCenter size={19}/>:selected.align==='right'?<AlignRight size={19}/>:<AlignLeft size={19}/>}</IconButton>
-                <IconButton title="List" onClick={()=>update({text:(selected.text||'').split('\n').map(t=>t.startsWith('• ')?t.slice(2):'• '+t).join('\n')})}><span>☷</span></IconButton>
-                <IconButton title="Spacing" active={toolbarPopover==='spacing'} onClick={()=>setToolbarPopover(toolbarPopover==='spacing'?null:'spacing')}><span className="spacing-icon">↔T</span></IconButton>
-                <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("effects");}}>Effects</button>
+                <TextFormatting selected={selected} onAction={action=>engine.current?.formatSelectedText(action)} onUpdate={update} onOpenChange={setTextMenuOpen} moreOptions={false}/>
+                <IconButton title="Spacing" active={toolbarPopover==='spacing'} onClick={()=>setToolbarPopover(toolbarPopover==='spacing'?null:'spacing')}><StudioIcon name="spacing" size={22}/></IconButton>
               </> : selected?.type === "image" ? <>
-                <button className="toolbar-button" onClick={()=>choosePanel("image")}><SlidersHorizontal size={16}/>Edit photo</button>
-                <button className="toolbar-button" onClick={removeBackground}><Scissors size={16}/>BG Remover</button>
-                <button className="toolbar-button" onClick={()=>void work("Opening mask editor",async()=>setMaskSources(await engine.current!.getImageMaskSources()))}>Erase / Restore</button>
-                <button className="toolbar-button" onClick={openCrop}>Crop</button><button className="toolbar-button" onClick={()=>engine.current?.flip("x")}>Flip</button>
-                <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("frames");}}>Frames</button>
+                <button className="toolbar-button" onClick={()=>choosePanel("image")}>Edit</button>
+                <button className="toolbar-button" onClick={()=>{setReplaceTarget({id:selected.id,pageId:state.activePageId});choosePanel('uploads');}}>Replace</button>
+                <button className="toolbar-button" onClick={removeBackground}>BG Remover</button>
+                <button className="toolbar-button" onClick={()=>void work("Opening mask editor",async()=>setMaskSources(await engine.current!.getImageMaskSources()))}>Eraser</button>
+                <StrokeStyle selected={selected} onUpdate={update}/><CornerRounding selected={selected} onChange={radius=>engine.current?.setCornerRadius(radius)}/>
+                <button className="toolbar-button" onClick={openCrop}>Crop</button><button className="toolbar-button" onClick={()=>setToolbarPopover(toolbarPopover==='flip'?null:'flip')}>Flip <ChevronDown size={13}/></button>
               </> : selected ? <>
-                {selected.vectorColors?.length?selected.vectorColors.map((color,index)=><button key={index} className="toolbar-color" aria-label={`Graphic colour ${index+1}`} title={`Change ${color}`} style={{background:color}} onClick={()=>openColour(color)}/>):<><button className="toolbar-color" aria-label={selected.strokeOnly?"Line colour":"Shape colour"} style={{background:activeColour}} onClick={()=>openColour()}/>{!selected.strokeOnly&&<button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Colour & gradient</button>}</>}
+                {!selected.strokeOnly&&!selected.vectorColors?.length&&<button className="toolbar-button" onClick={()=>choosePanel('shape-edit')}>Edit</button>}
+                {selected.vectorColors?.length?selected.vectorColors.map((color,index)=><button key={index} className="toolbar-color" aria-label={`Graphic colour ${index+1}`} title={`Change ${color}`} style={{background:color}} onClick={()=>openColour(color)}/>):<><button className="toolbar-color" aria-label={selected.strokeOnly?"Line colour":"Shape colour"} style={{background:activeColour}} onClick={()=>openColour()}/></>}
+                {!selected.vectorColors?.length&&<StrokeStyle selected={selected} onUpdate={update}/>}<CornerRounding selected={selected} onChange={radius=>engine.current?.setCornerRadius(radius)}/>
                 {Boolean(selected.vectorColors?.length)&&<button className="toolbar-button" onClick={()=>engine.current?.ungroup()}>Ungroup</button>}
-                <button className="toolbar-button" onClick={()=>engine.current?.flip("x")}>Flip</button>
               </> : <>
                 <button className="toolbar-color" aria-label="Page colour" style={{background:state.background}} onClick={()=>openColour()}/>
                 <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("gradients");}}>Background</button>
                 <button className="toolbar-button" onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>{state.width} × {state.height}</button>
               </>}
-              {selected&&<IconButton title="Transparency" active={toolbarPopover==='transparency'} onClick={()=>setToolbarPopover(toolbarPopover==='transparency'?null:'transparency')}><span className="transparency-icon"/></IconButton>}
-              <span className="toolbar-divider"/>
+              {selected&&<IconButton title="Transparency" active={toolbarPopover==='transparency'} onClick={()=>setToolbarPopover(toolbarPopover==='transparency'?null:'transparency')}><StudioIcon name="transparency" size={24}/></IconButton>}
+              {selected?.type==='text'&&<button className="toolbar-button" onClick={()=>{choosePanel('tools');setToolTab('effects');}}>Effects</button>}
               <button className="toolbar-button" onClick={()=>{choosePanel("tools");setToolTab("animate");}}>Animate</button>
             </div>
             <div className="toolbar-right">
               <button className={`toolbar-button ${inspectorOpen?"active":""}`} onClick={()=>{setPositionTab("arrange");setInspectorOpen(!inspectorOpen);setPanelOpen(false);}}>Position <Layers size={16}/></button>
-              {selected&&<IconButton title="Copy style (⌥⌘C)" onClick={()=>{if(engine.current?.copyStyle()){stylePaintRef.current=true;notify("Click another element to apply this style.");}}}><Paintbrush size={19}/></IconButton>}
+              {selected&&<span className="toolbar-divider"/>}{selected&&<IconButton title="Copy style (⌥⌘C)" onClick={()=>{if(engine.current?.copyStyle()){stylePaintRef.current=true;notify("Click another element to apply this style.");}}}><StudioIcon name="paint-roller" size={24}/></IconButton>}
 
               {mode!=="design"&&<button className="toolbar-button" onClick={()=>setMode("design")}>Design</button>}
             </div>
-          </div>
-          {toolbarPopover&&selected&&<div className="toolbar-popover">{toolbarPopover==='spacing'?<><NumberField label="Letter spacing" value={selected.letterSpacing} min={-200} max={1000} onChange={n=>update({letterSpacing:n})}/><NumberField label="Line spacing" value={selected.lineHeight} min={.5} max={5} step={.05} onChange={n=>update({lineHeight:n})}/></>:<label className="range-label">Transparency<span>{Math.round(selected.opacity*100)}</span><input type="range" aria-label="Transparency" min={0} max={100} value={Math.round(selected.opacity*100)} onChange={e=>update({opacity:Number(e.target.value)/100})}/></label>}</div>}
+          </div>}
+          {toolbarPopover&&selected&&<div className="toolbar-popover">{toolbarPopover==='flip'?<><button className="full-button" onClick={()=>engine.current?.flip('x')}><FlipHorizontal size={18}/>Flip horizontal</button><button className="full-button" onClick={()=>engine.current?.flip('y')}><FlipVertical size={18}/>Flip vertical</button></>:toolbarPopover==='spacing'?<><NumberField label="Letter spacing" value={selected.letterSpacing} min={-200} max={1000} onChange={n=>update({letterSpacing:n})}/><NumberField label="Line spacing" value={selected.lineHeight} min={.5} max={5} step={.05} onChange={n=>update({lineHeight:n})}/></>:<label className="range-label">Transparency<span>{Math.round(selected.opacity*100)}</span><input type="range" aria-label="Transparency" min={0} max={100} value={Math.round(selected.opacity*100)} onChange={e=>update({opacity:Number(e.target.value)/100})}/></label>}</div>}
           <div
             className="canvas-viewport"
             style={{pointerEvents:ready?undefined:"none"}}
             ref={viewportRef}
             onPointerDown={e=>{if((e.target as HTMLElement).closest('canvas')){interactionRef.current=true;viewportRef.current?.classList.add('interacting');const canvas=engine.current?.canvas.upperCanvasEl;if(canvas&&!engine.current?.isTextEditing()){canvas.tabIndex=0;canvas.focus({preventScroll:true});}}}}
             onPointerUp={()=>{interactionRef.current=false;viewportRef.current?.classList.remove('interacting');}}
-            onContextMenuCapture={e=>{e.preventDefault();if(mode!=='design')return;const r=viewportRef.current!.getBoundingClientRect();const cur=engine.current?.selectAt({x:e.clientX-r.left,y:e.clientY-r.top,includeLocked:true});if(cur)setContextMenu({x:e.clientX,y:e.clientY});}}
+            onContextMenuCapture={e=>{e.preventDefault();if(mode!=='design'||editingMode!=='editing')return;const studio=engine.current;if(!studio)return;const r=viewportRef.current!.getBoundingClientRect(),page=(e.target as HTMLElement).closest<HTMLElement>('[data-page-id]'),pageId=page?.dataset.pageId,pageBox=page?.getBoundingClientRect(),zoom=studio.canvas.getZoom(),scene=pageBox?{x:(e.clientX-pageBox.left)/zoom,y:(e.clientY-pageBox.top)/zoom}:null,generation=projectGeneration.current,point={x:e.clientX-r.left,y:e.clientY-r.top},menu={x:e.clientX,y:e.clientY};void(async()=>{if(pageId&&pageId!==studio.getState().activePageId){if(pageNavigator.current)await pageNavigator.current(pageId);else await studio.setPage(pageId);await new Promise<void>(resolve=>requestAnimationFrame(()=>resolve()));}if(generation!==projectGeneration.current||engine.current!==studio)return;const v=studio.canvas.viewportTransform,location=scene?{x:scene.x*v[0]+v[4],y:scene.y*v[3]+v[5]}:point;const cur=studio.selectAt({...location,includeLocked:true});if(cur)setContextMenu(menu);})().catch(error=>notify(error instanceof Error?error.message:'The element menu could not be opened.'));}}
             onDragOver={(e) => e.preventDefault()}
-            onDrop={e=>{e.preventDefault();const studio=engine.current;if(!studio||!ready||switchingProject.current)return;
-              const r=viewportRef.current!.getBoundingClientRect(),v=studio.canvas.viewportTransform,center={x:(e.clientX-r.left-v[4])/v[0],y:(e.clientY-r.top-v[5])/v[3]},pageId=studio.getState().activePageId,generation=projectGeneration.current;
-              const graphic=e.dataTransfer.getData('text/visro-graphic');
-              if(graphic){void work('Adding graphic',async()=>{const data=JSON.parse(graphic);if(typeof data.id!=='string')throw new Error('Choose a graphic from Elements.');studio.addGraphic(data.id,{center,pageId});});return;}
-              const publicPhoto=e.dataTransfer.getData('text/visro-public-image');
-              if(publicPhoto){void work('Adding photo',async()=>{const photo=JSON.parse(publicPhoto);if(typeof photo.id!=='string')throw new Error('Choose a photo from the image library.');await importPublicImage(photo,undefined,center);});return;}
-              const raw=e.dataTransfer.getData('text/visro-asset');
-              if(raw){void work('Adding element',async()=>{const asset=JSON.parse(raw);if(generation!==projectGeneration.current||switchingProject.current)return;
-                if(asset.kind==='image'&&typeof asset.src==='string'){await studio.addImage(asset.src,'Image',{center,pageId,source:photoSources.current.get(asset.src)});return;}
-                if(asset.kind==='shape')studio.addShape(asset.type,{center,pageId});else if(asset.kind==='text')studio.addText(asset.role||'body',{center,pageId});
-              });}else void uploadFiles(e.dataTransfer.files);
+            onDrop={e=>{e.preventDefault();const studio=engine.current;if(editingMode!=='editing'||!studio||!ready||switchingProject.current)return;setReplaceTarget(null);replaceImageRef.current=null;
+              const origin=activeId.current,generation=projectGeneration.current,r=viewportRef.current!.getBoundingClientRect(),v=studio.canvas.viewportTransform,dropPage=(e.target as HTMLElement).closest<HTMLElement>('[data-page-id]'),pageBox=dropPage?.getBoundingClientRect(),pageId=dropPage?.dataset.pageId||studio.getState().activePageId;
+              const center=pageBox?{x:(e.clientX-pageBox.left)/v[0],y:(e.clientY-pageBox.top)/v[0]}:{x:(e.clientX-r.left-v[4])/v[0],y:(e.clientY-r.top-v[5])/v[3]};
+              const payload={frame:e.dataTransfer.getData('text/visro-frame'),graphic:e.dataTransfer.getData('text/visro-graphic'),publicPhoto:e.dataTransfer.getData('text/visro-public-image'),asset:e.dataTransfer.getData('text/visro-asset'),files:Array.from(e.dataTransfer.files)};
+              void work('Adding element',async()=>{
+                if(pageId!==studio.getState().activePageId){if(pageNavigator.current)await pageNavigator.current(pageId);else await studio.setPage(pageId);}
+                if(origin!==activeId.current||generation!==projectGeneration.current||switchingProject.current||engine.current!==studio)return;
+                const targetFrameId=studio.frameAt(center)||undefined;
+                if(payload.frame){const data=JSON.parse(payload.frame);if(typeof data.id!=='string')throw new Error('Choose a frame from Elements.');await studio.insertFrame(data.id,{center,pageId});return;}
+                if(payload.graphic){const data=JSON.parse(payload.graphic);if(typeof data.id!=='string')throw new Error('Choose a graphic from Elements.');studio.addGraphic(data.id,{center,pageId});return;}
+                if(payload.publicPhoto){const photo=JSON.parse(payload.publicPhoto);if(typeof photo.id!=='string')throw new Error('Choose a photo from the image library.');await importPublicImage(photo,{targetFrameId},center);return;}
+                if(payload.asset){const asset=JSON.parse(payload.asset);if(asset.kind==='image'&&typeof asset.src==='string')await studio.addImage(asset.src,'Image',{center,pageId,targetFrameId,source:photoSources.current.get(asset.src)});else if(asset.kind==='shape')studio.addShape(asset.type,{center,pageId});else if(asset.kind==='text')studio.addText(asset.role||'body',{center,pageId});return;}
+                if(payload.files.length)await uploadFiles(payload.files,{center,pageId,targetFrameId});
+              });
             }}
 
           >
-            <canvas ref={canvasRef} />
-            {mode==='design'&&<CanvasGuides getEditor={getEditor} ready={ready} pageId={state.activePageId} rulers={Boolean(viewSettings.rulers)} margins={Boolean(viewSettings.margins)} locked={Boolean(viewSettings.locked)} guides={state.pageMetadata?.guides} onChange={guides=>engine.current?.setPageMetadata({guides})}/>}
-            {selected&&bounds&&mode==='design'&&<div className="selection-actions" style={{left:Math.max(8,Math.min(bounds.left+bounds.width/2-85,(viewportRef.current?.clientWidth||800)-180)),top:Math.max(8,Math.min(bounds.top+bounds.height+14,(viewportRef.current?.clientHeight||600)-50))}}><IconButton title="Comment" onClick={()=>setCommentsOpen(true)}><MessageCircle size={19}/></IconButton><IconButton title={selected.locked?'Unlock':'Lock position and appearance'} onClick={()=>engine.current?.setLayerLocked(selected.id,!selected.locked)}>{selected.locked?<Lock size={19}/>:<Unlock size={19}/>}</IconButton><IconButton title="Duplicate (⌘D)" onClick={()=>void engine.current?.duplicate()}><Copy size={19}/></IconButton><IconButton title="Delete" onClick={()=>engine.current?.remove()}><Trash2 size={19}/></IconButton><IconButton title="More" onClick={()=>{const r=viewportRef.current!.getBoundingClientRect();setContextMenu({x:r.left+bounds.left+bounds.width/2,y:r.top+bounds.top+bounds.height+60});}}><MoreHorizontal size={20}/></IconButton></div>}
+            <div className="canvas-interaction-plane"><canvas ref={canvasRef} />
+            {mode==='design'&&<CanvasGuides getEditor={getEditor} ready={ready} pageId={state.activePageId} rulers={Boolean(viewSettings.rulers)} margins={Boolean(viewSettings.margins)} locked={Boolean(viewSettings.locked)||editingMode!=='editing'} guides={state.pageMetadata?.guides} onChange={guides=>engine.current?.setPageMetadata({guides})}/>}
+            {selected&&bounds&&mode==='design'&&bounds.left+bounds.width>0&&bounds.top+bounds.height>0&&bounds.left<(viewportRef.current?.clientWidth||0)&&bounds.top<(viewportRef.current?.clientHeight||0)&&<div className="selection-actions" style={{left:Math.max(8,Math.min(bounds.left+bounds.width/2-85,(viewportRef.current?.clientWidth||800)-180)),top:Math.max(8,Math.min(bounds.top+bounds.height+14,(viewportRef.current?.clientHeight||600)-50))}}><IconButton title="Comment" onClick={()=>setCommentsOpen(true)}><MessageCircle size={19}/></IconButton><IconButton title={selected.locked?'Unlock':'Lock position and appearance'} onClick={()=>engine.current?.setLayerLocked(selected.id,!selected.locked)}>{selected.locked?<Lock size={19}/>:<Unlock size={19}/>}</IconButton><IconButton title="Duplicate (⌘D)" onClick={()=>void engine.current?.duplicate()}><Copy size={19}/></IconButton><IconButton title="Delete" onClick={()=>engine.current?.remove()}><Trash2 size={19}/></IconButton><IconButton title="More" onClick={()=>{const r=viewportRef.current!.getBoundingClientRect();setContextMenu({x:r.left+bounds.left+bounds.width/2,y:r.top+bounds.top+bounds.height+60});}}><MoreHorizontal size={20}/></IconButton></div>}
 
+            </div>
+            <ContinuousPages getEditor={getEditor} viewportRef={viewportRef} state={state} enabled={ready&&!home&&mode==='design'} readOnly={editingMode!=='editing'} navigateRef={pageNavigator} projectKey={activeId.current} interacting={interactionRef} thumbnails={pageThumbnails} onPreview={publishPagePreview} onVisiblePage={setVisiblePageIndex} onNotify={notify}/>
             {mode==="document"&&<DocumentEditor key={`doc-${activeId.current}`} id={activeId.current} name={name} getEditor={()=>engine.current} initial={engine.current?.getProjectContent() ?? contentRef.current} onNotify={notify}/>}
             {mode==="sheet"&&<SheetEditor key={`sheet-${activeId.current}`} id={activeId.current} name={name} getEditor={()=>engine.current} initial={engine.current?.getProjectContent() ?? contentRef.current} onNotify={notify}/>}
             {mode==="video"&&<MediaStudio key={`video-${activeId.current}-${mediaEpoch}`} designId={activeId.current} name={name} width={state.width} height={state.height} getEditor={()=>engine.current} initial={engine.current?.getProjectContent() ?? contentRef.current} onNotify={notify}/>}
@@ -1462,6 +1539,7 @@ export default function App() {
               {state.pages.map((p, i) => (
                 <button
                   key={p.id}
+                  data-preview-page-id={p.id}
                   className={state.activePageId === p.id ? "active" : ""}
                   onClick={() => void engine.current?.setPage(p.id)}
                 >
@@ -1472,12 +1550,13 @@ export default function App() {
               ))}
               <IconButton
                 title="Add page"
+                disabled={editingMode!=='editing'}
                 onClick={() => engine.current?.addPage()}
               >
                 <Plus size={17} />
               </IconButton>
             </div>
-            <div className="page-actions">
+            <div className="page-actions" inert={editingMode!=='editing'}>
               <IconButton
                 title="Duplicate page"
                 onClick={() => engine.current?.duplicatePage()}
@@ -1493,7 +1572,7 @@ export default function App() {
               </IconButton>
             </div>
           </div>
-          {notesOpen&&<section className="notes-panel"><div className="panel-heading"><h3>Notes</h3><button aria-label="Close notes" className="icon-button" onClick={()=>setNotesOpen(false)}><X size={18}/></button></div><textarea aria-label="Speaker notes" placeholder="Add notes for this page" value={state.pageMetadata?.notes||""} onChange={e=>engine.current?.setPageMetadata({notes:e.target.value})}/></section>}
+          {notesOpen&&<section className="notes-panel"><div className="panel-heading"><h3>Notes</h3><button aria-label="Close notes" className="icon-button" onClick={()=>setNotesOpen(false)}><X size={18}/></button></div><textarea readOnly={editingMode!=='editing'} aria-label="Speaker notes" placeholder="Add notes for this page" value={state.pageMetadata?.notes||""} onChange={e=>engine.current?.setPageMetadata({notes:e.target.value})}/></section>}
           <footer className="canvas-footer">
             <button className="quiet-button" onClick={()=>setNotesOpen(!notesOpen)}><FileText size={18}/>Notes</button><button className="quiet-button" onClick={()=>setTimerOpen(!timerOpen)}><Clock size={18}/>Timer</button>{timerOpen&&<div className="timer-popover"><strong>{String(Math.floor(timerSeconds/60)).padStart(2,"0")}:{String(timerSeconds%60).padStart(2,"0")}</strong><button onClick={()=>setTimerRunning(!timerRunning)}>{timerRunning?"Pause":"Start"}</button><button onClick={()=>{setTimerRunning(false);setTimerSeconds(0);}}>Reset</button></div>}
             <span>
@@ -1536,7 +1615,7 @@ export default function App() {
               >
                 <Plus size={14} />
               </IconButton>
-              <button className="quiet-button" onClick={()=>setPagesOpen(!pagesOpen)}><Grid3X3 size={20}/>Pages</button><span>{state.pages.findIndex(p=>p.id===state.activePageId)+1} / {state.pages.length}</span><IconButton title="Grid view" onClick={()=>{setPagesOpen(true);setGridView(!gridView);}}><Grid2X2 size={20}/></IconButton>
+              <button className="quiet-button" onClick={()=>setPagesOpen(!pagesOpen)}><Grid3X3 size={20}/>Pages</button><span>{Math.min(visiblePageIndex+1,state.pages.length)} / {state.pages.length}</span><IconButton title="Grid view" onClick={()=>{setPagesOpen(true);setGridView(!gridView);}}><Grid2X2 size={20}/></IconButton>
               <IconButton
                 title="Fit canvas"
                 onClick={() => engine.current?.fit()}
@@ -1547,7 +1626,7 @@ export default function App() {
           </footer>
         </main>
         {inspectorOpen&&<PositionPanel getEditor={getEditor} state={state} selected={selected} initialTab={positionTab} onClose={()=>setInspectorOpen(false)}/>}
-        {commentsOpen&&<aside className="comments-panel"><div className="panel-heading"><h3>Comments</h3><button aria-label="Close comments" className="icon-button" onClick={()=>setCommentsOpen(false)}><X size={20}/></button></div><ToolsPanel tab="comments" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></aside>}
+        {commentsOpen&&<aside className="comments-panel"><div className="panel-heading"><h3>Comments</h3><button aria-label="Close comments" className="icon-button" onClick={()=>setCommentsOpen(false)}><X size={20}/></button></div><fieldset className="comments-content" disabled={editingMode==='viewing'}><ToolsPanel tab="comments" setTab={setToolTab} getEditor={getEditor} state={state} designId={activeId.current} onAction={(label,job)=>void work(label,job)} onNotify={notify}/></fieldset></aside>}
       </div>
       <input
         ref={uploadRef}
@@ -1578,7 +1657,7 @@ export default function App() {
         }}
       />
       {quickActionsOpen&&<QuickActions actions={quickActions} onClose={()=>setQuickActionsOpen(false)}/>}
-      {contextMenu&&<ElementMenu x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
+      {contextMenu&&<ElementMenu canFrame={Boolean(selected&&!selected.strokeOnly&&!['image','text','group','activeselection','line'].includes(selected.type))} x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
       {guidesDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setGuidesDialog(false);}}><section className="modal element-dialog" role="dialog" aria-modal="true" aria-label="Add guides"><button className="modal-close icon-button" aria-label="Close guides" onClick={()=>setGuidesDialog(false)}><X size={20}/></button><h2>Add guides</h2><form onSubmit={e=>{e.preventDefault();const {columns,rows,gap,margin}=guideGrid;const positions=(count:number,size:number)=>{if(!count)return[];const available=size-2*margin-(count-1)*gap;if(available<=0)throw new Error('The margin and gap must fit inside the page.');const cell=available/count;return [...new Set(Array.from({length:count+1},(_,i)=>i===count?size-margin:margin+i*(cell+gap)).flatMap((v,i)=>i>0&&i<count&&gap?[v-gap,v]:[v]))];};try{engine.current?.setPageMetadata({guides:{x:positions(columns,state.width),y:positions(rows,state.height)}});setViewSettings(v=>({...v,rulers:true,snapping:true}));setGuidesDialog(false);}catch(error){notify((error as Error).message);}}}><NumberField label="Columns" value={guideGrid.columns} min={0} max={24} step={1} onChange={columns=>setGuideGrid(v=>({...v,columns:Math.round(columns)}))}/><NumberField label="Rows" value={guideGrid.rows} min={0} max={24} step={1} onChange={rows=>setGuideGrid(v=>({...v,rows:Math.round(rows)}))}/><NumberField label="Gap (px)" value={guideGrid.gap} min={0} max={state.width/2} onChange={gap=>setGuideGrid(v=>({...v,gap}))}/><NumberField label="Margin (px)" value={guideGrid.margin} min={0} max={Math.min(state.width,state.height)/2} onChange={margin=>setGuideGrid(v=>({...v,margin}))}/><button className="full-button coral" type="submit">Add guides</button></form></section></div>}
       {elementDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setElementDialog(null);}}><section className="modal element-dialog"><button className="modal-close icon-button" aria-label="Close" onClick={()=>setElementDialog(null)}><X size={20}/></button><h2>{elementDialog.kind==='link'?'Link':elementDialog.kind==='alt'?'Alternative text':'Create component'}</h2><form onSubmit={e=>{e.preventDefault();void work("Saving element",async()=>{const d=elementDialog;if(d.kind==='component'){const objects=await engine.current!.exportSelectedObjects();await storeAsset({id:crypto.randomUUID(),kind:'component',name:d.value.trim()||'Component',data:JSON.stringify(objects),updated:Date.now()});notify('Component saved. Find it in Components.');}else engine.current?.setElementMetadata(d.kind==='link'?{link:d.value.trim()}:{altText:d.value});setElementDialog(null);});}}><label className="field-label">{elementDialog.kind==='link'?'Enter a link':elementDialog.kind==='alt'?'Describe this element':'Name'}<input autoFocus aria-label={elementDialog.kind==='link'?'Element link':elementDialog.kind==='alt'?'Alternative text':'Component name'} value={elementDialog.value} onChange={e=>setElementDialog({...elementDialog,value:e.target.value})}/></label><button className="full-button coral" type="submit">Save</button></form></section></div>}
       {cropSource&&<ImageCropEditor source={cropSource} onCancel={()=>setCropSource(null)} onDone={async rect=>{engine.current?.cropSelectedImage(rect);setCropSource(null);notify("Image cropped.");}}/>}
