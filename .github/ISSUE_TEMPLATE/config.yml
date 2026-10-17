@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Installation and first steps
+    url: https://github.com/prakharsingh1/visro/blob/main/docs/GETTING_STARTED.md
+    about: Download, install, create a design and back up your work.
+  - name: Private security report
+    url: https://github.com/prakharsingh1/visro/security/advisories/new
+    about: Report a suspected vulnerability without publishing sensitive details.

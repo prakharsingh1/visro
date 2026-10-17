@@ -1,99 +1,107 @@
-# Visro
+<p align="center">
+  <img src="build/icon-1024.png" width="88" alt="Visro app icon" />
+</p>
 
-Visro is a local Mac creative workspace with a Canva-style editor and your own Gemini key. Designs, assets, brand kits, comments and versions stay on this Mac. Optional **Elements → Photos** searches public-domain/CC0 images on Wikimedia Commons; those search queries and selected-image downloads contact Commons. Gemini remains the only AI provider.
+<h1 align="center">Visro</h1>
+<p align="center"><strong>A local creative studio for your Mac.</strong></p>
+<p align="center">Design presentations, social posts, posters and more. Keep your projects local.<br />Bring your own Gemini key when you want AI.</p>
 
-## Open and connect
+<p align="center">
+  <a href="https://github.com/prakharsingh1/visro/releases/latest">Download for Mac</a> ·
+  <a href="docs/GETTING_STARTED.md">Get started</a> ·
+  <a href="docs/USER_GUIDE.md">User guide</a> ·
+  <a href="CONTRIBUTING.md">Contribute</a>
+</p>
+<p align="center">
+  <a href="https://github.com/prakharsingh1/visro/releases"><img alt="Version 0.8.1" src="https://img.shields.io/badge/version-0.8.1-8257e5" /></a>
+  <img alt="macOS 13+, Apple silicon" src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20silicon-222222" />
+  <a href="LICENSE"><img alt="AGPL-3.0-only license" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" /></a>
+</p>
 
-Open `~/Applications/Visro.app`, or install the Apple silicon DMG from `release/`. This build is signed ad hoc; it is not Apple-notarized.
+![Visro's dark editor with the Elements library and an editable original design](docs/images/editor-dark.png)
 
-Open **File → Visro settings…** or your profile's Settings, paste your key from [Google AI Studio](https://aistudio.google.com/apikey), and choose **Connect Gemini**. The desktop app encrypts the key using macOS-backed Electron safeStorage. Keys are not included in projects or browser storage. Text, image, speech and video models can be configured independently; **Load available models** lists those accessible to your Google project.
+## Make something yours
 
-**Apps → Magic Media** provides editable designs, writing, translation, image generation/editing, speech and Veo video. Returned results can be previewed and added to a project. AI requests need internet, model access and quota in your Google project. No live key was used in development; model availability still needs acceptance with your key.
+Start with a template or a blank canvas. Drag in photos, edit real text and vectors, arrange layers, and export the result. Visro combines a familiar design workflow with local projects, offline photo background removal and optional AI tools.
 
-## Create and edit
-
-- Start with **650 original editable templates**, or create a presentation, social design, video, print layout, rich document, whiteboard, sheet, website or custom canvas. The template browser searches names and descriptions, filters categories/colors, saves stars and previews a layout before use. It displays 24 results per Home page or 18 in the editor panel. The catalogue includes 106 photo-led designs using twelve bundled public-domain/CC0 photographs. The latest 120 layouts add 30 original composition families across learning, planning, property, events and business, including eight editable form layouts. They work offline.
-- Drag objects directly. Purple hover outlines identify the object under the pointer; click selects it. Option-drag duplicates an object or selection in one Undo. Shift selects several. Arrow keys move selected objects by 1px; Shift+Arrow moves 10px. Undo preserves fractional positions, the surviving selection and the current zoom/pan. Tab/Shift+Tab cycles layers when the canvas has focus; ⌘-click selects an element behind another. ⌘+Arrow resizes by 1px and ⇧⌘+Arrow by 10px while preserving the top-left position.
-- Use the left rail for Templates, Elements, Text, Brand, Uploads, Tools, Projects and Apps. **Position** opens on the left with Arrange/Layers, ordering, alignment, distribution and exact geometry. Comments open on the right; Notes sit below the canvas. The Position drawer starts directly below the 96px combined tab/header area. Press `/` or ⌘E for searchable Quick actions; ⌘/ toggles the sidebar.
-- Scroll vertically through a continuous stack of pages, with all visible pages rendered even at low zoom. Scrolling preserves selection and never creates an Undo step; click or drag on the next page to edit it. Control-wheel zoom keeps the pointed location anchored to its page. Page controls provide move up/down, duplicate, delete and insert after; decoded previews also populate the bottom page thumbnails.
-- The header places **Editing / Commenting / Viewing** between Resize and Undo. Commenting and Viewing gate canvas mutations while allowing page navigation, zoom and export; comments are available in Commenting.
-- Use the floating context toolbar for typography, color, spacing, opacity, photo editing, crop, flips, effects and position. Right-click an object for copy/paste, duplicate, ordering, alignment, grouping, locks, links, alternative text and other applicable actions.
-- **Text → Font combinations** offers 48 original editable combinations with brush, handwritten, distressed, stencil, serif, rounded and display styles. Search by name, font or style; click or drag a two-column card, revisit recently used combinations, and ungroup to edit the real text boxes.
-- **Elements** has the observed fourteen-category grid with original dimensional icons and mixed recent-use browsing. **Mockups** offers thirteen original product/device scenes; drag a photo into the native image area, crop it, and retain the device artwork through Undo and reopening. **3D** contains editable isometric vector illustrations; **Forms** provides form layouts; **Animations** offers page-animation presets and a preview of the actual current page.
-- Select a line for separate start/end marker menus, Swap line ends and Straight/Elbowed/Curved routing. Ten endpoint styles include arrows, bars, circles, squares and diamonds. Drag either endpoint directly; native vectors preserve editable geometry, styling and Undo across saves.
-- Select a shape and open **Effects** beside Transparency for Drop, Glow, Echo or Glitch, plus eleven advanced color/gradient presets. Direction, offset, blur, opacity/intensity and effect colors remain editable. Removing an effect preserves the current shape fill and border.
-- Text formatting respects the selected characters and paragraphs. Lists cycle through bullets, numbering and plain text; Enter continues a list, an empty item exits it, and Tab/Shift+Tab changes indentation. Case conversion preserves mixed character styles and Unicode glyphs.
-- Use 46 bundled open font families (50 real faces) or upload a local font. Canva Sans loads from an existing local Canva installation when available; its binary is not distributed with Visro. Visro settings offers light, dark and system appearance.
-- **File → Settings** provides rulers/guides (Shift+R), draggable guides, column/row guide grids, snapping, guide locks and a 5% safe-margin preview. Guides are saved per page and stay outside exports.
-- Insert photos/SVGs, draw, use image frames, build editable tables/charts, generate QR codes, save reusable components and create multiple pages from CSV data.
-- **Elements → Shapes** offers 144 native vector shapes across basics, polygons, stars/badges, arrows, callouts and lines. **Elements → Graphics** contains 320 independently drawn vector graphics across sixteen categories, with search, stars, recent use and 24-result pages. Click or drag to insert, recolor individual palette colors, or ungroup to edit the native vector parts. These bundled collections work offline.
-- **Elements → Frames / Grids** offers 36 original photo masks and 24 editable photo-grid layouts with 1–9 slots. Insert an empty frame, then drag an uploaded or public-domain photo into it. Replacement preserves its placement, mask, crop proportions and layer identity, with one Undo. Selected shapes can be replaced from the left **Edit** panel or converted into photo frames through right-click → **Change to frame**; stroke controls support weight, solid/dashed/dotted patterns and round line caps. Photo/rectangle corners have an adjustable radius.
-- **Elements → Photos** searches Wikimedia Commons without an API key, with public-domain/CC0 filters, source/license details, preview and lazy thumbnail pages. Click to add, or drag a photo onto the canvas to place it in the scene. Chosen images are cached locally and inserted as embedded bytes with source provenance; one Undo removes the insertion. Crop, adjustments and background removal work on these photos. Searches and uncached downloads require internet; already chosen/cached bytes remain available locally.
-- Remove photo backgrounds offline with bundled IS-Net. Erase/restore brushes refine the real alpha channel. Interactive crop works in original image coordinates and preserves the placed frame's proportions.
-- Rich documents support headings, formatting, lists, images, tables and Find/Replace with native Undo. Sheets provide references, arithmetic, SUM/AVERAGE/MIN/MAX/COUNT, CSV/TSV, record-preserving sorting, row/column insertion/deletion with formula repair, Find/Replace and undo/redo. Local video/audio supports timeline ordering, trims, timing, volume and MP4/WebM/GIF rendering with bundled FFmpeg. The unified playhead synchronizes scenes, audio and caption preview. Add/edit timed captions, import/export SRT or WebVTT and bake styled captions into rendered video; automatic speech transcription is not included.
-- Design tabs support new, close, reopen, numbered selection and previous/next navigation without losing pending edits. Home provides recent projects, search, folders, stars and Trash. Brand kits store named color/font/logo sets. Comments and named versions are local.
-
-Designs autosave into IndexedDB. Repeated large photos are stored once as local blobs; project lists load small summaries rather than every photo. **Save** writes a portable `.visro` file with reused images bundled once. **Open** imports it. PNG/JPEG/SVG/PDF/PPTX, document HTML/PDF, sheet CSV, static website HTML and media exports are supported. PDF import renders pages for annotation; it does not recover editable source layers. Complex PowerPoint artwork is rendered into slide images; simple supported objects remain editable.
-
-## Keyboard shortcuts
-
-| Action | Shortcut |
+| Inside Visro | What you can do |
 | --- | --- |
-| New design / Close design / Reopen closed design (Mac app) | ⌘T / ⌘W / ⇧⌘T |
-| Previous / Next design tab (Mac app) | ⌥⌘← / ⌥⌘→ |
-| Select design tab / Home / Close window (Mac app) | ⌘1…⌘9 / ⇧⌘H / ⇧⌘W |
-| Save / Save as / Open | ⌘S / ⇧⌘S / ⌘O |
-| Undo / Redo | ⌘Z / ⇧⌘Z or ⌘Y |
-| Copy / Cut / Paste / Select all | ⌘C / ⌘X / ⌘V / ⌘A |
-| Duplicate / Group / Ungroup | ⌘D / ⌘G / ⇧⌘G |
-| Text / Rectangle / Circle / Line | T / R / C / L |
-| Continue / Indent / Outdent a list (while editing text) | Enter / Tab / Shift+Tab |
-| Rulers and guides / Duplicate by dragging | Shift+R / Option-drag |
-| Find and replace in Docs and Sheets | ⌘F |
-| Move / Larger move | Arrow / Shift+Arrow |
-| Resize / Larger resize | ⌘+Arrow / ⇧⌘+Arrow |
-| Rotate / Larger rotate | ⌥, or ⌥. / ⇧⌥, or ⇧⌥. |
-| Next / Previous layer (canvas focus) | Tab / Shift+Tab |
-| Select an element behind / Lock or unlock | ⌘-click / ⇧⌥L |
-| Quick actions / Toggle sidebar | `/` or ⌘E / ⌘/ |
-| Focus toolbar / Canvas / Sidebar | ⌘F1 / ⌘F2 / ⌘F3 |
-| Selected-element menu | Shift+F10 |
-| Bring forward / Send backward | ⌘] / ⌘[ |
-| Bring to front / Send to back | ⌥⌘] / ⌥⌘[ |
-| Show layers / Copy style / Paste style | ⌥1 / ⌥⌘C / ⌥⌘V |
-| Link / Component / Comment | ⌘K / ⌥⌘K / ⌥⌘N |
-| Add page / Delete page | ⌘Enter / ⌘Delete |
-| Zoom / Fit / Pan | ⌘+ or ⌘− / ⌘0 / hold Space and drag |
+| **650 original templates** | Create presentations, social posts, print layouts and more, with searchable previews and editable objects. |
+| **144 shapes + 320 graphics** | Click or drag to add vectors, change colors, arrange layers and edit individual parts. |
+| **46 font families + 48 font combinations** | Use bundled open fonts, brush and display styles, selected-text formatting and your own uploaded fonts. |
+| **Frames, grids and 13 mockups** | Drop photos into editable image areas, adjust the crop and keep the surrounding artwork. |
+| **Offline photo cutouts** | Remove backgrounds with a bundled local model; refine the result with erase and restore brushes. |
+| **Multipage editing** | Scroll between pages, use real thumbnails, align objects, group layers and undo changes. |
+| **More creative tools** | Work with documents, sheets, charts, tables, drawings, media timelines and manual captions. |
+| **Optional Gemini** | Connect your own key for writing, editable design generation, images, speech and supported Veo video workflows. |
 
-Inputs, rich text and an actively edited canvas textbox keep normal text editing shortcuts. Rotation increments are 1° or 15° with Shift. The 1° Option+period increment was measured in Canva; its larger Shift increment has not been verified. Browser-reserved tab commands are provided by the native Mac app.
+Dark, light and system appearance are included. Design assets already bundled or imported can be used offline. Gemini requests and optional Wikimedia Commons photo searches need an internet connection.
 
-## Develop and build
+<details>
+<summary><strong>See the light editor and original templates</strong></summary>
 
-Use Node.js 22.12+ and macOS for native packaging. The verified toolchain on this Mac is Node 26.5.0.
+![Visro in light mode](docs/images/editor-light.png)
+
+A selection of Visro's original editable layouts:
+
+![Original Visro template examples across presentation, print and social formats](docs/images/templates.png)
+
+</details>
+
+## Download and install
+
+**Requires macOS 13 or later and an Apple silicon Mac (M1 or later).** Intel Mac, Windows and Linux installers are not provided in this release.
+
+1. Open the [latest release](https://github.com/prakharsingh1/visro/releases/latest) and download the **arm64 DMG**.
+2. Open the DMG and copy **Visro.app** into **Applications**.
+3. Open Visro, choose a template or create a blank design. **A Gemini key is optional.**
+
+This early release is ad-hoc signed and **not Apple-notarized**. If macOS blocks the first launch, review [Apple's instructions for opening a trusted app](https://support.apple.com/en-us/102445), then use the app-specific **Open Anyway** control in System Settings → Privacy & Security if you choose to continue. Checksums and a corresponding source ZIP accompany the release.
+
+For installation help, your first design and backups, see [Getting started](docs/GETTING_STARTED.md).
+
+## Your projects, your key
+
+Projects autosave locally. Export a portable **`.visro`** file to back up a project or move it to another computer; regular image, document and media exports are also available. Clearing the app's local data can remove projects, so keep portable backups of work you want to retain.
+
+To enable AI, open **File → Visro settings…**, paste your key from [Google AI Studio](https://aistudio.google.com/apikey), and choose **Connect Gemini**. The Mac app encrypts the key with Electron's macOS-backed safeStorage. Keys are excluded from project files and browser storage. Only content needed for an AI request is sent to Google's configured endpoints. Your Google project's model access, quota and billing apply; live generation still requires acceptance with your own key.
+
+Optional **Elements → Photos** searches public-domain/CC0 images on Wikimedia Commons. Search queries and uncached downloads contact Commons; selected images are embedded locally with source and license details.
+
+There is no Visro account or cloud project synchronization. The browser editor and desktop app use separate local storage; use `.visro` files to move projects between them.
+
+## Run from source
+
+Use **Node.js 22.12+**; Node **26.5** is the verified development toolchain. Native packaging requires macOS. The first full build downloads verified model and media assets.
 
 ```sh
+git clone https://github.com/prakharsingh1/visro.git
+cd visro
 npm ci
 npm run start
 ```
 
-If dependency installation skipped Electron's install script, run `node node_modules/electron/install.js` first. For hot reload, run `npm run dev`, then `VISRO_DEV_URL=http://127.0.0.1:5173 npm run desktop`. The local browser editor can be opened at the development URL; encrypted Gemini, native clipboard, printing and FFmpeg services run in the Mac app.
+For the browser editor:
 
 ```sh
-npm run typecheck
-npm test
-npm run dist:mac
+npm run dev
 ```
 
-The build prepares verified background models, PDF assets, offline fonts and signed Apple silicon media tools. Cached assets are checked and reused; missing assets are obtained from their pinned sources. Packaging stages outside Documents/iCloud, signs and verifies the complete bundle, then copies flat DMG/ZIP installers into `release/`.
+Open the local URL printed by Vite. The desktop app adds encrypted Gemini settings, native clipboard/printing and bundled media rendering. For desktop hot reload, testing and packaging, see [Contributing](CONTRIBUTING.md).
 
-## Reference, provenance and boundaries
+## Project status
 
-The requested MIT REA fork is [prakharsingh1/rea](https://github.com/prakharsingh1/rea), with a sibling checkout at `../rea`. REA is a research tool, not Visro's editor engine or runtime dependency.
+Visro is an **early release**. It offers a broad local design workflow; complete Canva feature parity and universal freeze-free performance are not claimed. Advanced video keyframes, automatic transcription, video background removal, full document/spreadsheet compatibility and some effects remain incomplete. Cloud teams, paid stock, hosting and print fulfillment are outside its local scope.
 
-Visro's independent editor follows the visible installed Canva Mac app's navigation, panels and familiar input behavior. Current refinements use 14px/600 header and context type, 12px/600 rail labels, a 72px rail pitch and 32px buttons for selected actions. Glyphs were independently redrawn from the observed interface. The reference is recorded in [RESEARCH.md](docs/RESEARCH.md). Canva's private server source and its hosted services are not available through its installed client.
+The feature build passed **370 tests**, with one optional network test skipped. Packaged interaction checks included 50 real drags and save/reopen checks in isolated automation mode. That does not establish smoothness for every document or normal-window/macOS Spaces configuration. [Validation](docs/VALIDATION.md) records the measured results and limits.
 
-**Visro Originals** preserves the first 46 layouts, adds 454 vector/type layouts across 26 composition families, 23 categories and 19 collections, adds 30 detailed photographic originals, and adds 120 Studio Editions across 30 new composition families. The twelve bundled photographs total 2.33 MiB and retain their separate public-domain/CC0 status; source pages, authors, licenses, modifications and hashes are recorded in `public/template-photos/manifest.json` and `NOTICES.md`. Photo placement preserves aspect ratio through cover cropping, and project files embed the bytes and source provenance. The layouts use original copy, fictional brands, editable vectors and bundled open fonts. They are not Canva’s “top 500.” Canva’s [Content License Agreement, §9.8](https://www.canva.com/policies/content-license-agreement/) restricts using its licensed content to compete with Canva, so Visro does not redistribute that catalog.
+- [Feature overview](docs/FEATURES.md) · [Workflow boundaries](docs/PARITY.md)
+- [User guide and shortcuts](docs/USER_GUIDE.md) · [Getting started](docs/GETTING_STARTED.md)
+- [Report a bug](https://github.com/prakharsingh1/visro/issues/new?template=bug_report.yml) · [Suggest a feature](https://github.com/prakharsingh1/visro/issues/new?template=feature_request.yml)
+- [Contribute](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md)
 
-This build substantially expands the local workflows; it is not complete 1:1 Canva parity. Remaining local limits include an infinite whiteboard engine, advanced video keyframes, automatic transcription, video background removal, full document/Excel compatibility and the entire effects/catalog collection. Cloud synchronization, live teams, paid stock, remote publishing and print fulfillment are outside the user's local-projects/Gemini-only choice. [FEATURES.md](docs/FEATURES.md) and [PARITY.md](docs/PARITY.md) record exact boundaries; [VALIDATION.md](docs/VALIDATION.md) separates verified behavior from pending live AI acceptance.
+## License and credits
 
-Source is AGPL-3.0-only because of the IMG.LY background-removal dependency. See LICENSE and THIRD_PARTY_NOTICES.md. The release's source ZIP includes application source, tests, lockfile, licenses and reproducible asset preparation scripts.
+Created by [Prakhar Singh](https://github.com/prakharsingh1). Visro is licensed under **[AGPL-3.0-only](LICENSE)**, including its IMG.LY background-removal integration. Bundled open fonts and public-domain/CC0 photographs retain their own notices; see [third-party credits](THIRD_PARTY_NOTICES.md) and [photo credits](public/template-photos/NOTICES.md).
+
+Visro is an independent project and is not affiliated with Canva, Adobe or Google. The editable templates and graphics are original Visro assets. Proprietary Canva templates, stock and font binaries are not redistributed. When available, the interface can read Canva Sans from the user's existing local Canva installation; otherwise it uses a fallback. The separate MIT-licensed [REA fork](https://github.com/prakharsingh1/rea) is a research tool, not Visro's runtime.

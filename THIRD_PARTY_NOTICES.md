@@ -25,7 +25,7 @@ For distribution, ship the complete corresponding Visro source (including packag
 
 ## Public-domain and CC0 template photographs
 
-The thirty original Photo Editions use twelve bundled source images obtained from Wikimedia Commons, not Canva stock assets. Eight are marked CC0 and four public domain on their source pages. The resized/JPEG-compressed media retain those separate statuses; they are not relicensed as proprietary Visro imagery. The original editable layouts and copy remain AGPL-3.0-only.
+The 106 photo-led templates across Photo Editions and Studio Editions use twelve bundled source images obtained from Wikimedia Commons, not Canva stock assets. Eight are marked CC0 and four public domain on their source pages. The resized/JPEG-compressed media retain those separate statuses; they are not relicensed as proprietary Visro imagery. The original editable layouts and copy remain AGPL-3.0-only.
 
 - Complete per-image author, title, source page, source URL, license, modification and SHA-256 records: `public/template-photos/manifest.json`.
 - Human-readable credits and license/source links: `public/template-photos/NOTICES.md`.

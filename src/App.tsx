@@ -1130,7 +1130,7 @@ export default function App() {
             )}
           </span>
         </div>
-        <div className="top-actions"><button className="avatar" title="Settings" aria-label="Settings" onClick={()=>setModal("settings")}>PS</button><IconButton title="View all comments" active={commentsOpen} onClick={()=>setCommentsOpen(!commentsOpen)}><StudioIcon name="comments" size={24}/></IconButton><button className="quiet-button share-button" onClick={()=>setModal('export')}>Share</button><button className="primary-button" onClick={()=>void showPresent()}><Presentation size={19}/>Present</button></div>
+        <div className="top-actions"><button className="avatar" title="Settings" aria-label="Settings" onClick={()=>setModal("settings")}>V</button><IconButton title="View all comments" active={commentsOpen} onClick={()=>setCommentsOpen(!commentsOpen)}><StudioIcon name="comments" size={24}/></IconButton><button className="quiet-button share-button" onClick={()=>setModal('export')}>Share</button><button className="primary-button" onClick={()=>void showPresent()}><Presentation size={19}/>Present</button></div>
       </header>
       <div className="workspace">
         <nav className="tool-rail" aria-label="Editor tools" inert={editingMode!=='editing'}>

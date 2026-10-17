@@ -1,0 +1,40 @@
+name: Bug report
+description: Help us reproduce an editing, installation or export problem.
+title: "[Bug]: "
+body:
+  - type: markdown
+    attributes:
+      value: "Thanks for helping improve Visro. Please remove API keys and private content from logs, screenshots and sample projects."
+  - type: input
+    id: version
+    attributes:
+      label: Visro version
+      placeholder: "0.8.1"
+    validations:
+      required: true
+  - type: input
+    id: platform
+    attributes:
+      label: Platform and environment
+      description: Include macOS version, Mac chip, and desktop app or browser version.
+      placeholder: "macOS 15, M2, desktop app"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open a blank design...\n2. Add...\n3. Observe..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Screenshots, logs or a minimal sample
+      description: For slow editing, include the page count, approximate element/image count and whether it also happens in a new project. Attach only content you can share publicly.

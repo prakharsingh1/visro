@@ -1,0 +1,23 @@
+# Changelog
+
+## 0.8.1 — 17 October 2026
+
+The first public download packages the current Visro feature set with a clearer onboarding experience.
+
+- Replaced hard-coded personal profile labels with a neutral local workspace.
+- Added screenshot-led documentation, installation and backup guidance, a user guide, contribution instructions and issue templates.
+- Published Apple silicon Mac downloads with source, license notices and SHA-256 checksums.
+
+## 0.8.0
+
+- Expanded the library to 650 original templates, 144 shapes and 320 graphics.
+- Added 46 bundled open font families, 48 editable font combinations and 13 original photo mockups.
+- Aligned the native top-left controls and fourteen-category Elements browser with the observed reference layout.
+- Added native photo-drop/crop behavior in mockups and six page-animation previews.
+- Fixed grouped-selection history restoration and double-click photo cropping.
+
+The complete feature-build suite passed 370 tests with one optional network skip. See [Validation](docs/VALIDATION.md) for browser, packaged-app and performance boundaries.
+
+## Earlier work
+
+The local workspace already includes continuous multipage editing, drag/arrow/shortcut controls, frames and grids, line endpoints and effects, offline photo background removal, local project persistence, documents, sheets, media exports and optional Gemini integrations. Detailed implementation and remaining limits are recorded in [Features](docs/FEATURES.md), [Workflow map](docs/PARITY.md) and [Validation](docs/VALIDATION.md).
