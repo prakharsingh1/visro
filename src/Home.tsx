@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StudioIcon, type StudioIconName } from './icons';
-import { listDesignSummaries, listFolders, storeFolder, updateDesign, deleteDesign, restoreDesign, type SavedDesign, type Folder } from './storage';
+import { designPreviewRevision, listDesignSummaries, listFolders, storeFolder, updateDesign, deleteDesign, restoreDesign, type SavedDesign, type Folder } from './storage';
+import {VisibleDesignThumbnails} from './design-thumbnails';
 import { TEMPLATES } from './templates';
 import { TemplatePreview } from './TemplatePreview';
 import { TemplateBrowser } from './TemplateBrowser';
@@ -21,7 +22,20 @@ interface HomeProps {
  onTemplate:(id:string,name:string)=>void;onImport:()=>void;onSettings:()=>void;
  onTheme:()=>void;dark:boolean;refresh:number;onNavigate?:(panel:'brand'|'ai')=>void;
 }
+function DesignCover({record,previews}:{record:SavedDesign;previews:VisibleDesignThumbnails}){
+ const ref=useRef<HTMLDivElement>(null),revision=designPreviewRevision(record);
+ const [recovered,setRecovered]=useState<{revision:string;thumbnail:string}>(),[failed,setFailed]=useState(false);
+ const thumbnail=recovered?.revision===revision?recovered.thumbnail:record.thumbnail;
+ useEffect(()=>{setFailed(false);},[record.id,revision,record.thumbnail]);
+ useEffect(()=>{
+  if(!ref.current||record.deleted)return;
+  return previews.watch(ref.current,record,thumbnail=>{setRecovered({revision,thumbnail});setFailed(false);},failed);
+ },[previews,record.id,revision,record.thumbnail,record.thumbnailRevision,record.deleted,failed]);
+ return <div ref={ref} className="recent-cover" style={{background:(record.project as {pages?:{background:string}[]})?.pages?.[0]?.background||'#fff'}}>{thumbnail&&!failed?<img src={thumbnail} alt={record.name} loading="lazy" decoding="async" onError={()=>setFailed(true)}/>:<StudioIcon name="templates" size={44}/>}</div>;
+}
 export function Home({onOpen,onCreate,onTemplate,onImport,onSettings,onTheme,dark,refresh,onNavigate}:HomeProps) {
+ const previews=useMemo(()=>new VisibleDesignThumbnails(),[]);
+ useEffect(()=>()=>previews.dispose(),[previews]);
  const [designs,setDesigns]=useState<SavedDesign[]>([]),[folders,setFolders]=useState<Folder[]>([]),[section,setSection]=useState('home'),[query,setQuery]=useState(''),[folderName,setFolderName]=useState('');
  const [expanded,setExpanded]=useState(false),[popover,setPopover]=useState<'create'|'more'|'profile'|'notifications'|null>(null);
  const reload=async()=>{const [records,groups]=await Promise.all([listDesignSummaries(true),listFolders()]);setDesigns(records);setFolders(groups);};
@@ -53,7 +67,7 @@ export function Home({onOpen,onCreate,onTemplate,onImport,onSettings,onTheme,dar
    <section className="home-designs-section">
     <div className="home-section-heading"><h2>{section==='templates'?'Explore templates':heading}</h2><div>{section!=='home'&&section!=='trash'&&section!=='templates'&&<button className="quiet-button" onClick={onImport}><StudioIcon name="upload" size={17}/>Import</button>}{section!=='trash'&&<button className="quiet-button" onClick={()=>setPopover('create')}><StudioIcon name="create" size={17}/>Create a design</button>}</div></div>
     {section==='projects'||section.startsWith('folder-')?<div className="home-project-controls"><button className={section==='projects'?'active':''} onClick={()=>choose('projects')}>All</button><button onClick={()=>choose('starred')}>Starred</button>{folders.map(f=><button className={section===f.id?'active':''} key={f.id} onClick={()=>choose(f.id)}><StudioIcon name="projects" size={16}/>{f.name}</button>)}<form className="folder-create" onSubmit={async e=>{e.preventDefault();if(!folderName.trim())return;await storeFolder({id:`folder-${crypto.randomUUID()}`,name:folderName.trim()});setFolderName('');void reload();}}><input aria-label="New folder name" placeholder="New folder" value={folderName} onChange={e=>setFolderName(e.target.value)}/><button title="Create folder"><StudioIcon name="create" size={16}/></button></form></div>:null}
-    {section==='templates'?<TemplateBrowser query={query} onUse={onTemplate}/>:<div className="recent-grid">{records.map(d=><article className="recent-card" key={d.id}><button className="recent-open" onClick={()=>!d.deleted&&onOpen(d)}><div className="recent-cover" style={{background:(d.project as {pages?:{background:string}[]})?.pages?.[0]?.background||'#fff'}}>{d.thumbnail?<img src={d.thumbnail} alt={d.name}/>:<StudioIcon name="templates" size={44}/>}</div><strong>{d.name}</strong><span>Edited {new Date(d.updated).toLocaleDateString()}</span></button><div className="recent-actions">{d.deleted?<button className="quiet-button" onClick={async()=>{await restoreDesign(d.id);void reload();}}>Restore</button>:<><button aria-label={d.starred?'Unstar design':'Star design'} onClick={async()=>{await updateDesign(d.id,{starred:!d.starred});void reload();}}><StudioIcon name="star" size={16} filled={d.starred}/></button><select aria-label={`Folder for ${d.name}`} value={d.folder||''} onChange={async e=>{await updateDesign(d.id,{folder:e.target.value});void reload();}}><option value="">No folder</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select><button aria-label="Move design to trash" onClick={async()=>{await deleteDesign(d.id);void reload();}}><StudioIcon name="trash" size={16}/></button></>}</div></article>)}{records.length===0&&<div className="empty-library"><StudioIcon name="projects" size={36}/><h3>{section==='trash'?'No designs in Trash':'Your designs will appear here'}</h3><p>{section==='trash'?'Deleted designs can be restored here.':'Create a design or upload a project to get started.'}</p></div>}</div>}
+    {section==='templates'?<TemplateBrowser query={query} onUse={onTemplate}/>:<div className="recent-grid">{records.map(d=><article className="recent-card" data-design-id={d.id} key={d.id}><button className="recent-open" onClick={()=>!d.deleted&&onOpen(d)}><DesignCover record={d} previews={previews}/><strong>{d.name}</strong><span>Edited {new Date(d.updated).toLocaleDateString()}</span></button><div className="recent-actions">{d.deleted?<button className="quiet-button" onClick={async()=>{await restoreDesign(d.id);void reload();}}>Restore</button>:<><button aria-label={d.starred?'Unstar design':'Star design'} onClick={async()=>{await updateDesign(d.id,{starred:!d.starred});void reload();}}><StudioIcon name="star" size={16} filled={d.starred}/></button><select aria-label={`Folder for ${d.name}`} value={d.folder||''} onChange={async e=>{await updateDesign(d.id,{folder:e.target.value});void reload();}}><option value="">No folder</option>{folders.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</select><button aria-label="Move design to trash" onClick={async()=>{await deleteDesign(d.id);void reload();}}><StudioIcon name="trash" size={16}/></button></>}</div></article>)}{records.length===0&&<div className="empty-library"><StudioIcon name="projects" size={36}/><h3>{section==='trash'?'No designs in Trash':'Your designs will appear here'}</h3><p>{section==='trash'?'Deleted designs can be restored here.':'Create a design or upload a project to get started.'}</p></div>}</div>}
    </section>
    {section==='home'&&<section className="home-template-teaser"><h2>Explore templates</h2><button className="quiet-button" onClick={()=>choose('templates')}>See all <StudioIcon name="chevron" size={16}/></button><div className="recent-grid">{[...TEMPLATES.filter(t=>t.id.startsWith('photo-original-')),...TEMPLATES.filter(t=>!t.id.startsWith('photo-original-'))].slice(0,4).map((t,index)=><button className="recent-card" key={t.id} onClick={()=>onTemplate(t.id,t.name)}><div className="recent-cover" style={{background:t.background}}><TemplatePreview template={t} index={index}/></div><strong>{t.name}</strong></button>)}</div></section>}
   </main>

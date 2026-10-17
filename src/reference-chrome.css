@@ -38,6 +38,48 @@
 }
 .studio-app .topbar .top-menu > svg { display:none; }
 .studio-app .topbar .primary-button { height:40px; font-size:14px; font-weight:600; }
+/* The observed editor keeps the name on the action row, next to the avatar.
+   Its save indicator belongs beside the editing/history controls on the left. */
+.studio-app .topbar .document-title {
+  flex-direction:row;
+  align-items:center;
+  height:40px;
+  justify-content:center;
+  gap:0;
+  margin-right:7px;
+}
+.studio-app .topbar .document-title input {
+  flex:none;
+  min-width:0;
+  height:24px;
+  min-height:24px;
+  padding:1px 6px;
+  line-height:20px;
+  text-align:right;
+}
+.studio-app .topbar .save-state {
+  position:relative;
+  display:flex;
+  flex:0 0 32px;
+  align-items:center;
+  justify-content:center;
+  width:32px;
+  height:40px;
+  padding:0;
+  color:#fff;
+  -webkit-app-region:no-drag;
+}
+.studio-app .topbar .save-state-label {
+  position:absolute;
+  width:1px;
+  height:1px;
+  padding:0;
+  margin:-1px;
+  overflow:hidden;
+  clip-path:inset(50%);
+  white-space:nowrap;
+}
+.studio-app .topbar .save-state > svg { flex:none; }
 
 .studio-app .tool-rail {
   padding-top:12px;

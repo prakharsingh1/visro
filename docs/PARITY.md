@@ -60,6 +60,7 @@ Ordinary scrolling reveals adjacent pages in one continuous vertical stack with 
 | Gemini speech | Implemented; live verification pending | Voice selection, PCM-to-WAV decoding, playback and local audio insertion. |
 | Gemini/Veo video | Implemented; live verification pending | Text/image input, aspect/duration, operation polling, cancellation and local video insertion; project/model access required. |
 | PNG/JPEG/SVG/PDF/PPTX and imports | Implemented | Format-specific fidelity; PDF import is rendered artwork for annotation. |
+| Editable Canva-export import | Implemented; browser and packaged import checks passed | Local PPTX/SVG files only. Supported text/styles, shapes, photos/crops, exported groups and slides become native objects; detected omissions/fonts/appearance differences are reported. Outlined text remains paths. No direct Canva-link/private-file access. [Import guide](CANVA_IMPORT.md). |
 | Portable project sharing | Implemented; pack/unpack unit checks passed | Embedded reused assets stored once; latest native reopen acceptance passed. |
 | Website | Partial | Local static HTML export; no hosting/domain/publishing service. |
 | Apps | Implemented local tools | Magic Media/Write, QR, charts, tables, bulk tools and components; no remote Apps marketplace. |

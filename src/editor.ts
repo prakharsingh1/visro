@@ -230,6 +230,7 @@ export class StudioEditor {
   private styleClipboard?: Record<string, unknown>;
   private optionDrag?: OptionDrag;
   private removeLayerPicker?: () => void;
+  private removeMouseReleaseGuard?: () => void;
   private documentMutationAllowed=()=>true;
 
   constructor(element: HTMLCanvasElement, options: EditorOptions = {}) {
@@ -262,6 +263,30 @@ export class StudioEditor {
     // altSelectionKey then keeps the chosen underlying layer draggable.
     this.canvas.upperCanvasEl.addEventListener('mousedown', pickBehind, true);
     this.removeLayerPicker = () => this.canvas.upperCanvasEl.removeEventListener('mousedown', pickBehind, true);
+    const upper = this.canvas.upperCanvasEl, ownerDocument = upper.ownerDocument;
+    let pointerType = '', mouseTransform: { target: FabricObject; lastPressed: MouseEvent } | undefined;
+    const rememberPointer = (event: PointerEvent): void => { pointerType = event.pointerType; };
+    const releaseLostMouse = (event: MouseEvent): void => {
+      const gesture = mouseTransform;
+      if (!gesture) return;
+      if (this.canvas._currentTransform?.target !== gesture.target) { mouseTransform = undefined; return; }
+      if (event.buttons & 1) { gesture.lastPressed = event; return; }
+      if (event.buttons !== 0) return;
+      // A release can be lost outside the window. Fabric otherwise transforms
+      // on this unpressed move too. Run its normal release path using the last
+      // genuine pressed event, before the document's move handler can jump the
+      // object. This also releases controls/listeners and the Option-drag job;
+      // no DOM input event is constructed or dispatched.
+      mouseTransform = undefined;
+      this.canvas._onMouseUp(gesture.lastPressed);
+    };
+    upper.addEventListener('pointerdown', rememberPointer, true);
+    ownerDocument.addEventListener('mousemove', releaseLostMouse, true);
+    this.removeMouseReleaseGuard = () => {
+      mouseTransform = undefined;
+      upper.removeEventListener('pointerdown', rememberPointer, true);
+      ownerDocument.removeEventListener('mousemove', releaseLostMouse, true);
+    };
     this.canvas.on("selection:created", () => this.selectionChanged());
     this.canvas.on("selection:updated", () => this.selectionChanged());
     this.canvas.on("selection:cleared", () => this.selectionChanged());
@@ -274,6 +299,12 @@ export class StudioEditor {
       this.commit();
     });
     this.canvas.on('before:transform', ({ e, transform }) => {
+      const input = e as MouseEvent & { sourceCapabilities?: { firesTouchEvents?: boolean } };
+      // Touch/pen compatibility events and pointer-mode transforms keep their
+      // own release semantics; this guard is only for a left mouse transform.
+      if (input.type === 'mousedown' && input.button === 0 && (input.buttons & 1) && pointerType !== 'touch' && pointerType !== 'pen' && !input.sourceCapabilities?.firesTouchEvents) {
+        mouseTransform = { target: transform.target, lastPressed: input };
+      }
       if (e.altKey && transform.action === 'drag') this.beginOptionDrag(transform.target);
     });
     this.canvas.on('object:moving', ({ target }) => {
@@ -342,6 +373,7 @@ export class StudioEditor {
       if (this.hoverTarget) { this.hoverTarget = undefined; this.canvas.requestRenderAll(); }
     });
     this.canvas.on('mouse:up', () => {
+      mouseTransform = undefined; pointerType = '';
       this.snapGuides = {}; this.panPoint = undefined;
       if (this.optionDrag) { this.optionDrag.ended = true; this.finishOptionDrag(this.optionDrag); }
       if (this.panMode) this.canvas.setCursor('grab');
@@ -2340,6 +2372,7 @@ export class StudioEditor {
     if (this.destroyed) return;
     this.destroyed = true;
     this.removeLayerPicker?.(); this.removeLayerPicker = undefined;
+    this.removeMouseReleaseGuard?.(); this.removeMouseReleaseGuard = undefined;
     this.optionDrag?.finish(); this.optionDrag = undefined;
     if (this.transformFrame !== undefined) util.cancelAnimFrame(this.transformFrame);
     this.transformFrame = undefined; this.pendingTransformKey = '';

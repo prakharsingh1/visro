@@ -71,6 +71,8 @@ import {
 } from "lucide-react";
 import { StudioEditor } from "./editor";
 import { Home } from "./Home";
+import {CanvaImportDialog} from "./CanvaImportDialog";
+import type {CanvaImportReport} from "./canva-import";
 import {PublicImageLibrary} from './PublicImageLibrary';
 import {GraphicsLibrary} from './GraphicsLibrary';
 import {EditingModeMenu,type EditingMode} from './EditingModeMenu';
@@ -246,7 +248,7 @@ export default function App() {
     viewportRef = useRef<HTMLDivElement>(null),
     engine = useRef<StudioEditor | null>(null),
     uploadRef = useRef<HTMLInputElement>(null),
-    projectRef = useRef<HTMLInputElement>(null), fontRef = useRef<HTMLInputElement>(null);
+    projectRef = useRef<HTMLInputElement>(null), canvaRef = useRef<HTMLInputElement>(null), fontRef = useRef<HTMLInputElement>(null);
   const [state, setState] = useState<EditorState>(initialState),
     [selected, setSelected] = useState<SelectionState | null>(null),
     [panel, setPanel] = useState<Panel>("templates"),
@@ -284,6 +286,7 @@ export default function App() {
     [fileMenu, setFileMenu] = useState(false), [presentAuto, setPresentAuto] = useState(false);
   const [recentElementsRevision,setRecentElementsRevision]=useState(0);
   const [elementsTab,setElementsTab]=useState<'all'|'shapes'|'graphics'|'photos'|'frames'|'grids'|'animations'|'forms'|'mockups'|'3d'>('all'),[publicImagePreviewOpen,setPublicImagePreviewOpen]=useState(false);
+  const [canvaImportOpen,setCanvaImportOpen]=useState(false),[canvaImportReport,setCanvaImportReport]=useState<CanvaImportReport|null>(null);
   const photoSources=useRef(new Map<string,NonNullable<import('./editor-types').ElementMetadata['source']>>());
   const [maskSources,setMaskSources]=useState<{original:string;current:string}|null>(null);
   const [quickActionsOpen,setQuickActionsOpen]=useState(false);
@@ -376,6 +379,16 @@ export default function App() {
     window.addEventListener('pointerup',stop);window.addEventListener('pointercancel',stop);window.addEventListener('blur',stop);
     return()=>{window.removeEventListener('pointerup',stop);window.removeEventListener('pointercancel',stop);window.removeEventListener('blur',stop);};
   },[]);
+  useEffect(()=>{
+    if(!ready||!engine.current)return;
+    // Fabric can finish a mouse drag after recovering a lost native release.
+    // Resume the same paused preview work as an ordinary pointer release.
+    return engine.current.canvas.on('mouse:up',()=>{
+      interactionRef.current=false;
+      viewportRef.current?.classList.remove('interacting');
+      window.dispatchEvent(new Event('visro:interaction-end'));
+    });
+  },[ready]);
   useEffect(()=>{if(!fileMenu){setViewMenu(false);return;}const outside=(e:PointerEvent)=>{if(!fileMenuRef.current?.contains(e.target as Node))setFileMenu(false);};document.addEventListener('pointerdown',outside);return()=>document.removeEventListener('pointerdown',outside);},[fileMenu]);
   const fontOptions = [...new Set([...FONTS,...customFonts])];
   useEffect(()=>setColorHex(selected?.fill||state.background),[selected?.id,selected?.fill,state.background]);
@@ -558,10 +571,10 @@ export default function App() {
     else {let text:string;try{text=await navigator.clipboard.readText();}catch{if(browserClipboardRef.current.length){await studio.insertObjects(browserClipboardRef.current);return;}await studio.paste();return;}if(text.startsWith(clipboardPrefix))await studio.insertObjects(JSON.parse(text.slice(clipboardPrefix.length)));else if(text){studio.addText('body');studio.updateSelected({text});}}
 
   }catch(e){notify(e instanceof Error?e.message:'Could not paste this content.');}},[notify]);
-  useEffect(()=>{const paste=(e:ClipboardEvent)=>{if((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]'))return;if(!ready||switchingProject.current||!initializedProject.current)return;const files=Array.from(e.clipboardData?.items||[]).filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean) as File[];e.preventDefault();
+  useEffect(()=>{const paste=(e:ClipboardEvent)=>{if(canvaImportOpen||publicImagePreviewOpen)return;if((e.target as HTMLElement)?.closest('input,textarea,select,[contenteditable="true"]'))return;if(!ready||switchingProject.current||!initializedProject.current)return;const files=Array.from(e.clipboardData?.items||[]).filter(i=>i.type.startsWith('image/')).map(i=>i.getAsFile()).filter(Boolean) as File[];e.preventDefault();
     if(files.length){void uploadFiles(files);return;}const text=e.clipboardData?.getData('text/plain')||'';if(text.startsWith(clipboardPrefix)){void work('Pasting elements',()=>engine.current!.insertObjects(JSON.parse(text.slice(clipboardPrefix.length))));}
     else if(text){engine.current?.addText('body');engine.current?.updateSelected({text});}else void pasteCanvas();
-  };window.addEventListener('paste',paste);return()=>window.removeEventListener('paste',paste);},[pasteCanvas,work,ready]);
+  };window.addEventListener('paste',paste);return()=>window.removeEventListener('paste',paste);},[pasteCanvas,work,ready,canvaImportOpen,publicImagePreviewOpen]);
   useEffect(() => {
     if (desktop)
       desktop
@@ -650,6 +663,17 @@ export default function App() {
       });
     else projectRef.current?.click();
   }, [notify, work, switchProject]);
+  const importCanvaFile=useCallback(async(file:File)=>{
+    setCanvaImportOpen(false);setCanvaImportReport(null);
+    let report:CanvaImportReport|undefined;
+    const opened=await switchProject(async()=>{
+      const {importCanvaExport}=await import('./canva-import');
+      const result=await importCanvaExport(file,{onProgress:setBusy});
+      report=result.report;
+      return{id:crypto.randomUUID(),name:result.project.name,project:result.project};
+    });
+    if(opened&&report){setCanvaImportReport(report);setCanvaImportOpen(true);}
+  },[switchProject]);
   const newDesign = useCallback(async () => {
     if(await switchProject(async()=>({id:crypto.randomUUID(),name:"Untitled design",project:createProject("Untitled design",1080,1080,"#ffffff")})))notify("A fresh canvas, ready for your next idea.");
   }, [notify,switchProject]);
@@ -661,7 +685,7 @@ export default function App() {
   },[mode,notify]);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if(publicImagePreviewOpen)return;
+      if(publicImagePreviewOpen||canvaImportOpen)return;
       if(e.key==='Escape'){if(cropSource){setCropSource(null);return;}if(maskSources){setMaskSources(null);return;}if(guidesDialog){setGuidesDialog(false);return;}if(elementDialog){setElementDialog(null);return;}if(contextMenu){setContextMenu(null);return;}if(modal){setModal(null);return;}if(toolbarPopover){setToolbarPopover(null);return;}if(fileMenu){setFileMenu(false);return;}}
       if(quickActionsOpen)return;
       if(cropSource||maskSources)return;
@@ -758,11 +782,11 @@ export default function App() {
     const blur=()=>{engine.current?.setPanMode(false);engine.current?.flushPendingChanges();};
     window.addEventListener("keydown",key);window.addEventListener('keyup',keyup);window.addEventListener('blur',blur);
     return()=>{window.removeEventListener('keydown',key);window.removeEventListener('keyup',keyup);window.removeEventListener('blur',blur);};
-  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit,quickActionsOpen,mode,publicImagePreviewOpen,textMenuOpen]);
+  }, [save,open,home,modal,selected,contextMenu,elementDialog,toolbarPopover,fileMenu,cropSource,maskSources,copyCanvas,ready,notify,guidesDialog,historyEdit,quickActionsOpen,mode,publicImagePreviewOpen,textMenuOpen,canvaImportOpen]);
   useEffect(() => {
     if (!desktop) return;
     return desktop.onMenu((action) => {
-      if(publicImagePreviewOpen)return;
+      if(publicImagePreviewOpen||canvaImportOpen)return;
       if((!ready||switchingProject.current)&&!["new","open","settings","save","save-as"].includes(action))return;
       if (action === "save") void save();
       else if (action === "open") void open();
@@ -783,7 +807,7 @@ export default function App() {
       else if (action === "undo") historyEdit();
       else if (action === "redo") historyEdit(true);
     });
-  }, [save,open,newDesign,mode,copyCanvas,pasteCanvas,ready,historyEdit,publicImagePreviewOpen]);
+  }, [save,open,newDesign,mode,copyCanvas,pasteCanvas,ready,historyEdit,publicImagePreviewOpen,canvaImportOpen]);
   const choosePanel = (p: Panel) => {
     setPanel(p);setPanelOpen(true);setInspectorOpen(false);
     if(p==="projects")void listDesignSummaries().then(setLibrary);
@@ -822,6 +846,7 @@ export default function App() {
     await work("Adding your images", async () => {
       let firstImage=true;
       for (const file of Array.from(files)) {
+        if(file.name.toLowerCase().endsWith(".pptx")){await importCanvaFile(file);continue;}
         if(file.type==="application/pdf"||file.name.toLowerCase().endsWith(".pdf")){if(await switchProject(async()=>({id:crypto.randomUUID(),name:file.name.replace(/\.pdf$/i,""),load:studio=>importPDF(file,studio,setBusy)})))notify("PDF pages imported for annotation.");continue;}
         if (file.type === "image/svg+xml" || file.name.endsWith(".svg")) {
           if (file.size > 5 * 1024 * 1024) throw new Error("Choose an SVG smaller than 5 MB.");
@@ -966,9 +991,8 @@ export default function App() {
     const studio=await waitForStableStudio();studio.flushPendingChanges();
     const id=activeId.current,projectName=nameRef.current,generation=projectGeneration.current;
     const project=studio.serialize(projectName);
-    const thumbnail=await studio.exportImage({format:"jpeg",scale:0.22,quality:0.7});
     if(generation!==projectGeneration.current||id!==activeId.current||engine.current!==studio)return;
-    await storeDesign({id,name:projectName,updated:Date.now(),project,thumbnail});
+    await storeDesign({id,name:projectName,updated:Date.now(),project});
     if(generation===projectGeneration.current&&id===activeId.current){setHomeRefresh(v=>v+1);setHome(true);}
   });
   const openDesign = (d:SavedDesign) => void work("Opening design", async () => {
@@ -1095,7 +1119,7 @@ export default function App() {
       {home && <Home dark={dark} onTheme={toggleTheme} onSettings={()=>setModal("settings")} refresh={homeRefresh} onOpen={openDesign} onCreate={createFormat} onTemplate={useTemplate} onImport={()=>projectRef.current?.click()} onNavigate={p=>{setHome(false);choosePanel(p);}}/>}
       <div className="desktop-tabs"><button className="desktop-home-tab" aria-label="Home" title="Home (⇧⌘H)" onClick={goHome}><StudioIcon name="home" size={22}/></button><span className="desktop-tab-divider" aria-hidden="true"/><div className="desktop-tab-list" role="tablist" aria-label="Open designs">{workspaceTabs.map(tab=><div key={tab.id} className={`desktop-tab-shell ${!home&&tab.id===activeId.current?'active':''}`}><button className="desktop-tab" role="tab" aria-selected={!home&&tab.id===activeId.current} onClick={()=>openWorkspaceTab(tab.id)}><StudioIcon name="presentation" size={19}/><span>{tab.name} — Visro</span></button><button className="desktop-tab-close" aria-label={`Close ${tab.name} tab`} onClick={()=>closeWorkspaceTab(tab.id)}><X size={14}/></button></div>)}</div><button className="desktop-new-tab" aria-label="New design" title="New design (⌘T)" onClick={()=>void newDesign()}><Plus size={22}/></button></div>
       <header className="topbar">
-        <div ref={fileMenuRef} className="top-menu-wrap"><button className="quiet-button top-menu" aria-expanded={fileMenu} onClick={()=>setFileMenu(!fileMenu)}>File <ChevronDown size={13}/></button>{fileMenu&&<div className="file-menu">{[["New design",()=>void newDesign()],["Open project",()=>void open()],["Save project",()=>void save()],["Your projects",goHome],["Version history",()=>{choosePanel("tools");setToolTab("versions");}]].map(([label,fn])=><button key={String(label)} onClick={()=>{setFileMenu(false);(fn as ()=>void)();}}>{String(label)}</button>)}
+        <div ref={fileMenuRef} className="top-menu-wrap"><button className="quiet-button top-menu" aria-expanded={fileMenu} onClick={()=>setFileMenu(!fileMenu)}>File <ChevronDown size={13}/></button>{fileMenu&&<div className="file-menu">{[["New design",()=>void newDesign()],["Open project",()=>void open()],["Import from Canva…",()=>{setCanvaImportReport(null);setCanvaImportOpen(true);}],["Save project",()=>void save()],["Your projects",goHome],["Version history",()=>{choosePanel("tools");setToolTab("versions");}]].map(([label,fn])=><button key={String(label)} onClick={()=>{setFileMenu(false);(fn as ()=>void)();}}>{String(label)}</button>)}
           <div className="file-settings-wrap" onMouseEnter={()=>setViewMenu(true)}><button className="file-settings-trigger" aria-expanded={viewMenu} onClick={()=>setViewMenu(true)} onKeyDown={e=>{if(e.key==='ArrowRight'){e.preventDefault();setViewMenu(true);}}}>Settings <ChevronRight size={15}/></button>{viewMenu&&<div className="file-menu view-settings-menu">
             {([['rulers','Show rulers and guides','⇧R'],['margins','Show margins',''],['snapping','Snap to elements',''],['locked','Lock guides','']] as const).map(([key,label,shortcut])=><button key={key} role="menuitemcheckbox" aria-checked={Boolean(viewSettings[key])} onClick={()=>setViewSettings(v=>({...v,[key]:!v[key]}))}><span className="menu-check">{viewSettings[key]&&<Check size={15}/>}</span>{label}<kbd>{shortcut}</kbd></button>)}
             <button onClick={()=>{setGuidesDialog(true);setFileMenu(false);}}>Add guides</button><button disabled={!state.pageMetadata?.guides?.x.length&&!state.pageMetadata?.guides?.y.length} onClick={()=>engine.current?.setPageMetadata({guides:{x:[],y:[]}})}>Clear guides</button>
@@ -1104,6 +1128,13 @@ export default function App() {
         <button className="quiet-button top-menu" disabled={editingMode!=='editing'} onClick={()=>{setSize({w:state.width,h:state.height});setModal("resize");}}>Resize <ChevronDown size={13}/></button>
         <EditingModeMenu mode={editingMode} disabled={mode!=='design'} onChange={next=>{setEditingMode(next);setPanelOpen(false);setInspectorOpen(false);setToolbarPopover(null);setContextMenu(null);setDrawing(false);setCropSource(null);setMaskSources(null);setElementDialog(null);if(next==='viewing')setCommentsOpen(false);void accessRef.current?.setMode(next);}}/>
         <span className="topbar-mode-divider"/>
+        <span className="save-state" role="status" aria-live="polite" aria-atomic="true" title={dirty?'Saving locally':'Saved locally'}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M6.2 18.5a4.7 4.7 0 0 1-.5-9.4 6.5 6.5 0 0 1 12.4-1.2 5.3 5.3 0 0 1-.3 10.6H6.2Z"/>
+            {!dirty&&<path d="m8.5 13 2.2 2.2 4.5-4.5"/>}
+          </svg>
+          <span className="save-state-label">{dirty?'Saving locally':'Saved locally'}</span>
+        </span>
         <IconButton title="Undo (⌘Z)" disabled={editingMode!=='editing'||mode==='design'&&!state.canUndo} onClick={()=>historyEdit()}><Undo2 size={18}/></IconButton>
         <IconButton title="Redo (⌘⇧Z)" disabled={editingMode!=='editing'||mode==='design'&&!state.canRedo} onClick={()=>historyEdit(true)}><Redo2 size={18}/></IconButton>
         <div className="document-title">
@@ -1116,19 +1147,6 @@ export default function App() {
               setDirty(true);
             }}
           />
-          <span className="save-state">
-            {dirty ? (
-              <>
-                <span className="saving-dot" />
-                Saving locally
-              </>
-            ) : (
-              <>
-                <Check size={12} />
-                Saved locally
-              </>
-            )}
-          </span>
         </div>
         <div className="top-actions"><button className="avatar" title="Settings" aria-label="Settings" onClick={()=>setModal("settings")}>V</button><IconButton title="View all comments" active={commentsOpen} onClick={()=>setCommentsOpen(!commentsOpen)}><StudioIcon name="comments" size={24}/></IconButton><button className="quiet-button share-button" onClick={()=>setModal('export')}>Share</button><button className="primary-button" onClick={()=>void showPresent()}><Presentation size={19}/>Present</button></div>
       </header>
@@ -1574,7 +1592,7 @@ export default function App() {
         ref={uploadRef}
         type="file"
         multiple
-        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf"
+        accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml,application/pdf,.pptx"
         hidden
         onChange={(e) => {
           void uploadFiles(e.target.files);
@@ -1585,12 +1603,13 @@ export default function App() {
       <input
         ref={projectRef}
         type="file"
-        accept=".visro,.json,.pdf,.csv"
+        accept=".visro,.json,.pdf,.csv,.pptx,.svg"
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
           if (file)
             void work("Opening your project", async () => {
+              if(/\.(pptx|svg)$/i.test(file.name)){await importCanvaFile(file);return;}
               if(file.name.toLowerCase().endsWith(".pdf")){if(await switchProject(async()=>({id:crypto.randomUUID(),name:file.name.replace(/\.pdf$/i,""),load:studio=>importPDF(file,studio,setBusy)})))notify("PDF imported. Add text and graphics to annotate each page.");return;}
               if(file.name.toLowerCase().endsWith(".csv")){await switchProject(async()=>{const cells:Record<string,string>={},matrix=parseCSV(await file.text());matrix.slice(0,200).forEach((r,i)=>r.slice(0,26).forEach((v,c)=>cells[String.fromCharCode(65+c)+(i+1)]=v));const project=createProject(file.name.replace(/\.csv$/i,""),1920,1080,"#ffffff");project.kind="sheet";project.content={cells,rows:Math.min(200,Math.max(20,matrix.length)),columns:Math.min(26,Math.max(8,matrix[0]?.length||0))};return{id:crypto.randomUUID(),name:project.name,project};});return;}
               await switchProject(async()=>{if(file.size>100*1024*1024)throw new Error("Choose a Visro project smaller than 100 MB.");const project=unpackProject(JSON.parse(await file.text())) as Parameters<StudioEditor["loadProject"]>[0];return{id:crypto.randomUUID(),name:project.name||"Untitled design",project};});
@@ -1598,6 +1617,8 @@ export default function App() {
           e.target.value = "";
         }}
       />
+      <input ref={canvaRef} type="file" accept=".pptx,.svg" hidden onChange={event=>{const file=event.target.files?.[0];if(file)void work('Importing your design',()=>importCanvaFile(file));event.target.value='';}}/>
+      {canvaImportOpen&&<CanvaImportDialog report={canvaImportReport} onClose={()=>setCanvaImportOpen(false)} onChoose={()=>canvaRef.current?.click()}/>}
       {quickActionsOpen&&<QuickActions actions={quickActions} onClose={()=>setQuickActionsOpen(false)}/>}
       {contextMenu&&<ElementMenu canUngroup={!selected?.shapeEffect} canFrame={Boolean(selected&&!selected.strokeOnly&&!['image','text','group','activeselection','line'].includes(selected.type))} x={contextMenu.x} y={contextMenu.y} type={selected?.type} count={selected?.count||1} locked={selected?.locked||false} onClose={closeContext} onAction={onElementAction}/>}
       {guidesDialog&&<div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)setGuidesDialog(false);}}><section className="modal element-dialog" role="dialog" aria-modal="true" aria-label="Add guides"><button className="modal-close icon-button" aria-label="Close guides" onClick={()=>setGuidesDialog(false)}><X size={20}/></button><h2>Add guides</h2><form onSubmit={e=>{e.preventDefault();const {columns,rows,gap,margin}=guideGrid;const positions=(count:number,size:number)=>{if(!count)return[];const available=size-2*margin-(count-1)*gap;if(available<=0)throw new Error('The margin and gap must fit inside the page.');const cell=available/count;return [...new Set(Array.from({length:count+1},(_,i)=>i===count?size-margin:margin+i*(cell+gap)).flatMap((v,i)=>i>0&&i<count&&gap?[v-gap,v]:[v]))];};try{engine.current?.setPageMetadata({guides:{x:positions(columns,state.width),y:positions(rows,state.height)}});setViewSettings(v=>({...v,rulers:true,snapping:true}));setGuidesDialog(false);}catch(error){notify((error as Error).message);}}}><NumberField label="Columns" value={guideGrid.columns} min={0} max={24} step={1} onChange={columns=>setGuideGrid(v=>({...v,columns:Math.round(columns)}))}/><NumberField label="Rows" value={guideGrid.rows} min={0} max={24} step={1} onChange={rows=>setGuideGrid(v=>({...v,rows:Math.round(rows)}))}/><NumberField label="Gap (px)" value={guideGrid.gap} min={0} max={state.width/2} onChange={gap=>setGuideGrid(v=>({...v,gap}))}/><NumberField label="Margin (px)" value={guideGrid.margin} min={0} max={Math.min(state.width,state.height)/2} onChange={margin=>setGuideGrid(v=>({...v,margin}))}/><button className="full-button coral" type="submit">Add guides</button></form></section></div>}

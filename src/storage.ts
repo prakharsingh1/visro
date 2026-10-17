@@ -57,7 +57,8 @@ function queueDesign<T>(id: string, operation: () => Promise<T>): Promise<T> {
   return task;
 }
 
-export interface SavedDesign { id: string; name: string; updated: number; project: unknown; thumbnail?: string; folder?: string; starred?: boolean; deleted?: number; }
+export interface SavedDesign { id: string; name: string; updated: number; project: unknown; thumbnail?: string; previewRevision?: string; thumbnailRevision?: string; folder?: string; starred?: boolean; deleted?: number; }
+export interface DesignThumbnailSource { id: string; revision: string; project: unknown; }
 export interface LibraryAsset { id: string; name: string; data: string; kind: 'image' | 'font' | 'logo' | 'component'; updated: number; source?: {id:string;title:string;artist:string;license:string;licenseUrl:string;sourceUrl:string}; }
 export interface ProjectVersion { id: string; designId: string; label: string; updated: number; project: unknown; }
 export interface Folder { id: string; name: string; }
@@ -161,7 +162,48 @@ export async function storeDesign(record: SavedDesign): Promise<void> {
   await queueDesign(record.id, async () => {
     const old = await get<SavedDesign>('summaries', record.id);
     // The old summary contains folder/star/trash metadata without cloning its photos.
-    await persistDesign({ ...old, ...record });
+    const revision=crypto.randomUUID();
+    await persistDesign({ ...old, ...record, previewRevision:revision, thumbnailRevision:record.thumbnail?revision:old?.thumbnailRevision });
+  });
+}
+/** Legacy previews have no content receipt, so they are refreshed once on view. */
+export function designPreviewRevision(record: Pick<SavedDesign,'updated'|'previewRevision'>): string {
+  return record.previewRevision??`legacy:${record.updated}`;
+}
+export function needsDesignThumbnail(record: SavedDesign): boolean {
+  return !record.deleted&&(!record.thumbnail||record.thumbnailRevision!==designPreviewRevision(record));
+}
+export async function getDesignSummary(id:string):Promise<SavedDesign|undefined>{return get<SavedDesign>('summaries',id);}
+/** Only visible-card jobs read artwork; hydrate the cover page, not every photo
+ * on every page. This read never migrates or otherwise rewrites a project. */
+export async function getDesignThumbnailSource(id:string,revision:string):Promise<DesignThumbnailSource|undefined>{
+  const record=await get<SavedDesign>('projects',id);
+  if(!record||record.deleted||designPreviewRevision(record)!==revision)return;
+  const value=record.project as {version?:number;name?:string;width?:number;height?:number;kind?:string;content?:unknown;brand?:unknown;pages?:{id?:string}[]};
+  const first=value?.pages?.[0];if(!first)return;
+  const project=await hydrateProject({version:value.version,name:value.name,width:value.width,height:value.height,kind:value.kind,content:value.content,brand:value.brand,pages:[first],activePageId:first.id});
+  return{id,revision,project};
+}
+/** Compare and update both stores in one transaction. A late preview may never
+ * replace newer artwork, restore trash, or overwrite folder/star metadata. */
+export async function storeDesignThumbnail(source:Pick<DesignThumbnailSource,'id'|'revision'>,thumbnail:string,signal?:AbortSignal):Promise<boolean>{
+  signal?.throwIfAborted();
+  if(!/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(thumbnail)||thumbnail.length>2*1024*1024)throw new Error('The design preview could not be saved.');
+  return queueDesign(source.id,async()=>{
+    const db=await database();signal?.throwIfAborted();
+    return new Promise<boolean>((resolve,reject)=>{
+      const transaction=db.transaction(['projects','summaries'],'readwrite');let stored=false;
+      const abort=()=>transaction.abort();signal?.addEventListener('abort',abort,{once:true});
+      const cleanup=()=>signal?.removeEventListener('abort',abort);
+      const request=transaction.objectStore('projects').get(source.id);
+      request.onsuccess=()=>{
+        const current=request.result as SavedDesign|undefined;
+        if(!current||current.deleted||designPreviewRevision(current)!==source.revision)return;
+        const record={...current,thumbnail,thumbnailRevision:source.revision};
+        transaction.objectStore('projects').put(record);transaction.objectStore('summaries').put(summarize(record));stored=true;
+      };
+      transaction.oncomplete=()=>{cleanup();resolve(stored);};transaction.onerror=()=>{cleanup();reject(transaction.error);};transaction.onabort=()=>{cleanup();reject(signal?.aborted?signal.reason:transaction.error);};
+    });
   });
 }
 export async function getDesign(id: string): Promise<SavedDesign | undefined> {
@@ -202,7 +244,10 @@ export async function listDesignSummaries(includeTrash = false): Promise<SavedDe
 export async function updateDesign(id: string, changes: Partial<SavedDesign>): Promise<void> {
   await queueDesign(id, async () => {
     const record = await get<SavedDesign>('projects', id);
-    if (record) await persistDesign({ ...record, ...changes });
+    if (record) {
+      const revision=changes.project!==undefined?crypto.randomUUID():record.previewRevision;
+      await persistDesign({ ...record, ...changes, previewRevision:revision, thumbnailRevision:changes.thumbnail?revision:record.thumbnailRevision });
+    }
   });
 }
 export async function deleteDesign(id: string): Promise<void> { await updateDesign(id, { deleted: Date.now() }); }

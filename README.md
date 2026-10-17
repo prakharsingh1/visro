@@ -13,7 +13,7 @@
   <a href="CONTRIBUTING.md">Contribute</a>
 </p>
 <p align="center">
-  <a href="https://github.com/prakharsingh1/visro/releases"><img alt="Version 0.8.1" src="https://img.shields.io/badge/version-0.8.1-8257e5" /></a>
+  <a href="https://github.com/prakharsingh1/visro/releases"><img alt="Version 0.9.0" src="https://img.shields.io/badge/version-0.9.0-8257e5" /></a>
   <img alt="macOS 13+, Apple silicon" src="https://img.shields.io/badge/macOS-13%2B%20%C2%B7%20Apple%20silicon-222222" />
   <a href="LICENSE"><img alt="AGPL-3.0-only license" src="https://img.shields.io/badge/license-AGPL--3.0--only-blue" /></a>
 </p>
@@ -32,6 +32,7 @@ Start with a template or a blank canvas. Drag in photos, edit real text and vect
 | **Frames, grids and 13 mockups** | Drop photos into editable image areas, adjust the crop and keep the surrounding artwork. |
 | **Offline photo cutouts** | Remove backgrounds with a bundled local model; refine the result with erase and restore brushes. |
 | **Multipage editing** | Scroll between pages, use real thumbnails, align objects, group layers and undo changes. |
+| **Bring your Canva exports** | Import supported PPTX or SVG layers as local editable objects, with an import report explaining differences. [How to import](docs/CANVA_IMPORT.md). |
 | **More creative tools** | Work with documents, sheets, charts, tables, drawings, media timelines and manual captions. |
 | **Optional Gemini** | Connect your own key for writing, editable design generation, images, speech and supported Veo video workflows. |
 
@@ -62,7 +63,9 @@ For installation help, your first design and backups, see [Getting started](docs
 
 ## Your projects, your key
 
-Projects autosave locally. Export a portable **`.visro`** file to back up a project or move it to another computer; regular image, document and media exports are also available. Clearing the app's local data can remove projects, so keep portable backups of work you want to retain.
+Projects autosave locally. The cloud/check icon beside the editing controls shows **Saved locally** in its tooltip; it represents local storage. Export a portable **`.visro`** file to back up a project or move it to another computer; regular image, document and media exports are also available. Clearing the app's local data can remove projects, so keep portable backups of work you want to retain.
+
+To continue an existing Canva design, download a supported PPTX or SVG from Canva, then choose **File → Import from Canva…** in Visro. Review the import notes before editing. This imports the structure present in the exported file; it cannot open Canva links or private `.canva` files, or restore content already flattened by Canva. See the [import guide](docs/CANVA_IMPORT.md).
 
 To enable AI, open **File → Visro settings…**, paste your key from [Google AI Studio](https://aistudio.google.com/apikey), and choose **Connect Gemini**. The Mac app encrypts the key with Electron's macOS-backed safeStorage. Keys are excluded from project files and browser storage. Only content needed for an AI request is sent to Google's configured endpoints. Your Google project's model access, quota and billing apply; live generation still requires acceptance with your own key.
 
@@ -93,10 +96,11 @@ Open the local URL printed by Vite. The desktop app adds encrypted Gemini settin
 
 Visro is an **early release**. It offers a broad local design workflow; complete Canva feature parity and universal freeze-free performance are not claimed. Advanced video keyframes, automatic transcription, video background removal, full document/spreadsheet compatibility and some effects remain incomplete. Cloud teams, paid stock, hosting and print fulfillment are outside its local scope.
 
-The feature build passed **370 tests**, with one optional network test skipped. Packaged interaction checks included 50 real drags and save/reopen checks in isolated automation mode. That does not establish smoothness for every document or normal-window/macOS Spaces configuration. [Validation](docs/VALIDATION.md) records the measured results and limits.
+The 0.9.0 application suite passed **404 tests**, with one optional network test skipped. Packaged checks passed 50 real drags, editable PPTX/SVG imports, painted Home previews and save/reopen in isolated automation mode. That does not establish smoothness for every document or normal-window/macOS Spaces configuration. [Validation](docs/VALIDATION.md) records the measured results and limits.
 
 - [Feature overview](docs/FEATURES.md) · [Workflow boundaries](docs/PARITY.md)
 - [User guide and shortcuts](docs/USER_GUIDE.md) · [Getting started](docs/GETTING_STARTED.md)
+- [Import a Canva export](docs/CANVA_IMPORT.md)
 - [Report a bug](https://github.com/prakharsingh1/visro/issues/new?template=bug_report.yml) · [Suggest a feature](https://github.com/prakharsingh1/visro/issues/new?template=feature_request.yml)
 - [Contribute](CONTRIBUTING.md) · [Security reporting](SECURITY.md) · [Changelog](CHANGELOG.md)
 

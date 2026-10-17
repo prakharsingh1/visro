@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.0 — 17 October 2026
+
+- Added **File → Import from Canva…** for supported PowerPoint and SVG exports, with local editable objects and a report of missing fonts, unsupported content and appearance differences. [Import guide](docs/CANVA_IMPORT.md).
+- Reworked the header into one row, with the design name alongside the right-side actions and a compact local-save cloud/check indicator beside the editing controls.
+- Added bounded recovery of missing or outdated Home project previews without changing the saved artwork.
+- Fixed lost mouse releases so an unpressed move cannot jump the selected object; the gesture settles at its last pressed position, preserves one Undo step and resumes paused previews. Option-drag duplication retains its asynchronous copy transaction.
+
+The application suite passed 404 tests with one optional network skip. The packaged Mac app passed 50 real drags, native PPTX text editing, SVG groups, painted Home covers and exact save/reopen checks. See [Validation](docs/VALIDATION.md) for the automation setup and limits.
+
 ## 0.8.1 — 17 October 2026
 
 The first public download packages the current Visro feature set with a clearer onboarding experience.

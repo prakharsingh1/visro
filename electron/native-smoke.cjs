@@ -14,6 +14,45 @@ const { rasterPointForFill, gestureDeltaBounds } = require('./native-geometry.cj
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// The isolated automation window must not mix a user's unpressed OS motion
+// into a CDP-owned drag. This never runs in the shipped application or in a
+// normal-window acceptance run. All commanded inputs and position assertions
+// remain real Chromium input; excluded events are reported separately.
+function installNativeInputIsolation(target, enabled = false) {
+  if (!enabled) return false;
+  if (target.__visroNativeInputIsolation) return true;
+  const state = { heldButtons: 0, excludedMoves: 0, samples: [] };
+  target.__visroNativeInputIsolation = state;
+  const filter = event => {
+    if (!event.isTrusted || !state.heldButtons || event.buttons !== 0 || event.pointerType && event.pointerType !== 'mouse') return;
+    state.excludedMoves++;
+    state.samples.push({ type: event.type, x: event.clientX, y: event.clientY, buttons: event.buttons, trusted: event.isTrusted, pointerType: event.pointerType || 'mouse' });
+    if (state.samples.length > 20) state.samples.shift();
+    event.stopImmediatePropagation();
+  };
+  target.addEventListener('mousemove', filter, true);
+  target.addEventListener('pointermove', filter, true);
+  return true;
+}
+
+async function enableNativeInputIsolation(renderer) {
+  const source = `(${installNativeInputIsolation.toString()})(window,true)`;
+  await renderer.command('Page.addScriptToEvaluateOnNewDocument', { source });
+  await renderer.evaluate(source);
+  const original = renderer.command.bind(renderer), snapshots = [];
+  renderer.command = async (method, params = {}) => {
+    if (method === 'Page.reload') snapshots.push(await renderer.evaluate('window.__visroNativeInputIsolation||null'));
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mousePressed') await renderer.evaluate(`${source};window.__visroNativeInputIsolation.heldButtons=${Number(params.buttons) || 1}`);
+    const result = await original(method, params);
+    if (method === 'Input.dispatchMouseEvent' && params.type === 'mouseReleased') await renderer.evaluate(`${source};window.__visroNativeInputIsolation.heldButtons=${Number(params.buttons) || 0}`);
+    return result;
+  };
+  renderer.nativeInputIsolationReport = async () => {
+    const reports = [...snapshots, await renderer.evaluate('window.__visroNativeInputIsolation||null')].filter(Boolean);
+    return { mode: 'exclude unpressed external moves during CDP-owned mouse drags', excludedMoves: reports.reduce((sum, item) => sum + item.excludedMoves, 0), samples: reports.flatMap(item => item.samples).slice(-20) };
+  };
+}
+
 async function removeSmokeProfile(profile, remove = fs.rm) {
   // Chromium helpers can finish writing shader/cache files just after the main
   // process exits. Node retries ENOTEMPTY/EBUSY/EPERM rather than hiding failures.
@@ -973,7 +1012,87 @@ async function runGestureRegression(cdp, projectPath, screenshotPath) {
   return { fixture: path.basename(projectPath), changedGestures, maxGestureMs, maxSceneRoundingError, thumbnailIdleWindows, heartbeat, paintProbe, firstSelection, finalSelection, restoredSelection, keyboardNudgedSelection, arrowNudge: 1, shiftArrowNudge: 10, hoverHighlight: true, contextMenu, alternateSelection, initialPixels, restoredPixels, autosaveRestored: true, objectCount: persisted.project.pages.flatMap((candidate) => candidate.canvas.objects || []).length };
 }
 
-async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, publicImages = false, elements = false, controls = false, v07Controls = false, v08Library = false, automationRendering = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
+/** Packaged import acceptance uses only file inputs, real Chromium input, DOM and IndexedDB. */
+async function runNativeCanvaImportRegression(renderer, root, screenshotPath, progress = () => {}) {
+  const original = await renderer.evaluate(readSavedProject), results = [];
+  const buttonWithText = (selector, text) => `Array.from(document.querySelectorAll(${JSON.stringify(selector)})).find(button=>button.textContent.trim()===${JSON.stringify(text)})`;
+  const card = id => `document.querySelector(${JSON.stringify(`.recent-card[data-design-id="${id}"] .recent-open`)})`;
+  const saved = () => renderer.evaluate(readSavedProject);
+  const home = async () => {
+    await nativeClick(renderer, "document.querySelector('.desktop-home-tab')");
+    await waitForRenderer(renderer, "Boolean(document.querySelector('.home-shell'))&&!document.querySelector('.busy-toast')", 'The import acceptance Home screen did not open.');
+  };
+  const openCard = async id => {
+    await waitForRenderer(renderer, `Boolean(${card(id)})`, 'The imported local project is missing from Home.');
+    await nativeClick(renderer, card(id));
+    await waitForRenderer(renderer, `localStorage.getItem('visro-active-design')===${JSON.stringify(id)}&&!document.querySelector('.home-shell,.canvas-loading,.busy-toast')`, 'The imported project did not reopen.');
+  };
+  const cover = id => `(()=>{const image=(${card(id)})?.querySelector('.recent-cover img');if(!image?.complete||!image.naturalWidth)return null;const canvas=document.createElement('canvas');canvas.width=128;canvas.height=96;const context=canvas.getContext('2d',{willReadFrequently:true});context.drawImage(image,0,0,128,96);const pixels=context.getImageData(0,0,128,96).data,colors=new Set();let purple=0,yellow=0;for(let index=0;index<pixels.length;index+=4){if(pixels[index+3]<200)continue;colors.add((pixels[index]>>4)*256+(pixels[index+1]>>4)*16+(pixels[index+2]>>4));if(pixels[index]>70&&pixels[index]<160&&pixels[index+1]<100&&pixels[index+2]>130)purple++;if(pixels[index]>200&&pixels[index+1]>140&&pixels[index+2]<170)yellow++;}return{embedded:image.src.startsWith('data:image/'),complete:image.complete,width:image.naturalWidth,height:image.naturalHeight,colors:colors.size,purple,yellow};})()`;
+  const capture = async suffix => {
+    if(!screenshotPath)return;
+    const shot=await renderer.command('Page.captureScreenshot',{format:'png',captureBeyondViewport:false});
+    await fs.mkdir(path.dirname(path.resolve(screenshotPath)),{recursive:true});
+    await fs.writeFile(path.resolve(screenshotPath).replace(/\.png$/i,`-canva-${suffix}.png`),Buffer.from(shot.data,'base64'));
+  };
+  const flatten = objects => objects.flatMap(object => Array.isArray(object.objects)?flatten(object.objects):[object]);
+  try {
+    for(const format of ['pptx','svg']) {
+      progress(`checking packaged editable ${format.toUpperCase()} import and Home cover`);
+      const fixture=path.join(root,`output/fixtures/canva-export-original.${format}`);await fs.access(fixture);
+      const beforeId=await renderer.evaluate("localStorage.getItem('visro-active-design')");
+      await nativeClick(renderer, "document.querySelector('.top-menu')");
+      await nativeClick(renderer, buttonWithText('.file-menu button','Import from Canva…'));
+      await waitForRenderer(renderer,"document.querySelector('.canva-import-dialog h2')?.textContent==='Import from Canva'",'The native Canva import instructions did not open.');
+      const {root:documentNode}=await renderer.command('DOM.getDocument');
+      const {nodeId}=await renderer.command('DOM.querySelector',{nodeId:documentNode.nodeId,selector:'input[type="file"][accept=".pptx,.svg"]'});
+      assert.ok(nodeId,'The dedicated editable Canva export input must exist.');
+      await renderer.command('DOM.setFileInputFiles',{nodeId,files:[fixture]});
+      await waitForRenderer(renderer,"document.querySelector('.canva-import-dialog h2')?.textContent==='Your design is ready to edit'&&!document.querySelector('.busy-toast,.canvas-loading')",'The packaged Canva export import did not produce its fidelity report.',30000);
+      const fidelity=await renderer.evaluate("({summary:document.querySelector('.canva-import-dialog p')?.textContent,notes:Array.from(document.querySelectorAll('.canva-import-notes li')).map(item=>item.textContent)})");
+      assert.ok(fidelity.notes.some(note=>/export|Canva|SVG/i.test(note)),'The import must explain exported-layer fidelity.');
+      await nativeClick(renderer,buttonWithText('.canva-import-dialog button','Start editing'));
+      await waitForRenderer(renderer,`(async()=>{const record=await ${readSavedProject};return record?.id!==${JSON.stringify(beforeId)}&&record?.name==='canva-export-original'&&record.project.pages.length===${format==='pptx'?2:1};})()`,'The imported native project did not autosave.');
+      let record=await saved(),layers=flatten(record.project.pages.flatMap(page=>page.canvas.objects)),id=record.id;
+      assert.notEqual(id,beforeId);assert.ok(layers.some(object=>object.type==='Textbox'),'The export must contain native editable Textboxes.');assert.ok(layers.some(object=>['Rect','Ellipse','Path','Polygon'].includes(object.type)),'The export must contain native vector layers.');assert.equal(layers.some(object=>object.type==='Image'),false,'This original vector fixture must not silently flatten to a raster page.');
+      const detail={format,id,pages:record.project.pages.length,layerTypes:layers.map(object=>object.type),order:record.project.pages.map(page=>page.canvas.objects.map(object=>({id:object.id,type:object.type,name:object.visroName}))),fidelity,nativeEditableObjects:true};
+      if(format==='pptx') {
+        assert.deepEqual(record.project.pages.map(page=>page.canvas.objects.map(object=>object.type)),[['Rect','Textbox','Textbox','Ellipse'],['Textbox','Rect']]);
+        const headline=record.project.pages[0].canvas.objects.find(object=>object.type==='Textbox');
+        await renderer.evaluate("(()=>{document.activeElement?.blur();document.querySelector('.upper-canvas')?.focus({preventScroll:true});})()");
+        await nativeKey(renderer,'1','Digit1',1);
+        await waitForRenderer(renderer,"Boolean(document.querySelector('.layer-list .layer-select'))",'The native imported Layers panel did not open.');
+        await nativeClick(renderer,buttonWithText('.layer-select',headline.visroName));
+        await renderer.evaluate("(()=>{const canvas=document.querySelector('.upper-canvas');canvas.tabIndex=0;canvas.focus({preventScroll:true});})()");
+        await nativeKey(renderer,'Enter','Enter');
+        await waitForRenderer(renderer,"document.activeElement?.getAttribute('data-fabric')==='textarea'",'The imported PowerPoint text did not enter genuine native text editing.');
+        await renderer.command('Input.insertText',{text:'PACKAGED IMPORT EDIT'});
+        await nativeKey(renderer,'Escape','Escape');
+        await waitForRenderer(renderer,`(async()=>{const record=await ${readSavedProject};return record?.project.pages[0].canvas.objects.some(object=>object.id===${JSON.stringify(headline.id)}&&object.text==='PACKAGED IMPORT EDIT');})()`,'The actual native keyboard edit did not persist to the original imported text layer.');
+        detail.keyboardTextEdit={id:headline.id,text:'PACKAGED IMPORT EDIT',sameLayer:true};
+      } else {
+        assert.equal(record.project.pages[0].canvas.objects[0].type,'Group');assert.equal(record.project.pages[0].canvas.objects[0].visroName,'Original card');
+        assert.equal(record.project.pages[0].canvas.objects[0].objects[1].type,'Group');assert.equal(record.project.pages[0].canvas.objects[0].objects[1].visroName,'Editable label');
+        assert.equal(layers.filter(object=>object.type==='Textbox').length,2);detail.nestedGroups=true;
+      }
+      record=await saved();const snapshot=JSON.stringify(record.project);
+      await home();
+      await waitForRenderer(renderer,`(()=>{const pixels=${cover(id)};return pixels?.embedded&&pixels.complete&&pixels.colors>8&&pixels.purple>200&&pixels.yellow>5;})()`,'The imported Home cover did not decode and paint the real original artwork.',30000);
+      detail.homeCover=await renderer.evaluate(cover(id));await capture(`${format}-home`);
+      const previousOrigin=await renderer.evaluate('performance.timeOrigin');await renderer.command('Page.reload');
+      await waitForRenderer(renderer,`performance.timeOrigin!==${previousOrigin}&&document.readyState==='complete'&&!document.querySelector('.canvas-loading')`,'The packaged import reload did not finish.');
+      if(!await renderer.evaluate("Boolean(document.querySelector('.home-shell'))"))await home();
+      await waitForRenderer(renderer,`(()=>{const pixels=${cover(id)};return pixels?.embedded&&pixels.complete&&pixels.colors>8&&pixels.purple>200&&pixels.yellow>5;})()`,'The imported Home cover did not survive renderer reload.',30000);
+      detail.reloadedHomeCover=await renderer.evaluate(cover(id));
+      await openCard(id);assert.equal(JSON.stringify((await saved()).project),snapshot,'Reopening the imported design must retain exact native layers, order, text and transforms.');
+      detail.exactProjectReopened=true;await capture(`${format}-reopened`);results.push(detail);
+    }
+    return {formats:results,actualFileInputs:true,actualKeyboardEditing:true,homeCoversDecoded:true,exactProjectsReopened:true,originalProjectRestored:true};
+  } finally {
+    if(original?.id){if(!await renderer.evaluate("Boolean(document.querySelector('.home-shell'))"))await home();await openCard(original.id);assert.equal(JSON.stringify((await saved()).project),JSON.stringify(original.project),'Canva import acceptance must preserve the original isolated design.');}
+  }
+}
+
+async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath, fonts = false, clipboard = false, captions = false, publicImages = false, elements = false, controls = false, v07Controls = false, v08Library = false, canvaImport = false, automationRendering = false, timeoutMs = 60000, onProgress = () => {} } = {}) {
   const root = path.resolve(__dirname, '..');
   let executable, args;
   if (appPath) {
@@ -1113,7 +1232,10 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
         result.appVersion = await mainCDP.evaluate("process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron').app.getVersion()");
         const expectedVersion = JSON.parse(await fs.readFile(path.join(root, 'package.json'), 'utf8')).version;
         assert.equal(result.appVersion, expectedVersion, 'Native acceptance must run the current build rather than an older cached application.');
-        if(automationRendering)result.testWindowPresentation = await mainCDP.evaluate("(()=>{const {BrowserWindow}=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron'),window=BrowserWindow.getAllWindows().find(window=>window.webContents.getURL().startsWith('visro://app/'));if(!window)throw new Error('The isolated native test window is missing.');const before=window.webContents.getBackgroundThrottling();globalThis.__visroNativeAutomationRendering=true;window.webContents.setBackgroundThrottling(false);window.setIgnoreMouseEvents(true);window.setResizable(false);window.showInactive();return{mode:'isolated automation rendering',nativeWindowVisible:window.isVisible(),ignorePhysicalMouseInput:true,resizable:window.isResizable(),backgroundThrottlingBefore:before,backgroundThrottlingDuringTest:window.webContents.getBackgroundThrottling()};})()");
+        if(automationRendering){
+          result.testWindowPresentation = await mainCDP.evaluate("(()=>{const {BrowserWindow}=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron'),window=BrowserWindow.getAllWindows().find(window=>window.webContents.getURL().startsWith('visro://app/'));if(!window)throw new Error('The isolated native test window is missing.');const before=window.webContents.getBackgroundThrottling();globalThis.__visroNativeAutomationRendering=true;window.webContents.setBackgroundThrottling(false);window.setIgnoreMouseEvents(true);window.setResizable(false);window.showInactive();return{mode:'isolated automation rendering',nativeWindowVisible:window.isVisible(),ignorePhysicalMouseInput:true,resizable:window.isResizable(),backgroundThrottlingBefore:before,backgroundThrottlingDuringTest:window.webContents.getBackgroundThrottling()};})()");
+          await enableNativeInputIsolation(cdp);
+        }
         result.asyncEncryptionAPI = await mainCDP.evaluate("(()=>{const {safeStorage}=process.getBuiltinModule('module').createRequire(process.cwd()+'/package.json')('electron');return ['isAsyncEncryptionAvailable','encryptStringAsync','decryptStringAsync'].every(name=>typeof safeStorage[name]==='function');})()");
         assert.equal(result.asyncEncryptionAPI, true, 'The shipped Electron binary must expose non-blocking secure-storage methods.');
       }
@@ -1160,6 +1282,9 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
     if (elements) {
       progress('checking native shape clicks, real graphic dragging, palette Undo and vector ungroup');
       result.elements = await runNativeElementLibraryRegression(cdp, mainCDP, screenshotPath);
+    }
+    if (canvaImport) {
+      result.canvaImport = await runNativeCanvaImportRegression(cdp, root, screenshotPath, progress);
     }
     if (controls || v07Controls) {
       progress('checking native continuous pages, frames, text and editing modes');
@@ -1230,6 +1355,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
       await fs.mkdir(path.dirname(path.resolve(screenshotPath)), { recursive: true });
       await fs.writeFile(path.resolve(screenshotPath), Buffer.from(screenshot.data, 'base64'));
     }
+    if(automationRendering && cdp.nativeInputIsolationReport) result.testWindowPresentation.inputIsolation = await cdp.nativeInputIsolationReport();
     validationResult = result;
     return result;
   } catch (error) {
@@ -1273,7 +1399,7 @@ async function runNativeSmoke({ appPath, screenshotPath, cutoutPath, projectPath
 
 if (require.main === module) {
   const argument = (name) => { const i = process.argv.indexOf(name); return i >= 0 ? process.argv[i + 1] : undefined; };
-  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), publicImages: process.argv.includes('--public-images'), elements: process.argv.includes('--elements'), controls: process.argv.includes('--controls'), v07Controls: process.argv.includes('--v07-controls'), v08Library: process.argv.includes('--v08-library'), automationRendering: process.argv.includes('--automation-rendering'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
+  runNativeSmoke({ appPath: argument('--app'), screenshotPath: argument('--screenshot'), cutoutPath: argument('--cutout'), projectPath: argument('--project'), fonts: process.argv.includes('--fonts'), clipboard: process.argv.includes('--clipboard'), captions: process.argv.includes('--captions'), publicImages: process.argv.includes('--public-images'), elements: process.argv.includes('--elements'), controls: process.argv.includes('--controls'), v07Controls: process.argv.includes('--v07-controls'), v08Library: process.argv.includes('--v08-library'), canvaImport: process.argv.includes('--canva-import'), automationRendering: process.argv.includes('--automation-rendering'), onProgress: process.argv.includes('--verbose') ? (stage) => process.stderr.write(`Native smoke: ${stage}\n`) : undefined }).then((result) => { process.stdout.write(`${JSON.stringify(result, null, 2)}\n`); process.exit(0); }).catch((error) => {
     if (error.validation) process.stdout.write(`${JSON.stringify({ ...error.validation, cleanup: { ok: false, error: error.message } }, null, 2)}\n`);
     if (error.validationError) process.stderr.write(`Native validation failed: ${error.validationError}\n`);
     process.stderr.write(`Native smoke failed: ${error.message}\n`);
@@ -1281,4 +1407,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { runNativeControlsRegression, connectCDP, runNativeSmoke, removeSmokeProfile, runClipboardRegression, runNativeEditingRegression, rasterPointForFill };
+module.exports = { runNativeCanvaImportRegression, runNativeControlsRegression, connectCDP, runNativeSmoke, removeSmokeProfile, runClipboardRegression, runNativeEditingRegression, rasterPointForFill, installNativeInputIsolation, enableNativeInputIsolation };

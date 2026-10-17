@@ -20,6 +20,8 @@ The published desktop build requires **macOS 13 or newer** and an **Apple silico
 
 The interface supports light, dark and system appearance under **File → Visro settings…**. Choose **Editing** in the header when you want to change a design; **Viewing** and **Commenting** restrict canvas edits.
 
+Already have a Canva design? Export a supported **PPTX** or **SVG** from Canva, then use **File → Import from Canva… → Choose PPTX or SVG**. Home's **Upload** also accepts these files. Visro opens a new local design and reports what it imported and what may differ. Follow the [Canva import guide](CANVA_IMPORT.md) for export steps and format limits.
+
 Useful Mac shortcuts:
 
 | Action | Shortcut |
@@ -36,7 +38,7 @@ Text fields keep their normal editing shortcuts. The [User guide](USER_GUIDE.md)
 
 ## Save and back up your work
 
-Visro automatically saves designs and imported assets in the app's local library. Wait for **Saved locally** before closing the app. Autosave is local storage, not cloud backup.
+Visro automatically saves designs and imported assets in the app's local library. The compact cloud/check icon on the left of the header, beside the editing controls, has a **Saved locally** tooltip when saving has completed; it shows **Saving locally** while changes are pending. Hover the icon to check before closing. Autosave is local storage, not cloud backup.
 
 Use **File → Save** (⌘S) to write a portable **`.visro`** project; **Save as** (⇧⌘S) creates another copy. Project files include the design and embedded assets, so they are the practical way to back up your work or transfer a design to another Mac. Reopen one with **File → Open** (⌘O). Keep backups outside the app's own storage.
 

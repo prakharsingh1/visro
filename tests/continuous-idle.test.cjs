@@ -105,3 +105,14 @@ test('replacing a panned project preserves the incoming fit before synchronizing
     assert.equal(JSON.stringify(next.state),document);
   }finally{view.close();}
 });
+
+test('a recovered Fabric release resumes paused previews without a DOM pointer-up or document edit',async()=>{
+  const data=fixture('lost-release'),view=await mount(data,{current:true});
+  try{
+    const before=JSON.stringify(data.state);
+    await view.wait(700);assert.equal(data.calls.length,0);
+    view.release('visro:interaction-end');await view.wait(250);
+    assert.deepEqual(new Set(data.calls.map(call=>call.id)),new Set(data.state.pages.map(page=>page.id)));
+    assert.equal(data.calls.length,3);assert.equal(JSON.stringify(data.state),before);
+  }finally{view.close();}
+});

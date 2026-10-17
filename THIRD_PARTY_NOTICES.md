@@ -13,6 +13,7 @@ Visro source is licensed under AGPL-3.0-only because its local background-remova
 
 - PDF.js 6.4.299 — Mozilla and contributors, Apache-2.0. License in licenses/pdfjs-dist-LICENSE. Decoder, CMap and standard-font notices accompany the packaged pdf-assets. https://github.com/mozilla/pdf.js
 - PptxGenJS 4.0.1 — MIT. License in licenses/pptxgenjs-LICENSE. https://github.com/gitbrent/PptxGenJS
+- JSZip 3.10.2 — Stuart Knightley, David Duponchel, Franz Buchinger, António Afonso and contributors. Dual licensed MIT or GPLv3; Visro uses the MIT option for local PowerPoint archive parsing. The complete upstream license is preserved in [licenses/jszip-LICENSE.markdown](licenses/jszip-LICENSE.markdown). https://github.com/Stuk/jszip
 - qrcode 1.5.4 — MIT. License in licenses/qrcode-LICENSE. https://github.com/soldair/node-qrcode
 - image-size 2.0.4 — MIT. License in licenses/image-size-LICENSE. https://github.com/image-size/image-size
 - FFmpeg and FFprobe 9.0.2, signed Apple Silicon builds by Martin Riedl — GPL-3.0-or-later. License, exact configuration, SHA-256 manifest and source references accompany the binaries in resources/media-tools. FFmpeg source: https://ffmpeg.org/releases/ffmpeg-9.0.2.tar.xz ; publisher build/dependency sources: https://git.martin-riedl.de/ffmpeg/build-script .

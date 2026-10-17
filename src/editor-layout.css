@@ -10,3 +10,5 @@
 .font-weight-control select {max-width:180px;padding:8px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);}
 
 .comments-content {display:contents;border:0;padding:0;margin:0;min-width:0;}
+
+.canva-import-dialog{max-width:580px}.canva-import-dialog p,.canva-import-dialog li{line-height:1.55}.canva-import-dialog ol{padding-left:22px}.canva-import-notes{max-height:36vh;overflow:auto;padding-left:22px}.canva-import-notes li+li{margin-top:8px}

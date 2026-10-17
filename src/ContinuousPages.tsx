@@ -95,9 +95,9 @@ export function ContinuousPages({getEditor,viewportRef,state,enabled,projectKey,
     // the parent pointer handler has cleared the shared interaction ref. Keep
     // one pending task rather than polling for the entire held gesture.
     const resume=()=>{if(needsResume)schedule(80);};
-    for(const event of ['pointerup','pointercancel','mouseup','blur'])window.addEventListener(event,resume);
+    for(const event of ['pointerup','pointercancel','mouseup','blur','visro:interaction-end'])window.addEventListener(event,resume);
     schedule(600);
-    return()=>{cancelled=true;abort.abort();if(timer!==undefined)clearTimeout(timer);if(idle!==undefined&&'cancelIdleCallback'in window)window.cancelIdleCallback(idle);for(const event of ['pointerup','pointercancel','mouseup','blur'])window.removeEventListener(event,resume);};
+    return()=>{cancelled=true;abort.abort();if(timer!==undefined)clearTimeout(timer);if(idle!==undefined&&'cancelIdleCallback'in window)window.cancelIdleCallback(idle);for(const event of ['pointerup','pointercancel','mouseup','blur','visro:interaction-end'])window.removeEventListener(event,resume);};
   },[enabled,layout?.pageWidth,layout?.pageHeight,range.start,range.end,footerIds,state.revision,state.activePageId,state.width,state.height,state.pages,getEditor,interacting,projectKey]);
   const activate=async(id:string,event?:React.PointerEvent)=>{
     if(event&&event.button!==0)return;

@@ -35,6 +35,7 @@ Visro is a local Mac creative app with Gemini assistance. Projects, assets, bran
 | Gemini images | Generate images or edit a selected source image; preview the returned result and insert/apply it to the local project. |
 | Gemini voice and video | Speech generation with voice selection and WAV playback/import; Veo text-to-video or selected-image animation, aspect/duration controls, progress, cancellation and local result playback/import. |
 | Export and local sharing | Portable `.visro` files, PNG/JPEG/SVG/PDF/PPTX, document HTML, sheet CSV, static website HTML and media exports. Reused embedded images are stored once in portable project files and restored on import. |
+| Canva export import | File → Import from Canva… and Home Upload open supported PPTX/SVG exports as new local designs, with native text, vectors, embedded photos, groups and pages where present. The import report notes missing fonts, unsupported content and appearance differences. Outlined text remains paths; no direct Canva-link or private `.canva` access. [Import guide](CANVA_IMPORT.md); browser and packaged 0.9.0 checks passed. |
 
 “Implemented” describes current code, not proof that every possible input or model succeeds. [VALIDATION.md](VALIDATION.md) records acceptance evidence and the exact packaged build tested. Live Gemini requests require a user-entered key with access to the chosen model; no private key was searched for or used during testing.
 
@@ -49,13 +50,15 @@ Visro is a local Mac creative app with Gemini assistance. Projects, assets, bran
 - Gemini, TTS and Veo access, response behavior, quota and billing depend on the user's Google project and configured models. Visro does not add another AI provider or promise every Canva AI capability through one key.
 - PDF import renders pages for annotation; imported pages do not recover the source's editable text or layers. Export format fidelity has format-specific limits.
 - Website export produces local static HTML. Hosting, domains, publishing, analytics, social scheduling, print fulfillment and enterprise approval services are excluded by the local-only preference.
-- Canva cloud projects and proprietary templates are not native Visro documents. REA was used for research, rather than as an editor engine or replacement for Canva's hosted services.
+- Canva cloud projects and proprietary templates are not native Visro documents. Supported PPTX/SVG exports can be imported locally with format-specific limits; they cannot recover layers Canva already flattened. REA was used for research, rather than as an editor engine or replacement for Canva's hosted services.
 
 ## Local behavior and responsiveness
 
 Ordinary editing, local projects, imported assets, kits, comments, versions, document/sheet work, exports, all bundled templates and photo removal run locally. Optional public-photo searches and uncached selected-image downloads contact Wikimedia Commons; chosen/cached image bytes are retained locally. Gemini needs internet and enabled model access. Installing source dependencies and preparing model/font/runtime assets initially needs internet; the prepared application includes its inference model, open fonts and FFmpeg runtime.
 
 The storage implementation deduplicates image data into local blobs, reads lightweight summaries for libraries, hydrates only an opened design and coalesces saves. In the measured 20-page repeated-photo fixture, a repeat save fell from 279ms to 2.82ms and the observed frame gap fell from 1083ms to 50ms. Real browser pointer and keyboard regressions also passed. Those measurements describe the tested fixture on this Mac, rather than a guarantee for every document or a claim of constant 60fps.
+
+The 0.9.0 source also recovers missing/stale visible Home previews through a bounded background queue. A mouse-origin transform that loses its release settles at the last pressed position through Fabric's normal release/history cleanup, allowing paused preview work to resume. The 0.9.0 application suite and packaged import/drag/reopen checks passed; see [VALIDATION.md](VALIDATION.md) for measurements and limits.
 
 All 4,649 text objects in the 454-template vector/type library were measured with real Fabric textboxes after loading the bundled fonts; none exceeded their authored height. A 26-composition contact sheet was visually inspected, and a template was created, dragged and autosaved through the real gallery. These checks establish the tested layouts, not complete Canva template fidelity. A separate development hot-reload check preserved edits that were pending autosave. The 30 Photo Editions were also loaded through the real editor: all 194 text objects and 34 placed images passed height, proportional-cover-crop, embedded-byte and portable-provenance checks. A real gallery-created photo was dragged and autosaved without changing its crop or source metadata.
 

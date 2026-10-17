@@ -47,6 +47,6 @@ export default defineConfig({
     },
   },
   build: { outDir: "dist", chunkSizeWarningLimit: 1500 },
-  optimizeDeps: { exclude: ["@imgly/background-removal"] },
+  optimizeDeps: { include: ["jszip"], exclude: ["@imgly/background-removal"] },
   worker: { format: "es" },
 });
